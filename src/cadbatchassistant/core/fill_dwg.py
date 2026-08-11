@@ -131,10 +131,13 @@ def fill_one(before_dxf: str, out_dxf: str, spec: dict, row: dict) -> list[str]:
 def fill_all(before_dxf_dir: str, out_dxf_dir: str, xlsx: str,
              specs: dict, emit=print, progress=None,
              match_col: str | None = None,
-             sheet: str | None = None) -> list[str]:
+             sheet: str | None = None,
+             cancel=None) -> list[str]:
     """批量填充：对 specs 中每张图执行 fill_one。
 
     单张图失败不中断，记录后继续处理其余图纸。
+    cancel   : 可选 threading.Event；置位时在当前图处理完后停止
+               （未开始的图不再处理，调用方需自行处理剩余图纸）。
     progress : 可选回调 progress(done_index, total)，每处理一张图（成败均）调用一次。
     match_col: 数据表中图纸名列（None 默认第一列）。
     sheet    : 数据表中工作表名（None 默认第一个）。
@@ -144,6 +147,9 @@ def fill_all(before_dxf_dir: str, out_dxf_dir: str, xlsx: str,
     stems = sorted(specs)
     failed: list[str] = []
     for i, stem in enumerate(stems, 1):
+        if cancel is not None and cancel.is_set():
+            emit("[WARN] 收到取消请求，停止填表")
+            break
         try:
             if stem not in data:
                 emit(f"[WARN] {stem} 不在 xlsx 中，跳过")

@@ -56,6 +56,21 @@ class ODAError(RuntimeError):
     """ODA 转换失败。"""
 
 
+def require_oda_for_dwg(has_dwg: bool, oda: str) -> str | None:
+    """需处理 DWG 但未配置有效 ODAFileConverter 时，返回错误文案；否则返回 None。
+
+    纯文本、不依赖 GUI，供各面板启动前校验（错误文案直接弹窗展示）；
+    has_dwg 为 False（纯 DXF 流程）时一律通过。
+    """
+    if not has_dwg:
+        return None
+    oda = (oda or "").strip()
+    if not oda or not Path(oda).is_file():
+        return ("输入包含 DWG 文件，未找到 ODAFileConverter.exe，"
+                "请安装或在「设置」页配置其路径。（仅 DXF 文件无需 ODA）")
+    return None
+
+
 def convert_batch(
     oda_exe: str | Path,
     in_dir: str | Path,
@@ -154,11 +169,15 @@ def convert_dwg_batch_to_dxf(
     out_version: str = DEFAULT_OUT_VERSION,
     timeout: float = 900,
 ) -> None:
-    """把一批 DWG 转成同名的 DXF（ASCII），并确认全部产物生成。"""
+    """把一批 DWG 转成同名的 DXF（ASCII），并确认全部产物生成。
+
+    timeout 同时用于 ODA 进程等待与产物轮询，避免大图转换时
+    产物等待（旧默认 120s）早于进程超时（900s）误报失败。
+    """
     convert_batch(oda_exe, in_dir, out_dir, out_version, "DXF", 0, timeout,
                   input_filter="*.DWG")
     expected = {Path(n).stem + ".dxf" for n in dwg_names}
-    wait_for_outputs(out_dir, expected)
+    wait_for_outputs(out_dir, expected, timeout=timeout)
 
 
 def convert_dxf_batch_to_dwg(
@@ -169,8 +188,12 @@ def convert_dxf_batch_to_dwg(
     out_version: str = DEFAULT_OUT_VERSION,
     timeout: float = 900,
 ) -> None:
-    """把一批 DXF 转成同名的 DWG，并确认全部产物生成。"""
+    """把一批 DXF 转成同名的 DWG，并确认全部产物生成。
+
+    timeout 同时用于 ODA 进程等待与产物轮询，避免大图转换时
+    产物等待（旧默认 120s）早于进程超时（900s）误报失败。
+    """
     convert_batch(oda_exe, in_dir, out_dir, out_version, "DWG", 0, timeout,
                   input_filter="*.DXF")
     expected = {Path(n).stem + ".dwg" for n in dxf_names}
-    wait_for_outputs(out_dir, expected)
+    wait_for_outputs(out_dir, expected, timeout=timeout)

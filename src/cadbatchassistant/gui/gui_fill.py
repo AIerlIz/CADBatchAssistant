@@ -16,16 +16,18 @@ from tkinter import filedialog, messagebox, ttk
 from tkinterdnd2 import DND_FILES
 
 from cadbatchassistant.common import (
-    APP_CONFIG_FILE,
     AsyncPanel,
     build_file_list,
     build_log_panel,
     build_output_row,
     dedup_paths as _dedup_paths_common,
-    load_config as _load_config_common,
+    get_oda,
+    get_out_version,
+    load_config,
     parse_dnd_data,
-    save_config as _save_config_common,
+    save_config,
 )
+from cadbatchassistant.core.dwg_converter import require_oda_for_dwg
 from cadbatchassistant.core.pipeline import run_pipeline_files
 
 CONFIG_DIR = Path(os.environ.get("APPDATA") or Path.home()) / "CadFill"
@@ -42,14 +44,14 @@ def _software_dir() -> Path:
 TEMPLATES_DIR = _software_dir() / "templates"   # 图纸模板库：软件目录下 templates
 
 
-def _load_config() -> dict:
-    """读取「填表助手」面板配置。"""
-    return _load_config_common(CONFIG_FILE)
+def _load_panel_config() -> dict:
+    """读取「填表助手」面板配置（模板记忆）。"""
+    return load_config(CONFIG_FILE)
 
 
-def _save_config(data: dict) -> None:
+def _save_panel_config(data: dict) -> None:
     """写入「填表助手」面板配置。"""
-    _save_config_common(CONFIG_FILE, data)
+    save_config(CONFIG_FILE, data)
 
 
 class IsoFillApp(AsyncPanel):
@@ -57,6 +59,7 @@ class IsoFillApp(AsyncPanel):
         """构建「填表助手」面板；parent 为嵌入容器（如 Notebook 的 tab 页）。"""
         super().__init__(parent)
         self.scanned_files: list[str] = []
+        self._sheet_headers: dict[str, list[str]] = {}  # 工作表名 → 首行表头缓存
         self._build_ui()
         self._load_paths()
 
@@ -170,19 +173,22 @@ class IsoFillApp(AsyncPanel):
     def _refresh_sources(self) -> None:
         """读取数据表工作表与表头，刷新「工作表格」「匹配列」下拉；默认第一个/第一列。
 
-        工作表列表与表头分开读取：某个 sheet 为空（无表头）只清空匹配列，
-        不连带清空工作表格下拉。
+        一次打开工作簿同时取得工作表名与各表首行表头（load_sheet_meta），
+        避免 list_sheets + get_headers 的重复全量加载；某个 sheet 为空
+        （无表头）只清空匹配列，不连带清空工作表格下拉。
         """
         path = self.var_xlsx.get().strip()
         sheets: list[str] = []
+        headers: dict[str, list[str]] = {}
         if path and os.path.isfile(path):
             try:
-                from cadbatchassistant.core.parse_xlsx import (
-                    get_headers, list_sheets)
+                from cadbatchassistant.core.parse_xlsx import load_sheet_meta
 
-                sheets = list_sheets(path)
+                sheets, headers = load_sheet_meta(path)
             except Exception:  # noqa: BLE001 - 文件损坏/不可读时无工作表可选
                 sheets = []
+                headers = {}
+        self._sheet_headers = headers
         cur_sheet = self.var_sheet.get()
         if cur_sheet in sheets:
             sheet = cur_sheet
@@ -190,12 +196,7 @@ class IsoFillApp(AsyncPanel):
             sheet = sheets[0]  # 默认第一个
         else:
             sheet = None
-        cols: list[str] = []
-        if sheet:
-            try:
-                cols = get_headers(path, sheet)
-            except Exception:  # noqa: BLE001 - 该 sheet 为空/损坏时匹配列留空
-                cols = []
+        cols = self._sheet_headers.get(sheet, []) if sheet else []
         self.sheet_combo["values"] = sheets
         if cur_sheet in sheets:
             self.var_sheet.set(cur_sheet)
@@ -213,8 +214,16 @@ class IsoFillApp(AsyncPanel):
             self.var_match_col.set("")
 
     def _on_sheet_changed(self, _event=None) -> None:
-        """切换工作表后按该 sheet 表头刷新「匹配列」下拉。"""
-        self._refresh_sources()
+        """切换工作表后按该 sheet 表头刷新「匹配列」下拉（用缓存，不重新加载文件）。"""
+        cols = self._sheet_headers.get(self.var_sheet.get(), [])
+        self.match_combo["values"] = cols
+        cur_col = self.var_match_col.get()
+        if cur_col in cols:
+            self.var_match_col.set(cur_col)
+        elif cols:
+            self.var_match_col.set(cols[0])  # 默认第一列
+        else:
+            self.var_match_col.set("")
 
     # ---------------- 拖拽文件 ----------------
     @staticmethod
@@ -271,7 +280,7 @@ class IsoFillApp(AsyncPanel):
         """刷新下拉框并恢复上次选择（config.json 存模板文件名）。"""
         names = self._list_templates()
         self.tpl_combo["values"] = names
-        last = _load_config().get("template", "")
+        last = _load_panel_config().get("template", "")
         if last in names:
             self.var_template.set(last)
         elif names and not self.var_template.get():
@@ -301,7 +310,7 @@ class IsoFillApp(AsyncPanel):
             shutil.copy2(path, target)
             self._refresh_templates()
             self.var_template.set(name)
-            _save_config({"template": name})
+            _save_panel_config({"template": name})
         else:
             messagebox.showwarning("提示", "仅支持上传 .dwg/.dxf 文件")
 
@@ -319,7 +328,7 @@ class IsoFillApp(AsyncPanel):
             messagebox.showerror("删除失败", str(ex))
             return
         self._refresh_templates()
-        _save_config({"template": self.var_template.get()})
+        _save_panel_config({"template": self.var_template.get()})
 
     def _on_drop_upload_template(self, event) -> None:
         paths = self._parse_dnd_data(event.data)
@@ -392,9 +401,8 @@ class IsoFillApp(AsyncPanel):
         match_col = self.var_match_col.get().strip() or None
         files = list(self.scanned_files)
         out = self.var_out.get().strip()
-        app_cfg = _load_config_common(APP_CONFIG_FILE)
-        oda = app_cfg.get("oda", "").strip()
-        out_version = app_cfg.get("version", "ACAD2018")
+        oda = get_oda()
+        out_version = get_out_version()
 
         if not xlsx or not os.path.isfile(xlsx):
             messagebox.showwarning("提示", "请选择有效的数据表格文件")
@@ -408,14 +416,12 @@ class IsoFillApp(AsyncPanel):
         if not out:
             messagebox.showwarning("提示", "请设置输出目录")
             return
-        if any(f.lower().endswith(".dwg") for f in files) or template.lower().endswith(".dwg"):
-            if not oda or not os.path.isfile(oda):
-                messagebox.showerror(
-                    "缺少 ODA File Converter",
-                    "输入包含 DWG 文件，未找到 ODAFileConverter.exe，"
-                    "请安装或在「设置」页配置其路径。（仅 DXF 文件无需 ODA）",
-                )
-                return
+        has_dwg = (any(f.lower().endswith(".dwg") for f in files)
+                   or template.lower().endswith(".dwg"))
+        err = require_oda_for_dwg(has_dwg, oda)
+        if err:
+            messagebox.showerror("缺少 ODA File Converter", err)
+            return
 
         self.running = True
         self._cancel_event.clear()
@@ -427,30 +433,24 @@ class IsoFillApp(AsyncPanel):
         self._start_worker((xlsx, template, files, out, oda,
                             out_version, self._cancel_event, match_col, sheet))
 
-    def _run_worker(self, xlsx: str, template: str, files: list[str], out: str,
-                    oda: str, version: str, cancel, match_col: str | None,
-                    sheet: str | None) -> None:
-        success = False
-        try:
-            summary = run_pipeline_files(
-                xlsx, files, out, oda=oda or None, out_version=version,
-                emit=self._emit, cancel=cancel, template=template,
-                match_col=match_col, sheet=sheet,
-                progress=lambda p: self._emit("", p),
-            )
-            failed = summary.get("failed", [])
-            if failed:
-                self._emit(f"==== 完成 {summary['ok']}/{summary['count']} 张，"
-                           f"失败 {len(failed)} 张：{', '.join(failed)}，"
-                           f"输出见 {summary['output']} ====")
-            else:
-                self._emit(f"==== 全部完成：{summary['count']} 张图纸，"
-                           f"输出见 {summary['output']} ====")
-            success = not failed
-        except Exception as ex:  # noqa: BLE001
-            self._emit(f"处理中断：{ex}")
-        finally:
-            self.msg_queue.put(("__DONE__", success))
+    def _work(self, xlsx: str, template: str, files: list[str], out: str,
+              oda: str, version: str, cancel, match_col: str | None,
+              sheet: str | None) -> bool:
+        summary = run_pipeline_files(
+            xlsx, files, out, oda=oda or None, out_version=version,
+            emit=self._emit, cancel=cancel, template=template,
+            match_col=match_col, sheet=sheet,
+            progress=lambda p: self._emit("", p),
+        )
+        failed = summary.get("failed", [])
+        if failed:
+            self._emit(f"==== 完成 {summary['ok']}/{summary['count']} 张，"
+                       f"失败 {len(failed)} 张：{', '.join(failed)}，"
+                       f"输出见 {summary['output']} ====")
+        else:
+            self._emit(f"==== 全部完成：{summary['count']} 张图纸，"
+                       f"输出见 {summary['output']} ====")
+        return not failed
 
     def _on_finish(self, success: bool) -> None:
         """完成收尾：恢复按钮并弹窗汇总（与「改字助手」一致）。"""

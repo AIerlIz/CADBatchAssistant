@@ -17,8 +17,12 @@ import argparse
 import os
 import re
 import sys
-import tomllib
 from pathlib import Path
+
+try:
+    import tomllib  # Python 3.11+
+except ModuleNotFoundError:
+    import tomli as tomllib  # Python 3.9/3.10 本地打包回退
 
 # Windows 非中文系统（如 CI 的 en-US runner）管道输出默认用 cp1252，
 # print 中文会 UnicodeEncodeError；强制 UTF-8 输出

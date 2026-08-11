@@ -50,6 +50,32 @@ def save_config(config_file: str | Path, data: dict) -> None:
         pass
 
 
+# ---------------- 全局配置访问（ODA / DWG 输出版本 / 更新镜像） ----------------
+
+
+def load_app_config() -> dict:
+    """读取全局配置（ODA 路径、DWG 输出版本、更新镜像等），不存在时返回空 dict。"""
+    return load_config(APP_CONFIG_FILE)
+
+
+def save_app_config(updates: dict) -> dict:
+    """合并更新全局配置并保存（保留 update_ignore 等其他键），返回新配置。"""
+    cfg = load_config(APP_CONFIG_FILE)
+    cfg.update(updates)
+    save_config(APP_CONFIG_FILE, cfg)
+    return cfg
+
+
+def get_oda() -> str:
+    """全局配置中的 ODAFileConverter 路径（未配置时为空串）。"""
+    return str(load_app_config().get("oda", "")).strip()
+
+
+def get_out_version() -> str:
+    """全局配置中的 DWG 输出版本（默认 ACAD2018，与 dwg_converter 默认一致）。"""
+    return str(load_app_config().get("version", "ACAD2018")).strip() or "ACAD2018"
+
+
 def default_font_family() -> str:
     """Windows 上优先使用微软雅黑，保证中文显示清晰。"""
     try:
@@ -246,11 +272,13 @@ class AsyncPanel:
     self.worker / self.running / self._cancel_event，并启动 100ms 队列轮询
     与 vista 主题。子类职责：
     - 在 _build_ui 中创建 self.log_text（tk.Text）与 self.progress（ttk.Progressbar）
-    - 实现 _run_worker(*args) 后台任务体（工作线程中执行，用 self._emit 回报）
+    - 实现 _work(*args) -> bool 后台任务体（工作线程中执行，用 self._emit
+      回报；返回 True 表示成功，错误捕获与 sentinel 由基类 _run 统一处理）
     - 启动任务：置 self.running = True、self._cancel_event.clear()、复位按钮，
       然后 self._start_worker(args)
     - 可选覆盖 _on_finish(success) 做完成收尾（默认恢复按钮状态）
     - 统一关闭钩子 _on_close 已由基类提供（置停止标志，不销毁窗口）
+    - 任务体内用 self._is_cancelled() 轮询停止请求
 
     停止语义：self.running（布尔，任务体轮询检查）与 self._cancel_event
     （threading.Event，任务体可 wait 检查），_stop 时同时置位。
@@ -274,10 +302,28 @@ class AsyncPanel:
         return self._cancel_event
 
     def _start_worker(self, args: tuple) -> None:
-        """在后台线程运行 self._run_worker(*args)。"""
+        """在后台线程运行 self._run(*args)。"""
         self.worker = threading.Thread(
-            target=self._run_worker, args=args, daemon=True)
+            target=self._run, args=args, daemon=True)
         self.worker.start()
+
+    def _run(self, *args) -> None:
+        """后台线程模板：统一 try/except/finally 与 __DONE__ sentinel 收尾。
+
+        子类只需实现 _work(*args) -> bool（True 表示成功），错误捕获、
+        日志提示与 sentinel 上报由本方法统一处理，避免各面板重复样板。
+        """
+        success = False
+        try:
+            success = bool(self._work(*args))
+        except Exception as ex:  # noqa: BLE001 - 意外异常统一按失败处理
+            self._emit(f"处理中断：{ex}")
+        finally:
+            self.msg_queue.put(("__DONE__", success))
+
+    def _is_cancelled(self) -> bool:
+        """是否已请求停止（供任务体内轮询检查）。"""
+        return self._cancel_event.is_set()
 
     # ---- 主线程轮询（每 100ms 冲刷队列） ----
     def _poll_queue(self) -> None:

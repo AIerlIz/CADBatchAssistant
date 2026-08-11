@@ -116,12 +116,15 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
     for d in (before_dxf, filled_dxf):
         os.makedirs(d, exist_ok=True)
 
-    # 清理输出目录中本次同名旧文件，避免残留
+    # 清理输出目录中本次同名旧文件，避免残留；单个文件被占用/只读时不中断整批
     for n in names:
         for ext in (".DWG", ".dwg", ".dxf"):
             p = os.path.join(out_dir, n + ext)
             if os.path.isfile(p):
-                os.remove(p)
+                try:
+                    os.remove(p)
+                except OSError as ex:
+                    emit(f"[WARN] 清理旧输出失败（跳过，可能被占用或只读）: {p} ({ex})")
 
     # [1/4] DWG → DXF；DXF 直接复制
     _check_cancel(cancel)
@@ -176,7 +179,8 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
 
     failed = fill_all(before_dxf, filled_dxf, xlsx, specs, emit=emit,
                       progress=_fill_progress, match_col=match_col,
-                      sheet=sheet)
+                      sheet=sheet, cancel=cancel)
+    _check_cancel(cancel)  # 填表阶段被取消：中断整批，避免把未填充的图当作输出
     _report(progress, 75)
 
     # [4/4] 输出：DWG 输入转回 DWG；DXF 输入直接复制（失败的图跳过）

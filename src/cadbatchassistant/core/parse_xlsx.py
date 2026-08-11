@@ -61,6 +61,38 @@ def list_sheets(path: str | Path) -> list[str]:
     return names
 
 
+def load_sheet_meta(path: str | Path) -> tuple[list[str], dict[str, list[str]]]:
+    """一次打开数据表，返回 (工作表名列表, {工作表名: 首行表头列表})。
+
+    供 GUI 下拉刷新使用：替代 list_sheets + get_headers 的两次全量加载，
+    大表只解析一次。空工作表（无首行）表头记为 []。
+    """
+    p = str(path)
+    if p.lower().endswith(".xls") and not p.lower().endswith(".xlsx"):
+        import xlrd
+
+        book = xlrd.open_workbook(p)
+        names = list(book.sheet_names())
+        headers: dict[str, list[str]] = {}
+        for name in names:
+            ws = book.sheet_by_name(name)
+            headers[name] = _make_cols(ws.row_values(0)) if ws.nrows > 0 else []
+        return names, headers
+    import openpyxl
+
+    wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
+    try:
+        names = list(wb.sheetnames)
+        headers = {}
+        for name in names:
+            ws = wb[name]
+            row = next(ws.iter_rows(values_only=True, max_row=1), None)
+            headers[name] = _make_cols(list(row)) if row is not None else []
+        return names, headers
+    finally:
+        wb.close()
+
+
 def _read_raw_rows(path: str, sheet: str | None = None) -> tuple[list[list], str]:
     """读取指定工作表的原始行列表；返回 (rows, 后端类型 'xlsx'|'xls')。
 

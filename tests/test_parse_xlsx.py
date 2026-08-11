@@ -155,5 +155,59 @@ class ListSheetsTest(unittest.TestCase):
         self.assertEqual(parse_xlsx.get_headers(p), ["图号", "名称"])
 
 
+class LoadSheetMetaTest(unittest.TestCase):
+    """load_sheet_meta：一次打开同时返回工作表名与各表首行表头（GUI 下拉刷新用）。"""
+
+    def setUp(self):
+        self._tmp = Path(tempfile.mkdtemp(prefix="px_meta_"))
+
+    def tearDown(self):
+        for f in self._tmp.iterdir():
+            f.unlink(missing_ok=True)
+        self._tmp.rmdir()
+
+    def test_names_and_headers(self):
+        p = self._tmp / "multi.xlsx"
+        _make_xlsx_multi(p, {
+            "数据表": (["图号", "名称"], [["A-1", "图1"]]),
+            "说明": (["说明"], [["xxx"]]),
+        })
+        names, headers = parse_xlsx.load_sheet_meta(p)
+        self.assertEqual(names, ["数据表", "说明"])
+        self.assertEqual(headers["数据表"], ["图号", "名称"])
+        self.assertEqual(headers["说明"], ["说明"])
+
+    def test_empty_sheet_header_empty(self):
+        """空工作表（无首行）表头记为 []，不影响其他表。"""
+        p = self._tmp / "multi.xlsx"
+        _make_xlsx_multi(p, {
+            "数据表": (["图号"], [["A-1"]]),
+            "空表": ([], []),
+        })
+        names, headers = parse_xlsx.load_sheet_meta(p)
+        self.assertEqual(names, ["数据表", "空表"])
+        self.assertEqual(headers["数据表"], ["图号"])
+        self.assertEqual(headers["空表"], [])
+
+    def test_consistent_with_list_sheets_and_get_headers(self):
+        """与旧接口（list_sheets / get_headers）结果一致，行为等价。"""
+        p = self._tmp / "multi.xlsx"
+        _make_xlsx_multi(p, {
+            "数据表": (["图号", "名称"], [["A-1", "图1"]]),
+            "其他": (["X"], [["1"]]),
+        })
+        names, headers = parse_xlsx.load_sheet_meta(p)
+        self.assertEqual(names, parse_xlsx.list_sheets(p))
+        for name in names:
+            self.assertEqual(headers[name], parse_xlsx.get_headers(p, sheet=name))
+
+    def test_dup_cols_suffix(self):
+        """重复列名加 _2 后缀，与 get_headers 一致。"""
+        p = self._tmp / "dup.xlsx"
+        _make_xlsx(p, ["REV", "REV"], [["1", "2"]])
+        _, headers = parse_xlsx.load_sheet_meta(p)
+        self.assertEqual(headers["Sheet"], ["REV", "REV_2"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -12,12 +12,11 @@ from tkinter import messagebox, ttk
 
 from cadbatchassistant import __version__
 from cadbatchassistant.common import (
-    APP_CONFIG_FILE,
     OUT_VERSION_CHOICES,
     build_oda_row,
     check_oda,
-    load_config,
-    save_config,
+    load_app_config,
+    save_app_config,
 )
 from cadbatchassistant.core import updater
 
@@ -107,7 +106,7 @@ class SettingsPanel:
 
     # ---------------- 配置 ----------------
     def _load(self) -> None:
-        cfg = load_config(APP_CONFIG_FILE)
+        cfg = load_app_config()
         if cfg.get("oda"):
             self.var_oda.set(cfg["oda"])
         self.var_version.set(cfg.get("version", OUT_VERSION_CHOICES[0]))
@@ -122,13 +121,11 @@ class SettingsPanel:
 
     def _on_change(self, _event=None) -> None:
         """自动保存到全局配置（合并写入，保留 update_ignore 等其他配置项）。"""
-        cfg = load_config(APP_CONFIG_FILE)
-        cfg.update({
+        save_app_config({
             "oda": self.var_oda.get().strip(),
             "version": self.var_version.get(),
             "update_mirror": self.var_update_mirror.get().strip(),
         })
-        save_config(APP_CONFIG_FILE, cfg)
 
     # ---------------- 软件更新 ----------------
     def _check_update(self) -> None:

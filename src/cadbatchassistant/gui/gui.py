@@ -25,30 +25,17 @@ from cadbatchassistant.common import (
     build_log_panel,
     build_output_row,
     dedup_paths as _dedup_paths_common,
-    load_config as _load_config_common,
+    get_oda,
+    get_out_version,
     parse_dnd_data,
-    save_config as _save_config_common,
 )
 from cadbatchassistant.core.dxf_processor import ReplaceRule, process_dxf_file
 from cadbatchassistant.core.dwg_converter import (
     ODAError,
     convert_dwg_batch_to_dxf,
     convert_dxf_batch_to_dwg,
+    require_oda_for_dwg,
 )
-
-# 持久化配置（记住上次选择），存放在用户配置目录
-CONFIG_DIR = Path(os.environ.get("APPDATA") or Path.home()) / "CADTextTool"
-CONFIG_FILE = CONFIG_DIR / "config.json"
-
-
-def _load_config() -> dict:
-    """兼容入口：读取「改字助手」面板配置。"""
-    return _load_config_common(CONFIG_FILE)
-
-
-def _save_config(data: dict) -> None:
-    """兼容入口：写入「改字助手」面板配置。"""
-    _save_config_common(CONFIG_FILE, data)
 
 
 class EditableTreeview(ttk.Treeview):
@@ -454,16 +441,12 @@ class CadTextApp(AsyncPanel):
         if not out:
             messagebox.showwarning("提示", "请设置输出目录")
             return
-        app_cfg = _load_config_common(APP_CONFIG_FILE)
-        oda = app_cfg.get("oda", "").strip()
-        out_version = app_cfg.get("version", "ACAD2018")
+        oda = get_oda()
+        out_version = get_out_version()
         if self.scanned_dwg and not self.var_dry.get():
-            if not oda or not os.path.isfile(oda):
-                messagebox.showerror(
-                    "缺少 ODA File Converter",
-                    "输入包含 DWG 文件，未找到 ODAFileConverter.exe，"
-                    "请安装或在「设置」页配置其路径。（仅 DXF 文件无需 ODA）",
-                )
+            err = require_oda_for_dwg(True, oda)
+            if err:
+                messagebox.showerror("缺少 ODA File Converter", err)
                 return
 
         self.running = True
@@ -485,23 +468,19 @@ class CadTextApp(AsyncPanel):
                             oda, out_version, work_in))
 
     # ---------------- 批处理（后台线程） ----------------
-    def _run_worker(self, inp: str, out: str, rules: list[ReplaceRule],
-                dry_run: bool, oda: str, out_version: str,
-                work_in: str | None = None) -> None:
-        success = False
+    def _work(self, inp: str, out: str, rules: list[ReplaceRule],
+              dry_run: bool, oda: str, out_version: str,
+              work_in: str | None = None) -> bool:
         try:
             self._run_batch(inp, out, rules, dry_run, oda, out_version)
-            success = self.running  # 中途被停止时不算完成
+            success = not self._is_cancelled()  # 中途被停止时不算完成
             if success:
                 total = len(self.scanned_dxf) + len(self.scanned_dwg)
                 self._emit(f"==== 全部完成：{total} 个文件，输出见 {out} ====")
-        except Exception as ex:  # noqa: BLE001
-            self._emit(f"处理中断：{ex}")
+            return success
         finally:
             if work_in:
                 shutil.rmtree(work_in, ignore_errors=True)
-            # sentinel：由主线程 _poll_queue 收尾，避免跨线程调用 tkinter
-            self.msg_queue.put(("__DONE__", success))
 
     def _run_batch(self, inp: str, out: str, rules: list[ReplaceRule],
                    dry_run: bool, oda: str, out_version: str) -> None:
@@ -516,7 +495,7 @@ class CadTextApp(AsyncPanel):
 
         # ---- DXF 直接处理 ----
         for src in dxf_files:
-            if not self.running:
+            if self._is_cancelled():
                 self._emit("已停止。")
                 return
             dst = out_dir / src.name
@@ -534,7 +513,7 @@ class CadTextApp(AsyncPanel):
                 self._emit(f"[DXF] {src.name}: 错误 - {res.error}")
 
         # ---- DWG 经 ODA 转换处理 ----
-        if dwg_files and self.running:
+        if dwg_files and not self._is_cancelled():
             if dry_run:
                 for src in dwg_files:
                     done += 1
@@ -552,7 +531,7 @@ class CadTextApp(AsyncPanel):
                 self._emit(f"正在用 ODA 转换 {len(dwg_files)} 个 DWG → DXF ...")
                 convert_dwg_batch_to_dxf(oda, inp, mid1, dwg_names, out_version)
                 for f in sorted(mid1.glob("*.dxf")):
-                    if not self.running:
+                    if self._is_cancelled():
                         self._emit("已停止。")
                         return
                     res = process_dxf_file(f, mid2 / f.name, rules)
@@ -566,7 +545,7 @@ class CadTextApp(AsyncPanel):
                     else:
                         total_fail += 1
                         self._emit(f"[DWG] {f.stem}.dwg: 错误 - {res.error}")
-                if self.running and total_fail == 0:
+                if not self._is_cancelled() and total_fail == 0:
                     self._emit("正在用 ODA 转换处理后的 DXF → DWG ...")
                     convert_dxf_batch_to_dwg(oda, mid2, out_dir, [f.name for f in mid1.glob("*.dxf")], out_version)
             except ODAError as ex:

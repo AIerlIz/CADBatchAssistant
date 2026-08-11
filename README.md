@@ -81,11 +81,13 @@ uv run python main.py  # 启动统一窗口（两个 tab 切换）
 运行：
 
 ```bash
+uv run python scripts/inject_version.py   # 自动注入版本号（本地取 pyproject.toml 的 version）
 uv run pyinstaller --noconfirm --clean CADBatchAssistant.spec
 ```
 
 产物在 `dist\CAD批处理助手.exe`（单文件、免安装、无控制台窗口），包含「改字助手」与「填表助手」两个 tab。
 
+- **版本号编译时自动注入**：CI 发版时从 tag（如 `v1.0.1`）写入应用内 `__version__`，本地打包从 `pyproject.toml` 读取；无需手动同步版本号
 - 填表助手的文件拖放依赖 `tkinterdnd2`：`CADBatchAssistant.spec` 已手动收集其 `tkdnd` 扩展目录（PyInstaller hook-contrib 未覆盖）
 - DWG 处理仍需目标机器安装 [ODA File Converter](https://www.opendesign.com/guestfiles/oda_file_converter)（纯 DXF 流程不需要）
 
@@ -99,9 +101,10 @@ uv run pyinstaller --noconfirm --clean CADBatchAssistant.spec
 
 ### 发布新版本（维护者）
 
-1. 更新版本号：`pyproject.toml` 的 `version` 与 `src/cadbatchassistant/__init__.py` 的 `__version__` 保持一致
-2. 推送 tag `v1.1.0`（格式 `v` + 三位数字版本）：GitHub Actions 自动构建 exe 并发布到 Release（资产名 `CADBatchAssistant.exe`）
-3. 用户端启动后即会提示更新；未自动提示时可手动「检查更新」
+1. 推送 tag `v1.1.0`（格式 `v` + 三位数字版本）：GitHub Actions 构建时自动从 tag 注入版本号、构建 exe 并发布到 Release（资产名 `CADBatchAssistant.exe`）
+2. 用户端启动后即会提示更新；未自动提示时可手动「检查更新」
+
+> 版本号以 tag 为准：CI 构建时自动写入 `__version__`，无需手动改 `pyproject.toml` / `__init__.py`（`pyproject.toml` 的 `version` 仅作本地打包回退）。tag 版本需高于当前版本，用户端才会提示更新。
 
 > 更新查询走 `https://api.github.com/repos/AIerlIz/CADBatchAssistant/releases/latest`，仅识别资产 `CADBatchAssistant.exe`。
 

@@ -30,6 +30,10 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
+      - name: Inject version from tag
+        # 发版 tag（如 v1.0.1）自动写入 __version__，无需手动同步版本号
+        run: uv run python scripts/inject_version.py
+
       - name: Build EXE
         run: uv run pyinstaller --noconfirm --clean CADBatchAssistant.spec
 

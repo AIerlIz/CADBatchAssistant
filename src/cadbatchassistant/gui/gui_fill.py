@@ -66,53 +66,58 @@ class IsoFillApp(AsyncPanel):
         main = ttk.Frame(self._parent, padding=8)
         main.pack(fill="both", expand=True)
 
-        # 1. 输入区
+        # 1. 输入区（与「改字助手」一致：仅选择文件 + 文件列表）
         in_frame = ttk.LabelFrame(main, text="输入", padding=8)
         in_frame.pack(fill="x", **pad)
 
-        ttk.Label(in_frame, text="数据表:").grid(row=0, column=0, sticky="w")
-        self.var_xlsx = tk.StringVar()
-        e_xlsx = ttk.Entry(in_frame, textvariable=self.var_xlsx)
-        e_xlsx.grid(row=0, column=1, sticky="ew", padx=4)
-        e_xlsx.drop_target_register(DND_FILES)
-        e_xlsx.dnd_bind("<<Drop>>",
-                        lambda e: self._on_drop_single(e, self.var_xlsx,
-                                                       (".xlsx", ".xls")))
-        ttk.Button(in_frame, text="浏览", command=self._browse_xlsx).grid(
-            row=0, column=2, padx=4)
-
-        # 图纸模板（模板库下拉选择）
-        ttk.Label(in_frame, text="图纸模板:").grid(row=1, column=0, sticky="w", pady=(6, 0))
-        self.var_template = tk.StringVar()
-        self.tpl_combo = ttk.Combobox(in_frame, textvariable=self.var_template,
-                                      state="readonly", width=16)
-        self.tpl_combo.grid(row=1, column=1, sticky="ew", padx=4, pady=(6, 0))
-        self.tpl_combo.drop_target_register(DND_FILES)
-        self.tpl_combo.dnd_bind("<<Drop>>", self._on_drop_upload_template)
-        ttk.Button(in_frame, text="上传", command=self._upload_template).grid(
-            row=1, column=2, padx=4, pady=(6, 0))
-        ttk.Button(in_frame, text="删除", command=self._delete_template).grid(
-            row=1, column=3, padx=4, pady=(6, 0))
-
-        # 图纸文件多选列表（DWG/DXF）
-        top2 = ttk.Frame(in_frame)
-        top2.grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 0))
-        ttk.Button(top2, text="选择文件", command=self._browse_input_files).pack(side="left")
+        top = ttk.Frame(in_frame)
+        top.pack(fill="x", pady=(0, 4))
+        ttk.Button(top, text="选择文件", command=self._browse_input_files).pack(side="left")
         self.var_scan_info = tk.StringVar(value="尚未选择文件")
-        ttk.Label(top2, textvariable=self.var_scan_info).pack(side="left", padx=10)
+        ttk.Label(top, textvariable=self.var_scan_info).pack(side="left", padx=10)
 
-        list_frame = ttk.Frame(in_frame)
-        list_frame.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(4, 0))
         self.file_list, self._file_menu = build_file_list(
-            list_frame, height=6, on_delete=self._delete_selected_files,
-            fill="x", width=60)
+            in_frame, height=6, on_delete=self._delete_selected_files,
+            fill="both", width=60)
         self.file_list.bind("<Delete>", lambda _e: self._delete_selected_files())
         # 拖拽 DWG/DXF 到列表追加
         self.file_list.drop_target_register(DND_FILES)
         self.file_list.dnd_bind("<<Drop>>", self._on_drop_files)
-        in_frame.columnconfigure(1, weight=1)
 
-        # 2. 输出区
+        # 2. 数据源区（数据表 + 图纸模板，置于输入区正下方）
+        src_frame = ttk.LabelFrame(main, text="数据源", padding=8)
+        src_frame.pack(fill="x", **pad)
+
+        # 数据表（xlsx/xls）
+        row_xlsx = ttk.Frame(src_frame)
+        row_xlsx.pack(fill="x")
+        ttk.Label(row_xlsx, text="数据表:").pack(side="left")
+        self.var_xlsx = tk.StringVar()
+        e_xlsx = ttk.Entry(row_xlsx, textvariable=self.var_xlsx)
+        e_xlsx.pack(side="left", fill="x", expand=True, padx=4)
+        e_xlsx.drop_target_register(DND_FILES)
+        e_xlsx.dnd_bind("<<Drop>>",
+                        lambda e: self._on_drop_single(e, self.var_xlsx,
+                                                       (".xlsx", ".xls")))
+        ttk.Button(row_xlsx, text="浏览", command=self._browse_xlsx).pack(
+            side="left", padx=4)
+
+        # 图纸模板（模板库下拉选择）
+        row_tpl = ttk.Frame(src_frame)
+        row_tpl.pack(fill="x", pady=(6, 0))
+        ttk.Label(row_tpl, text="图纸模板:").pack(side="left")
+        self.var_template = tk.StringVar()
+        self.tpl_combo = ttk.Combobox(row_tpl, textvariable=self.var_template,
+                                      state="readonly", width=16)
+        self.tpl_combo.pack(side="left", fill="x", expand=True, padx=4)
+        self.tpl_combo.drop_target_register(DND_FILES)
+        self.tpl_combo.dnd_bind("<<Drop>>", self._on_drop_upload_template)
+        ttk.Button(row_tpl, text="上传", command=self._upload_template).pack(
+            side="left", padx=4)
+        ttk.Button(row_tpl, text="删除", command=self._delete_template).pack(
+            side="left", padx=4)
+
+        # 3. 输出区
         out_frame = ttk.LabelFrame(main, text="输出", padding=8)
         out_frame.pack(fill="x", **pad)
         self.var_out = tk.StringVar()
@@ -123,7 +128,7 @@ class IsoFillApp(AsyncPanel):
             entry_hook=lambda e: (e.drop_target_register(DND_FILES),
                                   e.dnd_bind("<<Drop>>", self._on_drop_out_dir)))
 
-        # 3. 运行区（ODA 路径与输出版本已移至「设置」tab，全局共享）
+        # 4. 运行区（ODA 路径与输出版本已移至「设置」tab，全局共享）
         run_frame = ttk.Frame(main)
         run_frame.pack(fill="x", **pad)
         self.btn_start = ttk.Button(run_frame, text="开始处理", command=self._start)
@@ -134,7 +139,7 @@ class IsoFillApp(AsyncPanel):
         self.progress = ttk.Progressbar(run_frame, mode="determinate", maximum=100)
         self.progress.pack(side="left", fill="x", expand=True, padx=8)
 
-        # 4. 日志区
+        # 5. 日志区
         log_frame, self.log_text = build_log_panel(main, height=8)
         log_frame.pack(fill="both", expand=True, **pad)
 

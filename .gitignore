@@ -1,0 +1,12 @@
+build/
+dist/
+*.spec
+!CADBatchAssistant.spec
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.reasonix/
+reasonix.toml
+.pytest_cache/
+.dev_tmp/

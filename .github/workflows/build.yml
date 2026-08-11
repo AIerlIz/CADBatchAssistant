@@ -1,0 +1,55 @@
+name: Build & Release EXE
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Build EXE
+        run: uv run pyinstaller --noconfirm --clean CADBatchAssistant.spec
+
+      - name: Rename artifact
+        shell: pwsh
+        run: Rename-Item -Path "dist/CAD批处理助手.exe" -NewName "CADBatchAssistant.exe"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CADBatchAssistant-exe
+          path: dist/CADBatchAssistant.exe
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh release delete "${{ github.ref_name }}" --yes --cleanup-tag 2>$null
+          gh release create "${{ github.ref_name }}" "dist/CADBatchAssistant.exe" --generate-notes --title "CADBatchAssistant ${{ github.ref_name }}"

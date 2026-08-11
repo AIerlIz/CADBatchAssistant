@@ -64,7 +64,9 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
                  oda: str | None = None, out_version: str = "ACAD2004",
                  workdir: str | None = None, emit=print,
                  cancel=None, inputs: list[str] | None = None,
-                 progress=None, template: str | None = None) -> dict:
+                 progress=None, template: str | None = None,
+                 match_col: str | None = None,
+                 sheet: str | None = None) -> dict:
     """执行完整流程，返回摘要 dict。
 
     xlsx        : 数据表路径
@@ -79,6 +81,8 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
     progress    : 进度回调 progress(percent)
     template    : 图纸模板文件（单个 .dwg/.dxf，已填好的图框样例），必填；
                   任取一张处理图纸作"修改前"与之 diff 学习规格并广播到全部图纸
+    match_col   : 数据表中图纸名列（None 默认第一列）
+    sheet       : 数据表中工作表名（None 默认第一个）
     """
     names = sorted(inputs) if inputs else _names_from_dir(before_dir)
     if not names:
@@ -139,7 +143,7 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
     t_dxf = _template_to_dxf(template, oda_exe, tmp, out_version, emit)
     from cadbatchassistant.core.learn_spec import scan_placeholders
 
-    one_spec = scan_placeholders(t_dxf, xlsx)
+    one_spec = scan_placeholders(t_dxf, xlsx, sheet)
     n_fields = sum(len(v) for v in one_spec.values())
     if n_fields == 0:
         # 不中断：警告并按无字段处理（输出为原图），便于排查模板
@@ -171,7 +175,8 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
         _report(progress, 50 + int(done / max(total, 1) * 25))
 
     failed = fill_all(before_dxf, filled_dxf, xlsx, specs, emit=emit,
-                      progress=_fill_progress)
+                      progress=_fill_progress, match_col=match_col,
+                      sheet=sheet)
     _report(progress, 75)
 
     # [4/4] 输出：DWG 输入转回 DWG；DXF 输入直接复制（失败的图跳过）
@@ -203,7 +208,9 @@ def run_pipeline_files(xlsx: str, files: list[str], out_dir: str,
                        oda: str | None = None, out_version: str = "ACAD2004",
                        emit=print, cancel=None, progress=None,
                        workdir: str | None = None,
-                       template: str | None = None) -> dict:
+                       template: str | None = None,
+                       match_col: str | None = None,
+                       sheet: str | None = None) -> dict:
     """处理选中的文件列表（DWG/DXF 混合）。
 
     把选中文件复制到临时输入目录后调用 run_pipeline(inputs=..., template=...)。
@@ -221,7 +228,8 @@ def run_pipeline_files(xlsx: str, files: list[str], out_dir: str,
     return run_pipeline(xlsx, before_dir, out_dir, oda=oda,
                         out_version=out_version, workdir=tmp,
                         emit=emit, cancel=cancel, inputs=stems,
-                        progress=progress, template=template)
+                        progress=progress, template=template,
+                        match_col=match_col, sheet=sheet)
 
 
 def main() -> None:
@@ -234,10 +242,15 @@ def main() -> None:
     ap.add_argument("--oda", default=None, help="ODAFileConverter.exe 路径（默认自动探测）")
     ap.add_argument("--template", required=True, help="图纸模板文件（已填好的 .dwg/.dxf 样例）")
     ap.add_argument("--version", default="ACAD2004", help="输出 DWG 版本（默认 ACAD2004）")
+    ap.add_argument("--match-col", default=None,
+                    help="数据表中图纸名列（默认第一列）")
+    ap.add_argument("--sheet", default=None,
+                    help="数据表中工作表名（默认第一个）")
     args = ap.parse_args()
     summary = run_pipeline(args.xlsx, args.before, args.out,
                            oda=args.oda, out_version=args.version,
-                           template=args.template)
+                           template=args.template,
+                           match_col=args.match_col, sheet=args.sheet)
     print("\n完成:", summary)
 
 

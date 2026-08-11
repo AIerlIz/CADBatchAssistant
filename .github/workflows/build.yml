@@ -44,11 +44,8 @@ jobs:
           }
 
       - name: Build EXE
+        # spec 输出名即 Release 资产名（CADBatchAssistant.exe），本地与 CI 产物一致
         run: uv run pyinstaller --noconfirm --clean CADBatchAssistant.spec
-
-      - name: Rename artifact
-        shell: pwsh
-        run: Rename-Item -Path "dist/CAD批处理助手.exe" -NewName "CADBatchAssistant.exe"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

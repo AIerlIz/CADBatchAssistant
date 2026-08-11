@@ -45,29 +45,66 @@ def _make_cols(header: list) -> list[str]:
     return cols
 
 
-def _read_raw_rows(path: str) -> tuple[list[list], str]:
-    """读取首表原始行列表；返回 (rows, 后端类型 'xlsx'|'xls')。"""
+def list_sheets(path: str | Path) -> list[str]:
+    """返回数据表全部工作表名（供 GUI 下拉选择）。"""
     p = str(path)
     if p.lower().endswith(".xls") and not p.lower().endswith(".xlsx"):
-        return _read_raw_rows_xls(p), "xls"
-    return _read_raw_rows_xlsx(p), "xlsx"
+        import xlrd
+
+        book = xlrd.open_workbook(p)
+        return list(book.sheet_names())
+    import openpyxl
+
+    wb = openpyxl.load_workbook(p, read_only=True)
+    names = list(wb.sheetnames)
+    wb.close()
+    return names
 
 
-def _read_raw_rows_xlsx(path: str) -> list[list]:
+def _read_raw_rows(path: str, sheet: str | None = None) -> tuple[list[list], str]:
+    """读取指定工作表的原始行列表；返回 (rows, 后端类型 'xlsx'|'xls')。
+
+    sheet 为工作表名，None 时取第一个（向后兼容）。
+    """
+    p = str(path)
+    if p.lower().endswith(".xls") and not p.lower().endswith(".xlsx"):
+        return _read_raw_rows_xls(p, sheet), "xls"
+    return _read_raw_rows_xlsx(p, sheet), "xlsx"
+
+
+def _read_raw_rows_xlsx(path: str, sheet: str | None = None) -> list[list]:
     import openpyxl
 
     wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
-    ws = wb.worksheets[0]
-    rows = [list(r) for r in ws.iter_rows(values_only=True)]
-    wb.close()
+    try:
+        if sheet is None:
+            ws = wb.worksheets[0]
+        else:
+            if sheet not in wb.sheetnames:
+                raise ValueError(
+                    f"数据表中不存在工作表「{sheet}」，可用："
+                    + ("、".join(wb.sheetnames) if wb.sheetnames else "(无)"))
+            ws = wb[sheet]
+        rows = [list(r) for r in ws.iter_rows(values_only=True)]
+    finally:
+        wb.close()
     return rows
 
 
-def _read_raw_rows_xls(path: str) -> list[list]:
+def _read_raw_rows_xls(path: str, sheet: str | None = None) -> list[list]:
     import xlrd
 
     book = xlrd.open_workbook(path)
-    ws = book.sheet_by_index(0)
+    if sheet is None:
+        ws = book.sheet_by_index(0)
+    else:
+        try:
+            ws = book.sheet_by_name(sheet)
+        except xlrd.biffh.XLRDError:
+            names = book.sheet_names()
+            raise ValueError(
+                f"数据表中不存在工作表「{sheet}」，可用："
+                + ("、".join(names) if names else "(无)")) from None
     rows: list[list] = []
     for r in range(ws.nrows):
         row = []
@@ -84,20 +121,33 @@ def _read_raw_rows_xls(path: str) -> list[list]:
     return rows
 
 
-def get_headers(path: str | Path) -> list[str]:
-    """返回数据表首行列名列表（与解析列名逻辑一致）。"""
-    rows, _ = _read_raw_rows(path)
+def get_headers(path: str | Path, sheet: str | None = None) -> list[str]:
+    """返回指定工作表首行列名列表（与解析列名逻辑一致）。"""
+    rows, _ = _read_raw_rows(path, sheet)
     if not rows:
         raise ValueError(f"空表: {path}")
     return _make_cols(rows[0])
 
 
-def _build_records(raw_rows: list[list], path: str) -> dict[str, dict[str, str]]:
-    """由原始行列表构建 {图纸名: {列名: 值}}；首行为表头。"""
+def _build_records(raw_rows: list[list], path: str,
+                   match_col: str | None = None) -> dict[str, dict[str, str]]:
+    """由原始行列表构建 {图纸名: {列名: 值}}；首行为表头。
+
+    match_col：指定哪一列作为图纸名（匹配键）；None 时默认第一列（向后兼容）。
+    """
     if not raw_rows:
         raise ValueError(f"空表: {path}")
     header = raw_rows[0]
     cols = _make_cols(header)
+    if match_col is None:
+        key_idx = 0
+    else:
+        try:
+            key_idx = cols.index(match_col)
+        except ValueError:
+            raise ValueError(
+                f"数据表中不存在匹配列「{match_col}」，可用列："
+                + ("、".join(cols) if cols else "(空表头)")) from None
 
     result: dict[str, dict[str, str]] = {}
     for row in raw_rows[1:]:
@@ -120,7 +170,7 @@ def _build_records(raw_rows: list[list], path: str) -> dict[str, dict[str, str]]
             else:
                 record[col] = str(raw).strip()
 
-        name = record.get(cols[0], "")
+        name = record.get(cols[key_idx], "")
         if not name:
             continue
         stem = Path(name).stem if name.lower().endswith((".dwg", ".dxf")) else name
@@ -128,22 +178,30 @@ def _build_records(raw_rows: list[list], path: str) -> dict[str, dict[str, str]]
     return result
 
 
-def _load_xlsx(path: str) -> dict[str, dict[str, str]]:
+def _load_xlsx(path: str, match_col: str | None = None,
+               sheet: str | None = None) -> dict[str, dict[str, str]]:
     """openpyxl 后端：.xlsx / .xlsm 等。"""
-    return _build_records(_read_raw_rows_xlsx(path), path)
+    return _build_records(_read_raw_rows_xlsx(path, sheet), path, match_col)
 
 
-def _load_xls(path: str) -> dict[str, dict[str, str]]:
+def _load_xls(path: str, match_col: str | None = None,
+              sheet: str | None = None) -> dict[str, dict[str, str]]:
     """xlrd 后端：旧版 .xls（BIFF）。"""
-    return _build_records(_read_raw_rows_xls(path), path)
+    return _build_records(_read_raw_rows_xls(path, sheet), path, match_col)
 
 
-def load_xlsx(path: str | Path) -> dict[str, dict[str, str]]:
-    """读取数据表（.xlsx/.xlsm 或 .xls），返回 {图纸名: {列名: 值}}。"""
+def load_xlsx(path: str | Path,
+              match_col: str | None = None,
+              sheet: str | None = None) -> dict[str, dict[str, str]]:
+    """读取数据表（.xlsx/.xlsm 或 .xls），返回 {图纸名: {列名: 值}}。
+
+    match_col：图纸名列（默认第一列，向后兼容）。
+    sheet    ：工作表名（默认第一个，向后兼容）。
+    """
     p = str(path)
     if p.lower().endswith(".xls") and not p.lower().endswith(".xlsx"):
-        return _load_xls(p)
-    return _load_xlsx(p)
+        return _load_xls(p, match_col, sheet)
+    return _load_xlsx(p, match_col, sheet)
 
 
 if __name__ == "__main__":

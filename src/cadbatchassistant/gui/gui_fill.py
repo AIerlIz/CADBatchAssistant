@@ -102,6 +102,21 @@ class IsoFillApp(AsyncPanel):
         ttk.Button(row_xlsx, text="浏览", command=self._browse_xlsx).pack(
             side="left", padx=4)
 
+        # 工作表 + 匹配列（同一行）
+        row_sheet = ttk.Frame(src_frame)
+        row_sheet.pack(fill="x", pady=(6, 0))
+        ttk.Label(row_sheet, text="工作表:").pack(side="left")
+        self.var_sheet = tk.StringVar()
+        self.sheet_combo = ttk.Combobox(row_sheet, textvariable=self.var_sheet,
+                                        state="readonly", width=16)
+        self.sheet_combo.pack(side="left", fill="x", expand=True, padx=4)
+        self.sheet_combo.bind("<<ComboboxSelected>>", self._on_sheet_changed)
+        ttk.Label(row_sheet, text="匹配列:").pack(side="left")
+        self.var_match_col = tk.StringVar()
+        self.match_combo = ttk.Combobox(row_sheet, textvariable=self.var_match_col,
+                                        state="readonly", width=16)
+        self.match_combo.pack(side="left", fill="x", expand=True, padx=4)
+
         # 图纸模板（模板库下拉选择）
         row_tpl = ttk.Frame(src_frame)
         row_tpl.pack(fill="x", pady=(6, 0))
@@ -150,6 +165,44 @@ class IsoFillApp(AsyncPanel):
         )
         if f:
             self.var_xlsx.set(f)
+            self._refresh_sources()
+
+    def _refresh_sources(self) -> None:
+        """读取数据表工作表与表头，刷新「工作表」「匹配列」下拉；默认第一个/第一列。"""
+        path = self.var_xlsx.get().strip()
+        sheets: list[str] = []
+        cols: list[str] = []
+        if path and os.path.isfile(path):
+            try:
+                from cadbatchassistant.core.parse_xlsx import (
+                    get_headers, list_sheets)
+
+                sheets = list_sheets(path)
+                sheet = (self.var_sheet.get()
+                         if self.var_sheet.get() in sheets else None)
+                cols = get_headers(path, sheet)
+            except Exception:  # noqa: BLE001 - 空表/损坏时下拉留空，运行阶段再报错
+                sheets, cols = [], []
+        cur_sheet = self.var_sheet.get()
+        self.sheet_combo["values"] = sheets
+        if cur_sheet in sheets:
+            self.var_sheet.set(cur_sheet)
+        elif sheets:
+            self.var_sheet.set(sheets[0])  # 默认第一个
+        else:
+            self.var_sheet.set("")
+        cur_col = self.var_match_col.get()
+        self.match_combo["values"] = cols
+        if cur_col in cols:
+            self.var_match_col.set(cur_col)
+        elif cols:
+            self.var_match_col.set(cols[0])  # 默认第一列
+        else:
+            self.var_match_col.set("")
+
+    def _on_sheet_changed(self, _event=None) -> None:
+        """切换工作表后按该 sheet 表头刷新「匹配列」下拉。"""
+        self._refresh_sources()
 
     # ---------------- 拖拽文件 ----------------
     @staticmethod
@@ -163,6 +216,8 @@ class IsoFillApp(AsyncPanel):
                     if p.lower().endswith(exts)), None)
         if hit is not None:
             var.set(hit)
+            if var is self.var_xlsx:
+                self._refresh_sources()
         elif paths:
             messagebox.showwarning("提示", f"仅支持 {', '.join(exts)} 文件")
 
@@ -321,6 +376,8 @@ class IsoFillApp(AsyncPanel):
         xlsx = self.var_xlsx.get().strip()
         tpl_name = self.var_template.get().strip()
         template = os.path.join(TEMPLATES_DIR, tpl_name) if tpl_name else ""
+        sheet = self.var_sheet.get().strip() or None
+        match_col = self.var_match_col.get().strip() or None
         files = list(self.scanned_files)
         out = self.var_out.get().strip()
         app_cfg = _load_config_common(APP_CONFIG_FILE)
@@ -356,15 +413,17 @@ class IsoFillApp(AsyncPanel):
         self.log_text.delete("1.0", "end")
 
         self._start_worker((xlsx, template, files, out, oda,
-                            out_version, self._cancel_event))
+                            out_version, self._cancel_event, match_col, sheet))
 
     def _run_worker(self, xlsx: str, template: str, files: list[str], out: str,
-                    oda: str, version: str, cancel) -> None:
+                    oda: str, version: str, cancel, match_col: str | None,
+                    sheet: str | None) -> None:
         success = False
         try:
             summary = run_pipeline_files(
                 xlsx, files, out, oda=oda or None, out_version=version,
                 emit=self._emit, cancel=cancel, template=template,
+                match_col=match_col, sheet=sheet,
                 progress=lambda p: self._emit("", p),
             )
             failed = summary.get("failed", [])

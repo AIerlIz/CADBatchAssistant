@@ -91,7 +91,7 @@ uv run python scripts/inject_version.py   # 自动注入版本号（本地取 py
 uv run pyinstaller --noconfirm --clean CADBatchAssistant.spec
 ```
 
-产物在 `dist\CAD批处理助手.exe`（单文件、免安装、无控制台窗口），包含「改字助手」与「填表助手」两个 tab。
+产物在 `dist\CADBatchAssistant.exe`（单文件、免安装、无控制台窗口），包含「改字助手」与「填表助手」两个 tab。
 
 - **版本号编译时自动注入**：CI 发版时从 tag（如 `v1.0.1`）写入应用内 `__version__`，本地打包从 `pyproject.toml` 读取；无需手动同步版本号
 - 填表助手的文件拖放依赖 `tkinterdnd2`：`CADBatchAssistant.spec` 已手动收集其 `tkdnd` 扩展目录（PyInstaller hook-contrib 未覆盖）
@@ -102,8 +102,9 @@ uv run pyinstaller --noconfirm --clean CADBatchAssistant.spec
 应用支持基于 GitHub Release 的**在线自动更新**（仅打包 exe 生效；开发模式 `python main.py` 不检查）：
 
 - **检查时机**：启动 2 秒后后台静默检查 + 「设置 → 软件更新 → 检查更新」手动检查
-- **更新流程**：发现新版本 → 弹窗确认 → 应用内下载（显示进度，可取消）→ 校验文件大小 → 自动替换 exe 并重启
+- **更新流程**：发现新版本 → 弹窗确认 → 应用内下载（显示进度，可取消）→ 校验文件大小与安装包有效性 → 自动替换 exe 并重启
 - **下载镜像**：国内直连 GitHub 失败时，可在「设置 → 软件更新 → 下载镜像」填镜像前缀（如 `https://ghproxy.com`，即把原始下载地址拼接在镜像之后），留空则直连。镜像仅做下载加速，请填写可信的镜像地址
+- **失败重试**：下载中断 / 文件不完整 / 网络错误时自动重试（最多 3 次，退避间隔递增），镜像下载失败会自动改用直连再试；仍失败时弹窗提示原因并可手动重试
 
 ### 发布新版本（维护者）
 

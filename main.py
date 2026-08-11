@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import threading
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import ttk
 
 from tkinterdnd2 import TkinterDnD
 
@@ -72,22 +72,23 @@ def _auto_check_update(root: tk.Tk) -> None:
         current = updater.parse_version(__version__)
         if not updater.is_newer(result["version"], current):
             return
+        if updater.is_ignored(result["tag"], updater.ignored_version()):
+            return  # 用户已忽略此版本，不再提示
         root.after(0, lambda: _prompt_update(root, result, mirror))
 
     threading.Thread(target=_work, daemon=True).start()
 
 
 def _prompt_update(root: tk.Tk, latest: dict, mirror: str) -> None:
-    """主线程弹窗：有新版本时询问是否立即更新。"""
-    if not messagebox.askyesno(
-        "发现新版本",
-        f"发现新版本 {latest['tag']}（当前 v{__version__}）\n\n是否立即下载并更新？",
-        parent=root,
-    ):
-        return
-    from cadbatchassistant.gui.updater_dialog import start_update_download
+    """主线程弹窗：有新版本时三选（立即更新 / 忽略此版本 / 取消）。"""
+    from cadbatchassistant.gui.updater_dialog import (
+        ask_update_choice, start_update_download)
 
-    start_update_download(root, latest, mirror)
+    choice = ask_update_choice(root, latest["tag"])
+    if choice == "update":
+        start_update_download(root, latest, mirror)
+    elif choice == "ignore":
+        updater.set_ignored_version(latest["tag"])
 
 
 if __name__ == "__main__":

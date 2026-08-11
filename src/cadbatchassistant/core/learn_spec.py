@@ -13,20 +13,23 @@ import json
 import os
 import sys
 
-from cadbatchassistant.core.dxf_processor import read_doc
+from cadbatchassistant.core.dxf_processor import decode_text, read_doc
 from cadbatchassistant.core.parse_xlsx import get_headers
 
 LAYERS = ("0",)
 
 
-def scan_placeholders(dxf_path: str, xlsx_path: str | None = None) -> dict:
+def scan_placeholders(dxf_path: str, xlsx_path: str | None = None,
+                      sheet: str | None = None) -> dict:
     """扫描模板 DXF 占位符（[列名]），与数据表表头精确匹配。
 
+    sheet：数据表中工作表名（None 默认第一个），与填表 load_xlsx 使用
+    同一 sheet 的表头，保证列名来源一致。
     返回 {图层: {列名: 规格}}：
       x/y/height/style/halign/valign（占位实体属性）、
       value_rule（按列名分类）、sep（压力格默认空格）、entity（占位符实体）。
     """
-    headers: list[str] = get_headers(xlsx_path) if xlsx_path else []
+    headers: list[str] = get_headers(xlsx_path, sheet) if xlsx_path else []
     header_map = {h.strip(): h for h in headers}   # 精确匹配（不归一化）
 
     doc = read_doc(dxf_path)
@@ -38,7 +41,7 @@ def scan_placeholders(dxf_path: str, xlsx_path: str | None = None) -> dict:
         if layer not in LAYERS:
             continue
         t = e.dxf.text if e.dxftype() == "TEXT" else e.text
-        ts = t.strip()
+        ts = decode_text(t).strip()
         if not (ts.startswith("[") and ts.endswith("]")):
             continue
         col = header_map.get(ts[1:-1].strip())

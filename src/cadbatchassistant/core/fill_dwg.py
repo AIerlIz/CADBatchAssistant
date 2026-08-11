@@ -129,14 +129,18 @@ def fill_one(before_dxf: str, out_dxf: str, spec: dict, row: dict) -> list[str]:
 
 
 def fill_all(before_dxf_dir: str, out_dxf_dir: str, xlsx: str,
-             specs: dict, emit=print, progress=None) -> list[str]:
+             specs: dict, emit=print, progress=None,
+             match_col: str | None = None,
+             sheet: str | None = None) -> list[str]:
     """批量填充：对 specs 中每张图执行 fill_one。
 
     单张图失败不中断，记录后继续处理其余图纸。
     progress : 可选回调 progress(done_index, total)，每处理一张图（成败均）调用一次。
+    match_col: 数据表中图纸名列（None 默认第一列）。
+    sheet    : 数据表中工作表名（None 默认第一个）。
     返回失败图纸名列表（处理失败的）。
     """
-    data = load_xlsx(xlsx)
+    data = load_xlsx(xlsx, match_col, sheet)
     stems = sorted(specs)
     failed: list[str] = []
     for i, stem in enumerate(stems, 1):

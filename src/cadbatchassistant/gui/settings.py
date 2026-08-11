@@ -32,7 +32,10 @@ class SettingsPanel:
         self.var_version: tk.StringVar | None = None
         self.var_update_info: tk.StringVar | None = None
         self.var_update_mirror: tk.StringVar | None = None
+        self.var_ignore_info: tk.StringVar | None = None
         self.btn_check: ttk.Button | None = None
+        self.btn_clear_ignore: ttk.Button | None = None
+        self._ignored_tag: str | None = None
         self._build_ui()
         self._load()
 
@@ -66,10 +69,14 @@ class SettingsPanel:
         self.btn_check = ttk.Button(upd_frame, text="检查更新",
                                     command=self._check_update)
         self.btn_check.grid(row=0, column=1, sticky="w", padx=4)
+        self.btn_clear_ignore = ttk.Button(
+            upd_frame, text="清除忽略", command=self._clear_ignore,
+            state="disabled")
+        self.btn_clear_ignore.grid(row=0, column=2, sticky="w", padx=4)
         self.var_update_info = tk.StringVar()
         ttk.Label(upd_frame, textvariable=self.var_update_info,
                   foreground="#666666").grid(
-            row=0, column=2, sticky="w", padx=4)
+            row=0, column=3, sticky="w", padx=4)
 
         ttk.Label(upd_frame, text="下载镜像(可选):").grid(
             row=1, column=0, sticky="w", pady=(6, 0))
@@ -84,6 +91,11 @@ class SettingsPanel:
             foreground="#666666",
         ).grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 0))
 
+        self.var_ignore_info = tk.StringVar()
+        ttk.Label(upd_frame, textvariable=self.var_ignore_info,
+                  foreground="#666666").grid(
+            row=3, column=0, columnspan=3, sticky="w", pady=(6, 0))
+
         ttk.Label(
             main,
             text="改动自动保存；「改字助手」与「填表助手」处理 DWG 时共用此配置。",
@@ -97,6 +109,8 @@ class SettingsPanel:
             self.var_oda.set(cfg["oda"])
         self.var_version.set(cfg.get("version", OUT_VERSION_CHOICES[0]))
         self.var_update_mirror.set(cfg.get("update_mirror", ""))
+        self._ignored_tag = updater.ignored_version()
+        self._refresh_ignore_ui()
         # 输入框后续任何写入（手动输入 / 浏览选择 / 版本下拉）自动保存
         self.var_oda.trace_add("write", lambda *a: self._on_change())
         self.var_version.trace_add("write", lambda *a: self._on_change())
@@ -104,12 +118,14 @@ class SettingsPanel:
         check_oda(self.var_oda, self.var_oda_info)  # 探测并刷新状态提示
 
     def _on_change(self, _event=None) -> None:
-        """自动保存到全局配置（手动输入 / 浏览选择 / 版本下拉均触发）。"""
-        save_config(APP_CONFIG_FILE, {
+        """自动保存到全局配置（合并写入，保留 update_ignore 等其他配置项）。"""
+        cfg = load_config(APP_CONFIG_FILE)
+        cfg.update({
             "oda": self.var_oda.get().strip(),
             "version": self.var_version.get(),
             "update_mirror": self.var_update_mirror.get().strip(),
         })
+        save_config(APP_CONFIG_FILE, cfg)
 
     # ---------------- 软件更新 ----------------
     def _check_update(self) -> None:
@@ -137,13 +153,21 @@ class SettingsPanel:
         current = updater.parse_version(__version__)
         if updater.is_newer(result["version"], current):
             tag = result["tag"]
-            self.var_update_info.set(f"发现新版本 {tag}，点击弹窗确认更新")
-            if messagebox.askyesno(
-                "发现新版本",
-                f"发现新版本 {tag}\n当前版本：v{__version__}\n\n是否立即下载并更新？",
-                parent=self._parent,
-            ):
+            if updater.is_ignored(tag, self._ignored_tag):
+                self.var_update_info.set(f"已忽略版本 {tag}（可在下方清除忽略）")
+                return
+            from cadbatchassistant.gui.updater_dialog import ask_update_choice
+
+            choice = ask_update_choice(self._parent, tag)
+            if choice == "update":
                 self._start_update(result)
+            elif choice == "ignore":
+                updater.set_ignored_version(tag)
+                self._ignored_tag = tag
+                self.var_update_info.set(f"已忽略版本 {tag}")
+                self._refresh_ignore_ui()
+            else:
+                self.var_update_info.set(f"发现新版本 {tag}（暂不更新）")
         else:
             self.var_update_info.set(f"已是最新版本（v{__version__}）")
 
@@ -153,3 +177,20 @@ class SettingsPanel:
 
         start_update_download(
             self._parent, latest, self.var_update_mirror.get().strip())
+
+    # ---------------- 忽略版本 ----------------
+    def _refresh_ignore_ui(self) -> None:
+        """按忽略状态刷新「已忽略版本」提示与清除按钮。"""
+        if self._ignored_tag:
+            self.var_ignore_info.set(f"已忽略版本：{self._ignored_tag}")
+            self.btn_clear_ignore.config(state="normal")
+        else:
+            self.var_ignore_info.set("")
+            self.btn_clear_ignore.config(state="disabled")
+
+    def _clear_ignore(self) -> None:
+        """清除忽略记录，恢复该版本的更新提示。"""
+        updater.set_ignored_version("")
+        self._ignored_tag = None
+        self.var_update_info.set("")
+        self._refresh_ignore_ui()

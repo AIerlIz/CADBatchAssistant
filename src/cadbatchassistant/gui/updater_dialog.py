@@ -15,10 +15,47 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 
+from cadbatchassistant import __version__
 from cadbatchassistant.core import updater
 
 _DOWNLOAD_DIR = Path(tempfile.gettempdir()) / "CADBatchAssistant_update"
 _NEW_EXE = "CADBatchAssistant_new.exe"
+
+
+def ask_update_choice(parent: tk.Widget, tag: str) -> str:
+    """发现新版本时的三选对话框。
+
+    返回 'update'（立即更新）/ 'ignore'（忽略此版本）/ 'cancel'（取消）。
+    """
+    root = parent.winfo_toplevel()
+    result = {"choice": "cancel"}
+    top = tk.Toplevel(root)
+    top.title("发现新版本")
+    top.resizable(False, False)
+    top.transient(root)
+    top.grab_set()
+
+    ttk.Label(
+        top,
+        text=f"发现新版本 {tag}（当前 v{__version__}）\n\n是否立即下载并更新？",
+        justify="left",
+    ).pack(padx=16, pady=(14, 10))
+    btns = ttk.Frame(top)
+    btns.pack(pady=(0, 12))
+
+    def _pick(choice: str) -> None:
+        result["choice"] = choice
+        top.destroy()
+
+    ttk.Button(btns, text="立即更新",
+               command=lambda: _pick("update")).pack(side="left", padx=6)
+    ttk.Button(btns, text="忽略此版本",
+               command=lambda: _pick("ignore")).pack(side="left", padx=6)
+    ttk.Button(btns, text="取消",
+               command=lambda: _pick("cancel")).pack(side="left", padx=6)
+    top.protocol("WM_DELETE_WINDOW", lambda: _pick("cancel"))
+    top.wait_window()
+    return result["choice"]
 
 
 def start_update_download(parent: tk.Widget, latest: dict, mirror: str) -> None:
@@ -69,13 +106,14 @@ class UpdateDialog:
 
         def progress(done: int, total: int) -> None:
             if self._cancel.is_set():
-                raise updater.UpdateError("已取消")
+                raise updater.UpdateError(updater.CANCEL_MSG)
             self._queue.put(("progress", done, total))
 
         try:
             updater.download_asset(
                 self._latest["url"], dest, self._mirror, progress,
-                size=self._latest.get("size"))
+                size=self._latest.get("size"),
+                abort_event=self._cancel)
             self._queue.put(("done", str(dest)))
         except updater.UpdateError as e:
             self._queue.put(("error", str(e)))
@@ -100,6 +138,10 @@ class UpdateDialog:
                     self._on_downloaded(item[1])
                     return
                 else:  # error
+                    if self._cancel.is_set():
+                        # 用户已取消下载：静默关闭，不再询问重试
+                        self._top.destroy()
+                        return
                     self._finish_error(item[1])
                     return
         except queue.Empty:
@@ -149,5 +191,19 @@ class UpdateDialog:
             pass
 
     def _finish_error(self, msg: str) -> None:
+        """下载失败：提示原因并询问是否重试；重试复用本对话框，否则关闭。
+
+        msg 已含 updater 层给出的建议（检查网络 / 更换镜像等）。
+        """
+        self._progress.stop()
+        self._progress.config(mode="determinate", maximum=100, value=0)
+        self._detail.set("")
+        if messagebox.askyesno(
+            "更新失败", f"{msg}\n\n是否重试下载？", parent=self._root,
+        ):
+            self._status.set(f"正在重试下载 {self._latest['tag']} ...")
+            self._cancel.clear()
+            threading.Thread(target=self._work, daemon=True).start()
+            self._top.after(100, self._poll)
+            return
         self._top.destroy()
-        messagebox.showerror("更新失败", msg, parent=self._root)

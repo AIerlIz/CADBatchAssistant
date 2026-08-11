@@ -189,7 +189,7 @@ class CadTextApp(AsyncPanel):
 
         top = ttk.Frame(file_frame)
         top.pack(fill="x", pady=(0, 4))
-        ttk.Button(top, text="选择文件...", command=self._browse_input_files).pack(side="left")
+        ttk.Button(top, text="选择文件", command=self._browse_input_files).pack(side="left")
         self.var_scan_info = tk.StringVar(value="尚未选择文件")
         ttk.Label(top, textvariable=self.var_scan_info).pack(side="left", padx=10)
 

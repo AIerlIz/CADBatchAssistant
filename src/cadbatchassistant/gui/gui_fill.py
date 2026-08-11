@@ -97,7 +97,7 @@ class IsoFillApp(AsyncPanel):
         # 图纸文件多选列表（DWG/DXF）
         top2 = ttk.Frame(in_frame)
         top2.grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 0))
-        ttk.Button(top2, text="选择文件...", command=self._browse_input_files).pack(side="left")
+        ttk.Button(top2, text="选择文件", command=self._browse_input_files).pack(side="left")
         self.var_scan_info = tk.StringVar(value="尚未选择文件")
         ttk.Label(top2, textvariable=self.var_scan_info).pack(side="left", padx=10)
 

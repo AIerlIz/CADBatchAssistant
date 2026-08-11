@@ -89,6 +89,22 @@ uv run pyinstaller --noconfirm --clean CADBatchAssistant.spec
 - 填表助手的文件拖放依赖 `tkinterdnd2`：`CADBatchAssistant.spec` 已手动收集其 `tkdnd` 扩展目录（PyInstaller hook-contrib 未覆盖）
 - DWG 处理仍需目标机器安装 [ODA File Converter](https://www.opendesign.com/guestfiles/oda_file_converter)（纯 DXF 流程不需要）
 
+## 软件更新
+
+应用支持基于 GitHub Release 的**在线自动更新**（仅打包 exe 生效；开发模式 `python main.py` 不检查）：
+
+- **检查时机**：启动 2 秒后后台静默检查 + 「设置 → 软件更新 → 检查更新」手动检查
+- **更新流程**：发现新版本 → 弹窗确认 → 应用内下载（显示进度，可取消）→ 校验文件大小 → 自动替换 exe 并重启
+- **下载镜像**：国内直连 GitHub 失败时，可在「设置 → 软件更新 → 下载镜像」填镜像前缀（如 `https://ghproxy.com`，即把原始下载地址拼接在镜像之后），留空则直连。镜像仅做下载加速，请填写可信的镜像地址
+
+### 发布新版本（维护者）
+
+1. 更新版本号：`pyproject.toml` 的 `version` 与 `src/cadbatchassistant/__init__.py` 的 `__version__` 保持一致
+2. 推送 tag `v1.1.0`（格式 `v` + 三位数字版本）：GitHub Actions 自动构建 exe 并发布到 Release（资产名 `CADBatchAssistant.exe`）
+3. 用户端启动后即会提示更新；未自动提示时可手动「检查更新」
+
+> 更新查询走 `https://api.github.com/repos/AIerlIz/CADBatchAssistant/releases/latest`，仅识别资产 `CADBatchAssistant.exe`。
+
 ## 项目结构
 
 ```
@@ -104,8 +120,10 @@ src/cadbatchassistant/
     learn_spec.py         # 图纸模板占位扫描（[列名] 与数据表表头匹配）
     fill_dwg.py           # 按规格 + 数据表填充标题栏值格
     parse_xlsx.py         # 读取数据表 .xlsx/.xls → {图纸名: {列名: 值}}
+    updater.py            # 在线更新：GitHub Release 查询 / 镜像下载 / 替换重启命令
   gui/                    # 界面层
     gui.py                # 「改字助手」面板（CadTextApp）
     gui_fill.py           # 「填表助手」面板（IsoFillApp，含模板库与拖放）
-    settings.py           # 「设置」面板（SettingsPanel）：ODA 路径、DWG 输出版本，自动保存
+    settings.py           # 「设置」面板（SettingsPanel）：ODA 路径、DWG 输出版本、软件更新，自动保存
+    updater_dialog.py     # 更新下载对话框（进度展示 / 取消 / 下载完成替换重启）
 ```

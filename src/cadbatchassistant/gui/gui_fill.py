@@ -67,7 +67,7 @@ class IsoFillApp(AsyncPanel):
         main.pack(fill="both", expand=True)
 
         # 1. 输入区（与「改字助手」一致：仅选择文件 + 文件列表）
-        in_frame = ttk.LabelFrame(main, text="输入", padding=8)
+        in_frame = ttk.LabelFrame(main, text="待处理", padding=8)
         in_frame.pack(fill="x", **pad)
 
         top = ttk.Frame(in_frame)
@@ -91,7 +91,7 @@ class IsoFillApp(AsyncPanel):
         # 数据表（xlsx/xls）
         row_xlsx = ttk.Frame(src_frame)
         row_xlsx.pack(fill="x")
-        ttk.Label(row_xlsx, text="数据表:").pack(side="left")
+        ttk.Label(row_xlsx, text="数据表格:").pack(side="left")
         self.var_xlsx = tk.StringVar()
         e_xlsx = ttk.Entry(row_xlsx, textvariable=self.var_xlsx)
         e_xlsx.pack(side="left", fill="x", expand=True, padx=4)
@@ -146,7 +146,7 @@ class IsoFillApp(AsyncPanel):
     # ---------------- 输入 ----------------
     def _browse_xlsx(self) -> None:
         f = filedialog.askopenfilename(
-            title="选择数据表", filetypes=[("Excel 数据表", "*.xlsx *.xls"), ("所有文件", "*.*")]
+            title="选择数据表格", filetypes=[("Excel 数据表", "*.xlsx *.xls"), ("所有文件", "*.*")]
         )
         if f:
             self.var_xlsx.set(f)
@@ -328,7 +328,7 @@ class IsoFillApp(AsyncPanel):
         out_version = app_cfg.get("version", "ACAD2018")
 
         if not xlsx or not os.path.isfile(xlsx):
-            messagebox.showwarning("提示", "请选择有效的数据表文件")
+            messagebox.showwarning("提示", "请选择有效的数据表格文件")
             return
         if not tpl_name or not os.path.isfile(template):
             messagebox.showwarning("提示", "请从图纸模板下拉框选择模板（可先「上传」）")

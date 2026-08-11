@@ -184,7 +184,7 @@ class CadTextApp(AsyncPanel):
         main.pack(fill="both", expand=True)
 
         # 1. 输入区
-        file_frame = ttk.LabelFrame(main, text="输入", padding=8)
+        file_frame = ttk.LabelFrame(main, text="待处理", padding=8)
         file_frame.pack(fill="x", **pad)
 
         top = ttk.Frame(file_frame)

@@ -66,17 +66,20 @@ class SettingsPanel:
 
         ttk.Label(upd_frame, text=f"当前版本: v{__version__}").grid(
             row=0, column=0, sticky="w")
-        self.btn_check = ttk.Button(upd_frame, text="检查更新",
+        # 「检查更新」「清除忽略」放在同一 Frame 内紧挨，避免 column 扩展把按钮推开
+        btn_row = ttk.Frame(upd_frame)
+        btn_row.grid(row=0, column=1, sticky="w", padx=4)
+        self.btn_check = ttk.Button(btn_row, text="检查更新",
                                     command=self._check_update)
-        self.btn_check.grid(row=0, column=1, sticky="w", padx=4)
+        self.btn_check.pack(side="left")
         self.btn_clear_ignore = ttk.Button(
-            upd_frame, text="清除忽略", command=self._clear_ignore,
+            btn_row, text="清除忽略", command=self._clear_ignore,
             state="disabled")
-        self.btn_clear_ignore.grid(row=0, column=2, sticky="w", padx=4)
+        self.btn_clear_ignore.pack(side="left", padx=(4, 0))
         self.var_update_info = tk.StringVar()
         ttk.Label(upd_frame, textvariable=self.var_update_info,
                   foreground="#666666").grid(
-            row=0, column=3, sticky="w", padx=4)
+            row=0, column=2, sticky="w", padx=4)
 
         ttk.Label(upd_frame, text="下载镜像(可选):").grid(
             row=1, column=0, sticky="w", pady=(6, 0))

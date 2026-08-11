@@ -16,16 +16,13 @@ import sys
 from cadbatchassistant.core.dxf_processor import decode_text, read_doc
 from cadbatchassistant.core.parse_xlsx import get_headers
 
-LAYERS = ("0",)
-
-
 def scan_placeholders(dxf_path: str, xlsx_path: str | None = None,
                       sheet: str | None = None) -> dict:
     """扫描模板 DXF 占位符（[列名]），与数据表表头精确匹配。
 
     sheet：数据表中工作表名（None 默认第一个），与填表 load_xlsx 使用
     同一 sheet 的表头，保证列名来源一致。
-    返回 {图层: {列名: 规格}}：
+    占位符可位于任意图层；返回 {图层: {列名: 规格}}：
       x/y/height/style/halign/valign（占位实体属性）、
       value_rule（按列名分类）、sep（压力格默认空格）、entity（占位符实体）。
     """
@@ -33,13 +30,11 @@ def scan_placeholders(dxf_path: str, xlsx_path: str | None = None,
     header_map = {h.strip(): h for h in headers}   # 精确匹配（不归一化）
 
     doc = read_doc(dxf_path)
-    spec: dict = {"0": {}}
+    spec: dict = {}
     for e in doc.modelspace():
         if e.dxftype() not in ("TEXT", "MTEXT"):
             continue
         layer = e.dxf.layer
-        if layer not in LAYERS:
-            continue
         t = e.dxf.text if e.dxftype() == "TEXT" else e.text
         ts = decode_text(t).strip()
         if not (ts.startswith("[") and ts.endswith("]")):
@@ -49,7 +44,7 @@ def scan_placeholders(dxf_path: str, xlsx_path: str | None = None,
             continue  # 非数据表表头的占位符忽略
         ins = e.dxf.insert
         height = e.dxf.height if e.dxftype() == "TEXT" else e.dxf.char_height
-        spec[layer][col] = {
+        spec.setdefault(layer, {})[col] = {
             "x": round(float(ins[0]), 6),
             "y": round(float(ins[1]), 6),
             "height": round(float(height), 6),

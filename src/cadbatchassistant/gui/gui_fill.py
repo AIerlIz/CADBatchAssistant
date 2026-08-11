@@ -105,7 +105,7 @@ class IsoFillApp(AsyncPanel):
         # 工作表 + 匹配列（同一行）
         row_sheet = ttk.Frame(src_frame)
         row_sheet.pack(fill="x", pady=(6, 0))
-        ttk.Label(row_sheet, text="工作表:").pack(side="left")
+        ttk.Label(row_sheet, text="工作表格:").pack(side="left")
         self.var_sheet = tk.StringVar()
         self.sheet_combo = ttk.Combobox(row_sheet, textvariable=self.var_sheet,
                                         state="readonly", width=16)
@@ -168,27 +168,39 @@ class IsoFillApp(AsyncPanel):
             self._refresh_sources()
 
     def _refresh_sources(self) -> None:
-        """读取数据表工作表与表头，刷新「工作表」「匹配列」下拉；默认第一个/第一列。"""
+        """读取数据表工作表与表头，刷新「工作表格」「匹配列」下拉；默认第一个/第一列。
+
+        工作表列表与表头分开读取：某个 sheet 为空（无表头）只清空匹配列，
+        不连带清空工作表格下拉。
+        """
         path = self.var_xlsx.get().strip()
         sheets: list[str] = []
-        cols: list[str] = []
         if path and os.path.isfile(path):
             try:
                 from cadbatchassistant.core.parse_xlsx import (
                     get_headers, list_sheets)
 
                 sheets = list_sheets(path)
-                sheet = (self.var_sheet.get()
-                         if self.var_sheet.get() in sheets else None)
-                cols = get_headers(path, sheet)
-            except Exception:  # noqa: BLE001 - 空表/损坏时下拉留空，运行阶段再报错
-                sheets, cols = [], []
+            except Exception:  # noqa: BLE001 - 文件损坏/不可读时无工作表可选
+                sheets = []
         cur_sheet = self.var_sheet.get()
+        if cur_sheet in sheets:
+            sheet = cur_sheet
+        elif sheets:
+            sheet = sheets[0]  # 默认第一个
+        else:
+            sheet = None
+        cols: list[str] = []
+        if sheet:
+            try:
+                cols = get_headers(path, sheet)
+            except Exception:  # noqa: BLE001 - 该 sheet 为空/损坏时匹配列留空
+                cols = []
         self.sheet_combo["values"] = sheets
         if cur_sheet in sheets:
             self.var_sheet.set(cur_sheet)
         elif sheets:
-            self.var_sheet.set(sheets[0])  # 默认第一个
+            self.var_sheet.set(sheets[0])
         else:
             self.var_sheet.set("")
         cur_col = self.var_match_col.get()

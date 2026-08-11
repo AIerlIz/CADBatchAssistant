@@ -20,8 +20,7 @@ import json
 import os
 import sys
 
-import ezdxf
-
+from cadbatchassistant.core.dxf_processor import read_doc
 from cadbatchassistant.core.parse_xlsx import load_xlsx
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -49,7 +48,7 @@ def find_texts(msp, layer: str, x: float, y: float, tol: float = 0.01):
 
 
 def fill_one(before_dxf: str, out_dxf: str, spec: dict, row: dict) -> list[str]:
-    doc = ezdxf.readfile(before_dxf)
+    doc = read_doc(before_dxf)
     msp = doc.modelspace()
     log: list[str] = []
     # 注意：不删除处理图纸压力格的 'barg' 单位占位——

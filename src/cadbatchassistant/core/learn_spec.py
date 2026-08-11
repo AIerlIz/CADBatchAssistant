@@ -13,8 +13,7 @@ import json
 import os
 import sys
 
-import ezdxf
-
+from cadbatchassistant.core.dxf_processor import read_doc
 from cadbatchassistant.core.parse_xlsx import get_headers
 
 LAYERS = ("0",)
@@ -30,7 +29,7 @@ def scan_placeholders(dxf_path: str, xlsx_path: str | None = None) -> dict:
     headers: list[str] = get_headers(xlsx_path) if xlsx_path else []
     header_map = {h.strip(): h for h in headers}   # 精确匹配（不归一化）
 
-    doc = ezdxf.readfile(dxf_path)
+    doc = read_doc(dxf_path)
     spec: dict = {"0": {}}
     for e in doc.modelspace():
         if e.dxftype() not in ("TEXT", "MTEXT"):

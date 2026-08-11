@@ -222,7 +222,7 @@ class CadTextApp(AsyncPanel):
 
         ttk.Label(
             rule_frame,
-            text="提示：查找支持正则表达式；双击编辑，底部行添加，Delete/右键删除",
+            text="提示：双击编辑，底部行添加，Delete/右键删除",
             foreground="#666666",
         ).pack(anchor="w", pady=(4, 0))
 
@@ -234,11 +234,15 @@ class CadTextApp(AsyncPanel):
         ttk.Checkbutton(opt_frame, text="大小写敏感", variable=self.var_case).grid(
             row=0, column=0, sticky="w"
         )
-        self.var_dry = tk.BooleanVar(value=False)
-        ttk.Checkbutton(opt_frame, text="dry-run（只统计不写文件）", variable=self.var_dry).grid(
+        self.var_regex = tk.BooleanVar(value=False)
+        ttk.Checkbutton(opt_frame, text="正则模式", variable=self.var_regex).grid(
             row=0, column=1, sticky="w", padx=8
         )
-        opt_frame.columnconfigure(1, weight=1)
+        self.var_dry = tk.BooleanVar(value=False)
+        ttk.Checkbutton(opt_frame, text="dry-run（只统计不写文件）", variable=self.var_dry).grid(
+            row=0, column=2, sticky="w", padx=8
+        )
+        opt_frame.columnconfigure(2, weight=1)
 
         # 4. 输出区
         out_frame = ttk.LabelFrame(main, text="输出", padding=8)
@@ -366,7 +370,9 @@ class CadTextApp(AsyncPanel):
 
     def _rules(self) -> list[ReplaceRule]:
         return [
-            ReplaceRule(find=find, replace=replace, case_sensitive=self.var_case.get())
+            ReplaceRule(find=find, replace=replace,
+                        case_sensitive=self.var_case.get(),
+                        regex=self.var_regex.get())
             for find, replace in self.rules_data
             if find
         ]
@@ -382,9 +388,10 @@ class CadTextApp(AsyncPanel):
             self.rule_tree._start_edit(new_iid, "#1")
 
     def commit_edit(self, idx: int, col: int, value: str) -> None:
-        """内联编辑提交：col 0=查找(正则)，1=替换为；两个都为空则删除该行。
+        """内联编辑提交：col 0=查找，1=替换为；两个都为空则删除该行。
 
-        查找为正则表达式，提交时校验合法性，非法弹窗拒绝写入。
+        正则模式下查找按正则校验合法性，非法弹窗拒绝写入；
+        普通文本模式自动转义，无需校验。
         """
         if not (0 <= idx < len(self.rules_data)):
             return
@@ -397,7 +404,7 @@ class CadTextApp(AsyncPanel):
             del self.rules_data[idx]
             self._refresh_rule_list()
             return
-        if find:
+        if find and self.var_regex.get():
             try:
                 re.compile(find)
             except re.error as ex:

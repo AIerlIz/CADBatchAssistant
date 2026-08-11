@@ -20,6 +20,14 @@ import sys
 import tomllib
 from pathlib import Path
 
+# Windows 非中文系统（如 CI 的 en-US runner）管道输出默认用 cp1252，
+# print 中文会 UnicodeEncodeError；强制 UTF-8 输出
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
 ROOT = Path(__file__).resolve().parent.parent
 INIT_FILE = ROOT / "src" / "cadbatchassistant" / "__init__.py"
 PYPROJECT = ROOT / "pyproject.toml"

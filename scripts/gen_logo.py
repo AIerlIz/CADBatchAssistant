@@ -2,7 +2,7 @@
 
 图案:深蓝圆角方块 + 居中白色点阵 "CAD" 文字(第一版设计)。
 
-- logo.png : 256x256 RGBA,供欢迎窗口/窗口图标显示
+- logo.png : 256x256 RGBA,供窗口图标显示
 - logo.ico : 多尺寸(16/32/48/256)ICO(各尺寸直接渲染),供 exe 文件
   图标与 iconbitmap 使用(PyInstaller EXE(icon=...) 直接引用)。
   多尺寸保证 Windows 资源管理器各视图(小图标/详细信息)均正常显示。

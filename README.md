@@ -78,15 +78,6 @@ uv run pyinstaller --noconfirm --clean CADBatchAssistant.spec
 打包版启动后静默检查 GitHub Release，发现新版本可应用内下载并替换重启；支持下载镜像与失败重试。
 发布：推送 `v*` tag（如 `v2.0.0`）→ CI 构建并发布 Release（资产名 `CADBatchAssistant.exe`）。
 
-## 首次使用引导
-
-首次启动（或删除全局配置文件后）会弹出多步引导向导，分 5 步带您上手：
-欢迎 → 改字助手 → 填表助手 → 目录助手 → 设置与 ODA（DWG 转换提示）。
-每步可「上一步 / 下一步」翻页，末步「完成使用」收尾；首步「跳过引导」与
-任意页关闭（窗口 X）均在全局配置写入 `welcome_seen` 标记
-（`%APPDATA%\CADBatchAssistant\config.json`），之后不再自动弹出。
-需要回看时，在「设置」页点击「重新显示使用引导」。
-
 ## 诊断模式
 
 ```bash

@@ -38,8 +38,6 @@ from cadbatchassistant.common import (
     APP_CONFIG_FILE,
     center_window,
     default_font_family,
-    is_welcome_needed,
-    load_app_config,
     load_config,
     resource_path,
 )
@@ -153,23 +151,9 @@ def main(argv: list[str] | None = None) -> int:
 
     root.protocol("WM_DELETE_WINDOW", _on_close)
     root.on_close = _on_close  # 供更新流程替换前调用（停止后台线程后再销毁）
-    root.after(300, lambda: _show_welcome_if_first_run(root))
     root.after(2000, lambda: _auto_check_update(root))
     root.mainloop()
     return 0
-
-
-def _show_welcome_if_first_run(root: tk.Tk) -> None:
-    """首次启动（全局配置无 welcome_seen 标记）时弹出使用引导窗口。
-
-    延迟触发（主窗口渲染完成后），避免抢占界面；用户关闭引导
-    即写入标记，此后不再自动弹出（可在设置页手动重新打开）。
-    """
-    if not is_welcome_needed(load_app_config()):
-        return
-    from cadbatchassistant.gui.welcome import WelcomeDialog
-
-    WelcomeDialog(root)
 
 
 def _auto_check_update(root: tk.Tk) -> None:

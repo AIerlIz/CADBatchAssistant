@@ -94,27 +94,6 @@ class SettingsPanel:
                   foreground="#a00").grid(row=2, column=0, columnspan=3,
                                           sticky="w", padx=4)
 
-        # ---- 使用引导 ----
-        guide_frame = ttk.LabelFrame(main, text="使用引导", padding=8)
-        guide_frame.pack(fill="x", **pad)
-
-        ttk.Label(
-            guide_frame,
-            text="首次启动已展示欢迎引导，可随时重新打开查看功能简介。",
-        ).grid(row=0, column=0, sticky="w")
-        self.btn_show_welcome = ttk.Button(
-            guide_frame, text="重新显示使用引导",
-            command=self._show_welcome)
-        self.btn_show_welcome.grid(row=0, column=1, sticky="w", padx=4)
-        guide_frame.columnconfigure(1, weight=1)
-
-    # ---------------- 使用引导 ----------------
-    def _show_welcome(self) -> None:
-        """清空已见标记并重新弹出使用引导窗口（关闭后写回标记）。"""
-        from cadbatchassistant.gui.welcome import reopen_welcome
-
-        reopen_welcome(self._parent)
-
     # ---------------- 配置 ----------------
     def _load(self) -> None:
         cfg = load_app_config()

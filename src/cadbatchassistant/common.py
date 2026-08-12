@@ -446,6 +446,7 @@ class AsyncPanel:
         self.worker: threading.Thread | None = None
         self.running = False
         self._cancel_event = threading.Event()
+        self._run_seq = 0  # 任务代次：__DONE__ 只响应当前代次，防旧任务复位新任务状态
         apply_vista_theme(ttk.Style())
         self._root.after(100, self._poll_queue)
 
@@ -457,16 +458,20 @@ class AsyncPanel:
         return self._cancel_event
 
     def _start_worker(self, args: tuple) -> None:
-        """在后台线程运行 self._run(*args)。"""
+        """在后台线程运行 self._run(*args)；分配新任务代次。"""
+        self._run_seq += 1
+        seq = self._run_seq
         self.worker = threading.Thread(
-            target=self._run, args=args, daemon=True)
+            target=self._run, args=(seq, *args), daemon=True)
         self.worker.start()
 
-    def _run(self, *args) -> None:
+    def _run(self, seq: int, *args) -> None:
         """后台线程模板：统一 try/except/finally 与 __DONE__ sentinel 收尾。
 
         子类只需实现 _work(*args) -> bool（True 表示成功），错误捕获、
         日志提示与 sentinel 上报由本方法统一处理，避免各面板重复样板。
+        seq 为任务代次，__DONE__ 消息携带它；主线程只响应当前代次，
+        旧任务（停止后残留）的 __DONE__ 不会复位新任务的 UI 状态。
         """
         success = False
         try:
@@ -474,7 +479,7 @@ class AsyncPanel:
         except Exception as ex:  # noqa: BLE001 - 意外异常统一按失败处理
             self._emit(f"处理中断：{ex}")
         finally:
-            self.msg_queue.put(("__DONE__", success))
+            self.msg_queue.put(("__DONE__", success, seq))
 
     def _is_cancelled(self) -> bool:
         """是否已请求停止（供任务体内轮询检查）。"""
@@ -486,7 +491,10 @@ class AsyncPanel:
             while True:
                 item = self.msg_queue.get_nowait()
                 if item[0] == "__DONE__":
-                    self._on_finish(item[1])
+                    # 只响应当前代次的完成：停止后残留的旧任务 __DONE__
+                    # 不复位新任务状态（否则旧收尾会覆盖新任务的按钮/进度）
+                    if len(item) >= 3 and item[2] == self._run_seq:
+                        self._on_finish(item[1])
                     break  # 处理完本轮，仍会走到末尾重调度，支持多轮批处理
                 msg, progress = item
                 if msg:
@@ -500,10 +508,17 @@ class AsyncPanel:
 
     # ---- 停止 ----
     def _stop(self) -> None:
-        """请求停止：置停止标志，当前文件处理完后退出循环。"""
+        """请求停止：置停止标志，当前文件处理完后退出循环。
+
+        同时禁用「开始处理」按钮，直到本任务真正结束（__DONE__ 到达、
+        _on_finish 恢复）——否则停止后立即重开会与仍在收尾的旧任务
+        双线程并发（旧取消信号被 begin_run 清掉，两个线程同时写队列/
+        输出目录）。
+        """
         self.running = False
         self._cancel_event.set()
         self.btn_stop.config(state="disabled")
+        self.btn_start.config(state="disabled")
         self._emit("收到停止请求，将在当前文件处理完后停止...")
 
     # ---- 完成（主线程，由 __DONE__ sentinel 触发） ----

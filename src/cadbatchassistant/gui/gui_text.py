@@ -356,26 +356,44 @@ class CadTextApp(AsyncPanel, FilesPanelMixin):
 
         begin_run(self, maximum=len(self.scanned_files))
 
+        # 快照文件列表：后台线程只读快照，避免运行期间主线程
+        # 增删文件（_delete_selected_files 等）导致迭代竞态/IndexError
+        snapshot = list(self.scanned_files)
+
         # 文件模式下：把所选文件复制到临时输入目录（DWG 转换需要目录），处理完清理
+        # 复制在 begin_run 之后执行，若失败必须复位运行态，否则面板永久卡死。
         work_in = None
-        if not self.var_dry.get():
-            work_in = tempfile.mkdtemp(prefix="cad_text_input_")
-            for p in list(self.scanned_files):
-                shutil.copy2(str(p), os.path.join(work_in, os.path.basename(p)))
-            inp = work_in
+        try:
+            if not self.var_dry.get():
+                work_in = tempfile.mkdtemp(prefix="cad_text_input_")
+                for p in snapshot:
+                    shutil.copy2(str(p), os.path.join(work_in, os.path.basename(p)))
+                inp = work_in
+        except Exception as ex:  # noqa: BLE001 - 复制失败（如文件被占用）复位面板
+            if work_in:
+                shutil.rmtree(work_in, ignore_errors=True)
+            self._emit(f"复制输入文件失败：{ex}")
+            # 复位运行态：恢复按钮、清运行标志（worker 未启动）
+            self.running = False
+            self.btn_start.config(state="normal")
+            self.btn_stop.config(state="disabled")
+            self._emit("处理未开始（输入文件复制失败），请检查文件是否被占用后重试。")
+            return
 
         self._start_worker((inp, out, rules, self.var_dry.get(),
-                            oda, out_version, work_in))
+                            oda, out_version, work_in, snapshot))
 
     # ---------------- 批处理（后台线程） ----------------
     def _work(self, inp: str, out: str, rules: list[ReplaceRule],
               dry_run: bool, oda: str, out_version: str,
-              work_in: str | None = None) -> bool:
+              work_in: str | None = None,
+              files_snapshot: list[str] | None = None) -> bool:
         try:
-            self._run_batch(inp, out, rules, dry_run, oda, out_version)
+            self._run_batch(inp, out, rules, dry_run, oda, out_version,
+                            files_snapshot)
             success = not self._is_cancelled()  # 中途被停止时不算完成
             if success:
-                total = len(self.scanned_files)
+                total = len(files_snapshot or self.scanned_files)
                 self._emit(f"==== 全部完成：{total} 个文件，输出见 {out} ====")
             return success
         finally:
@@ -383,13 +401,17 @@ class CadTextApp(AsyncPanel, FilesPanelMixin):
                 shutil.rmtree(work_in, ignore_errors=True)
 
     def _run_batch(self, inp: str, out: str, rules: list[ReplaceRule],
-                   dry_run: bool, oda: str, out_version: str) -> None:
+                   dry_run: bool, oda: str, out_version: str,
+                   files_snapshot: list[str] | None = None) -> None:
         out_dir = Path(out)
         if not dry_run:
             out_dir.mkdir(parents=True, exist_ok=True)
 
-        dxf_files = [Path(p) for p in self.scanned_files if p.lower().endswith(".dxf")]
-        dwg_files = [Path(p) for p in self.scanned_files if p.lower().endswith(".dwg")]
+        # 后台线程只读快照，不读 self.scanned_files（主线程可能并发增删）
+        files = list(files_snapshot if files_snapshot is not None
+                     else self.scanned_files)
+        dxf_files = [Path(p) for p in files if p.lower().endswith(".dxf")]
+        dwg_files = [Path(p) for p in files if p.lower().endswith(".dwg")]
         done = 0
         total_ok, total_fail, total_replaced = 0, 0, 0
 

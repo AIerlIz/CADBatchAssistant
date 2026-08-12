@@ -76,6 +76,9 @@ class SettingsPanel:
             state="disabled")
         self.btn_clear_ignore.pack(side="left", padx=(4, 0))
         self.var_update_info = tk.StringVar()
+        # 更新状态提示（检查结果/失败原因/已忽略等），必须有显示控件才可见
+        ttk.Label(upd_frame, textvariable=self.var_update_info,
+                  foreground="#555").grid(row=0, column=2, sticky="w", padx=8)
 
         ttk.Label(upd_frame, text="下载镜像(可选):").grid(
             row=1, column=0, sticky="w", pady=(6, 0))
@@ -86,6 +89,10 @@ class SettingsPanel:
         upd_frame.columnconfigure(1, weight=1)
 
         self.var_ignore_info = tk.StringVar()
+        # 「已忽略版本」提示行（与清除按钮同列下方），必须有显示控件才可见
+        ttk.Label(upd_frame, textvariable=self.var_ignore_info,
+                  foreground="#a00").grid(row=2, column=0, columnspan=3,
+                                          sticky="w", padx=4)
 
         # ---- 使用引导 ----
         guide_frame = ttk.LabelFrame(main, text="使用引导", padding=8)

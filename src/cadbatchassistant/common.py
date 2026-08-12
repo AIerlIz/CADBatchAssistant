@@ -77,6 +77,26 @@ def get_out_version() -> str:
     return str(load_app_config().get("version", "ACAD2018")).strip() or "ACAD2018"
 
 
+# ---------------- 首次启动引导标记 ----------------
+
+# 全局配置键：首次使用引导是否已展示（写入 True 后不再自动弹出）
+WELCOME_SEEN_KEY = "welcome_seen"
+
+
+def is_welcome_needed(cfg: dict) -> bool:
+    """是否需要显示首次使用引导。
+
+    配置中无 welcome_seen 标记（含首次运行、配置文件不存在或损坏）
+    时返回 True；已标记返回 False。判定纯函数，便于测试。
+    """
+    return not bool(cfg.get(WELCOME_SEEN_KEY))
+
+
+def mark_welcome_seen() -> None:
+    """写入首次引导已见标记（合并进全局配置，失败静默不阻塞使用）。"""
+    save_app_config({WELCOME_SEEN_KEY: True})
+
+
 # ---------------- 软件目录 / 模板库 / 目录助手规则 ----------------
 
 # 目录助手（catalog）规则默认值：软件目录 config.json 的 rules 段可覆盖

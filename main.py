@@ -2,13 +2,13 @@
 
 - 「改字助手」：CadTextApp（gui_text.py）—— DWG/DXF 文字正则替换
 - 「填表助手」：IsoFillApp（gui_fill.py）—— 数据表填入图纸标题栏
-- 「目录助手」：CatalogPanel（gui_catalog.py）—— 按标记模板取值生成图纸目录 Excel
+- 「目录助手」：CatalogPanel（gui_catalog.py）—— 按图纸模板取值生成图纸目录 Excel
 - 「设置」：SettingsPanel（settings.py）—— ODA 路径与 DWG 输出版本（全局共享）
 
 根窗口使用 TkinterDnD.Tk，为各面板提供文件拖放支持。
 
 命令行诊断模式（不启动 GUI）：
-    CADBatchAssistant.exe --selftest <标记模板DWG> <图纸文件...>
+    CADBatchAssistant.exe --selftest <图纸模板DWG> <图纸文件...>
 将「转换 + 取值 + 生成目录」过程中每个文件的异常堆栈写入 exe 同目录
 selftest_log.txt，用于定位打包环境下偶发的解析问题。
 """
@@ -34,7 +34,13 @@ if os.name == "nt":
 from tkinterdnd2 import TkinterDnD
 
 from cadbatchassistant import __version__
-from cadbatchassistant.common import APP_CONFIG_FILE, default_font_family, load_config
+from cadbatchassistant.common import (
+    APP_CONFIG_FILE,
+    default_font_family,
+    is_welcome_needed,
+    load_app_config,
+    load_config,
+)
 from cadbatchassistant.core import updater
 from cadbatchassistant.gui import gui_catalog, gui_fill, gui_text, settings
 
@@ -42,7 +48,7 @@ APP_TITLE = "CAD批处理助手"
 
 
 def _selftest(template_dwg: str, dwg_files: list[str]) -> int:
-    """诊断模式：标记模板 + 图纸 → 完整目录流程，把日志/异常写入 selftest_log.txt。"""
+    """诊断模式：图纸模板 + 图纸 → 完整目录流程，把日志/异常写入 selftest_log.txt。"""
     from cadbatchassistant.common import get_oda
     from cadbatchassistant.core import catalog_excel_writer
     from cadbatchassistant.core.catalog_pipeline import (
@@ -102,7 +108,7 @@ def _selftest(template_dwg: str, dwg_files: list[str]) -> int:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=APP_TITLE)
     ap.add_argument("--selftest", nargs="+", metavar="PATH",
-                    help="诊断模式：第一个参数为标记模板 DWG，其余为图纸文件；"
+                    help="诊断模式：第一个参数为图纸模板 DWG，其余为图纸文件；"
                          "日志写入 selftest_log.txt")
     args = ap.parse_args(argv)
     if args.selftest:
@@ -140,9 +146,23 @@ def main(argv: list[str] | None = None) -> int:
 
     root.protocol("WM_DELETE_WINDOW", _on_close)
     root.on_close = _on_close  # 供更新流程替换前调用（停止后台线程后再销毁）
+    root.after(300, lambda: _show_welcome_if_first_run(root))
     root.after(2000, lambda: _auto_check_update(root))
     root.mainloop()
     return 0
+
+
+def _show_welcome_if_first_run(root: tk.Tk) -> None:
+    """首次启动（全局配置无 welcome_seen 标记）时弹出使用引导窗口。
+
+    延迟触发（主窗口渲染完成后），避免抢占界面；用户关闭引导
+    即写入标记，此后不再自动弹出（可在设置页手动重新打开）。
+    """
+    if not is_welcome_needed(load_app_config()):
+        return
+    from cadbatchassistant.gui.welcome import WelcomeDialog
+
+    WelcomeDialog(root)
 
 
 def _auto_check_update(root: tk.Tk) -> None:

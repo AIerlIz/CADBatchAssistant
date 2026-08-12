@@ -7,7 +7,7 @@
 |---|---|---|
 | **改字助手** | 批量修改 DWG/DXF 图纸文字（TEXT/MTEXT/块属性），支持正则查找替换 | `gui/gui_text.py` + `core/text_replace.py` |
 | **填表助手** | 把数据表（.xlsx/.xls）按「图纸模板占位」填入图纸标题栏 | `gui/gui_fill.py` + `core/fill_pipeline.py` |
-| **目录助手** | 按「标记模板」从一批图纸取值，生成图纸目录 Excel | `gui/gui_catalog.py` + `core/catalog_pipeline.py` |
+| **目录助手** | 按「图纸模板」从一批图纸取值，生成图纸目录 Excel | `gui/gui_catalog.py` + `core/catalog_pipeline.py` |
 | **设置** | ODA File Converter 路径、DWG 输出版本、软件更新（全局共享） | `gui/settings.py` |
 
 > 前身：CADBatchText、CadFill、CADCatalogAssistant 三个独立工具，现已整合为统一应用。
@@ -26,14 +26,14 @@ uv run python main.py
 ### 填表助手
 
 1. **数据表格**：选择 .xlsx/.xls，可选「工作表格」（sheet）与「匹配列」（图纸名列，默认第一列）
-2. **填表模板**：从模板库下拉选择（可「上传」到 `templates/fill`），模板为「未填图框 + 值格填 `[列名]` 占位」的样例图，占位符列名与数据表表头**精确匹配**
+2. **图纸模板**：从模板库下拉选择（可「上传」到 `templates/fill`），模板为「未填图框 + 值格填 `[列名]` 占位」的样例图，占位符列名与数据表表头**精确匹配**
 3. 选择图纸（可拖放）→ 设置输出目录 → 开始处理
 
 **取值规则**：每个占位符 `[列名]` 只从数据表对应列取值，其他列不参与；列缺失/值为空时该字段置空。
 
 ### 目录助手
 
-1. **标记模板**：在取值位置放 `[字段名]` 文字（如 `[图号]`），可放多个同名候选位；用小矩形圈住区域则按区域内全部文字取值。上传到模板库下拉（`templates/catalog`）
+1. **图纸模板**：在取值位置放 `[字段名]` 文字（如 `[图号]`），可放多个同名候选位；用小矩形圈住区域则按区域内全部文字取值。上传到模板库下拉（`templates/catalog`）
 2. **表格模板（必填）**：Excel 表头列名 = 模板字段名 +「页码」，程序自动定位 sheet 与表头行；多个 sheet 并列时弹窗选择。可用 `write_style_template` 生成参考模板
 3. 选择图纸 → 设置输出目录 → 开始处理
 
@@ -52,8 +52,8 @@ uv run python main.py
 
 | 目录 | 用途 | 使用功能页 |
 |---|---|---|
-| `templates/fill/` | 填表模板（未填图框 + 值格 `[列名]` 占位） | 填表助手 |
-| `templates/catalog/` | 标记模板（`[字段名]` 取值位置） | 目录助手 |
+| `templates/fill/` | 图纸模板（未填图框 + 值格 `[列名]` 占位） | 填表助手 |
+| `templates/catalog/` | 图纸模板（`[字段名]` 取值位置） | 目录助手 |
 
 两个模板库各自独立管理（上传/删除/拖放互不干扰），目录在软件目录下自动创建。
 
@@ -78,10 +78,17 @@ uv run pyinstaller --noconfirm --clean CADBatchAssistant.spec
 打包版启动后静默检查 GitHub Release，发现新版本可应用内下载并替换重启；支持下载镜像与失败重试。
 发布：推送 `v*` tag（如 `v2.0.0`）→ CI 构建并发布 Release（资产名 `CADBatchAssistant.exe`）。
 
+## 首次使用引导
+
+首次启动（或删除全局配置文件后）会弹出欢迎引导窗口，简介三个功能页与 DWG 处理提示；
+关闭引导（「开始使用」/「稍后再说」/窗口 X 均可）即在全局配置写入 `welcome_seen`
+标记（`%APPDATA%\CADBatchAssistant\config.json`），之后不再自动弹出。
+需要回看时，在「设置」页点击「重新显示使用引导」。
+
 ## 诊断模式
 
 ```bash
-CADBatchAssistant.exe --selftest <标记模板DWG> <图纸文件...>
+CADBatchAssistant.exe --selftest <图纸模板DWG> <图纸文件...>
 ```
 
 不启动界面跑完整目录流程，日志写入 `selftest_log.txt`，供定位打包版问题。

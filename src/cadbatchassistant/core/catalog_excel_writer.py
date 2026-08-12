@@ -72,7 +72,7 @@ def write_style_template(path: str | Path, fields: list[str] | None = None) -> N
 def detect_header_row(ws, fields: list[str], max_scan: int = 10) -> int | None:
     """反推表格模板的表头行（1 基行号）。
 
-    判定依据 = 标记模板 [字段名] 占位符解析出的字段名列表：扫描工作表前
+    判定依据 = 图纸模板 [字段名] 占位符解析出的字段名列表：扫描工作表前
     max_scan 行，取与字段名（单元格 strip 后精确匹配）匹配数最多的行作为
     表头行；没有任何行命中字段名时返回 None。
     """
@@ -201,7 +201,7 @@ def write_catalog_from_template(catalog: Catalog, xlsx_template: str | Path,
 
     sheet_name : 指定使用的 sheet 名（可空）。为空时自动定位：遍历全部
     sheet，取与字段名匹配数最多的 sheet（并列取第一个）。
-    表头行定位：用 catalog.fields（标记模板 [字段名] 占位符解析出的字段名
+    表头行定位：用 catalog.fields（图纸模板 [字段名] 占位符解析出的字段名
     列表）反推——扫描目标 sheet 前 10 行，取与字段名匹配数最多的行作为表头行；
     没有任何行匹配字段名时抛 ValueError（提示表头列名应与占位符一致）。
     表头行上方的内容（标题、公司名等）与样式原样保留；数据从表头行下一行
@@ -223,14 +223,14 @@ def write_catalog_from_template(catalog: Catalog, xlsx_template: str | Path,
             raise ValueError(
                 f"表格模板 sheet「{sheet_name}」中未找到与字段匹配的表头行"
                 f"（字段：{'、'.join(catalog.fields)}）。"
-                "表头列名应包含与标记模板 [字段名] 占位符一致的字段名。")
+                "表头列名应包含与图纸模板 [字段名] 占位符一致的字段名。")
     else:
         hit = detect_sheet(wb, catalog.fields)
         if hit is None:
             raise ValueError(
                 "表格模板中未找到与字段匹配的表头（sheet 与表头行）（字段："
                 + "、".join(catalog.fields)
-                + "）。表头列名应包含与标记模板 [字段名] 占位符一致的字段名。")
+                + "）。表头列名应包含与图纸模板 [字段名] 占位符一致的字段名。")
         ws, header_row = hit
     first_data_row = header_row + 1
     headers = [str(c.value).strip() if c.value is not None else ""

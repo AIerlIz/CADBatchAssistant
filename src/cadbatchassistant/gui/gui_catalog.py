@@ -1,7 +1,7 @@
-"""「目录助手」面板：从 DWG/DXF 图纸按标记模板取值，生成图纸目录 Excel。
+"""「目录助手」面板：从 DWG/DXF 图纸按图纸模板取值，生成图纸目录 Excel。
 
 - 待处理区：图纸文件多选列表（选择/追加/右键删除/Delete/拖放）
-- 数据源区：标记模板库下拉（上传/删除到 templates/catalog）+ 表格模板（Excel）
+- 数据源区：图纸模板库下拉（上传/删除到 templates/catalog）+ 表格模板（Excel）
 - 输出区：输出目录（默认 = 第一个图纸文件所在目录 output）
 - 运行区：开始/停止 + 进度条；日志区
 
@@ -90,13 +90,25 @@ class CatalogPanel(AsyncPanel):
         self.file_list.drop_target_register(DND_FILES)
         self.file_list.dnd_bind("<<Drop>>", self._on_drop_files)
 
-        # 2. 数据源区：标记模板库 + 表格模板
+        # 2. 数据源区：表格模板 + 图纸模板
         src_frame = ttk.LabelFrame(main, text="数据源", padding=8)
         src_frame.pack(fill="x", **pad)
 
+        row_xlsx = ttk.Frame(src_frame)
+        row_xlsx.pack(fill="x")
+        ttk.Label(row_xlsx, text="表格模板:").pack(side="left")
+        self.var_xlsx = tk.StringVar()
+        e_xlsx = ttk.Entry(row_xlsx, textvariable=self.var_xlsx)
+        e_xlsx.pack(side="left", fill="x", expand=True, padx=4)
+        e_xlsx.drop_target_register(DND_FILES)
+        e_xlsx.dnd_bind("<<Drop>>",
+                        lambda e: self._on_drop_single(e, self.var_xlsx, (".xlsx",)))
+        ttk.Button(row_xlsx, text="浏览", command=self._browse_xlsx).pack(
+            side="left", padx=4)
+
         row_tpl = ttk.Frame(src_frame)
-        row_tpl.pack(fill="x")
-        ttk.Label(row_tpl, text="标记模板:").pack(side="left")
+        row_tpl.pack(fill="x", pady=(6, 0))
+        ttk.Label(row_tpl, text="图纸模板:").pack(side="left")
         self.var_template = tk.StringVar()
         self.tpl_combo = ttk.Combobox(row_tpl, textvariable=self.var_template,
                                       state="readonly", width=24)
@@ -106,18 +118,6 @@ class CatalogPanel(AsyncPanel):
         ttk.Button(row_tpl, text="上传", command=self._upload_template).pack(
             side="left", padx=4)
         ttk.Button(row_tpl, text="删除", command=self._delete_template).pack(
-            side="left", padx=4)
-
-        row_xlsx = ttk.Frame(src_frame)
-        row_xlsx.pack(fill="x", pady=(6, 0))
-        ttk.Label(row_xlsx, text="表格模板:").pack(side="left")
-        self.var_xlsx = tk.StringVar()
-        e_xlsx = ttk.Entry(row_xlsx, textvariable=self.var_xlsx)
-        e_xlsx.pack(side="left", fill="x", expand=True, padx=4)
-        e_xlsx.drop_target_register(DND_FILES)
-        e_xlsx.dnd_bind("<<Drop>>",
-                        lambda e: self._on_drop_single(e, self.var_xlsx, (".xlsx",)))
-        ttk.Button(row_xlsx, text="浏览", command=self._browse_xlsx).pack(
             side="left", padx=4)
 
         # 3. 输出区
@@ -217,7 +217,7 @@ class CatalogPanel(AsyncPanel):
         elif parse_dnd_data(event.data):
             messagebox.showwarning("提示", f"仅支持 {', '.join(exts)} 文件")
 
-    # ---------------- 标记模板库（templates/catalog） ----------------
+    # ---------------- 图纸模板库（templates/catalog） ----------------
     def _refresh_templates(self) -> None:
         """刷新下拉框并恢复上次选择（config.json 存模板文件名）。"""
         names = list_templates("catalog")
@@ -231,9 +231,9 @@ class CatalogPanel(AsyncPanel):
             self.var_template.set("")
 
     def _upload_template(self, path: str | None = None) -> None:
-        """把 dwg/dxf 复制进标记模板库（templates/catalog）并选中。"""
+        """把 dwg/dxf 复制进图纸模板库（templates/catalog）并选中。"""
         name = upload_template_file(
-            "catalog", path, title="上传标记模板（[字段名] 取值位置）")
+            "catalog", path, title="上传图纸模板（[字段名] 取值位置）")
         if name:
             self._refresh_templates()
             self.var_template.set(name)
@@ -249,7 +249,7 @@ class CatalogPanel(AsyncPanel):
         hit = next((p for p in parse_dnd_data(event.data)
                     if p.lower().endswith((".dwg", ".dxf")) and os.path.isfile(p)), None)
         if hit is None:
-            messagebox.showwarning("提示", "仅支持拖入 .dwg/.dxf 标记模板（将上传到模板库）")
+            messagebox.showwarning("提示", "仅支持拖入 .dwg/.dxf 图纸模板（将上传到模板库）")
             return
         self._upload_template(hit)
 
@@ -276,7 +276,7 @@ class CatalogPanel(AsyncPanel):
 
     # ---------------- 配置记忆 ----------------
     def _load(self) -> None:
-        self._refresh_templates()  # 恢复上次选择的标记模板
+        self._refresh_templates()  # 恢复上次选择的图纸模板
         cfg = _load_panel_config()
         last_xlsx = cfg.get("catalog_xlsx", "")
         if last_xlsx and os.path.isfile(last_xlsx):
@@ -296,7 +296,7 @@ class CatalogPanel(AsyncPanel):
         out = self.var_out.get().strip()
 
         if not tpl_name or not os.path.isfile(template):
-            messagebox.showwarning("提示", "请从标记模板下拉框选择模板（可先「上传」）")
+            messagebox.showwarning("提示", "请从图纸模板下拉框选择模板（可先「上传」）")
             return
         if not xlsx or not os.path.isfile(xlsx):
             messagebox.showwarning("提示", "请选择有效的表格模板")
@@ -332,7 +332,7 @@ class CatalogPanel(AsyncPanel):
                 "图纸目录助手",
                 "表格模板中未找到与字段匹配的表头（sheet 与表头行）（字段："
                 + "、".join(fields)
-                + "）。表头列名应包含与标记模板 [字段名] 占位符一致的字段名。")
+                + "）。表头列名应包含与图纸模板 [字段名] 占位符一致的字段名。")
             return
         tied = [c for c in cands if c[0] == cands[0][0]]
         if len(tied) > 1:

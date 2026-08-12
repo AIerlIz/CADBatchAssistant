@@ -33,7 +33,7 @@ TMP = pathlib.Path(tempfile.mkdtemp(prefix="cad_verify_"))
 
 
 def make_template() -> pathlib.Path:
-    """标记模板：矩形A(0,0,20,10) 内 [管段编号]、单点 [图号](30,40)。"""
+    """图纸模板：矩形A(0,0,20,10) 内 [管段编号]、单点 [图号](30,40)。"""
     doc = ezdxf.new("R2013")
     m = doc.modelspace()
     m.add_lwpolyline([(0, 0), (20, 0), (20, 10), (0, 10)], close=True)

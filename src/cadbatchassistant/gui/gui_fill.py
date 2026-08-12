@@ -116,7 +116,7 @@ class IsoFillApp(AsyncPanel):
         # 图纸模板（模板库下拉选择）
         row_tpl = ttk.Frame(src_frame)
         row_tpl.pack(fill="x", pady=(6, 0))
-        ttk.Label(row_tpl, text="填表模板:").pack(side="left")
+        ttk.Label(row_tpl, text="图纸模板:").pack(side="left")
         self.var_template = tk.StringVar()
         self.tpl_combo = ttk.Combobox(row_tpl, textvariable=self.var_template,
                                       state="readonly", width=16)
@@ -261,12 +261,12 @@ class IsoFillApp(AsyncPanel):
         """（已改为模板库上传，此方法保留兼容）"""
         self._upload_template()
 
-    # ---------------- 图纸模板库（填表模板：templates/fill） ----------------
+    # ---------------- 图纸模板库（templates/fill） ----------------
     def _refresh_templates(self) -> None:
         """刷新下拉框并恢复上次选择（config.json 存模板文件名）。"""
         names = list_templates("fill")
         self.tpl_combo["values"] = names
-        last = _load_panel_config().get("template", "")
+        last = _load_panel_config().get("fill_template", "")
         if last in names:
             self.var_template.set(last)
         elif names and not self.var_template.get():
@@ -275,19 +275,19 @@ class IsoFillApp(AsyncPanel):
             self.var_template.set("")
 
     def _upload_template(self, path: str | None = None) -> None:
-        """把 dwg/dxf 复制进填表模板库（templates/fill）并选中。"""
+        """把 dwg/dxf 复制进图纸模板库（templates/fill）并选中。"""
         name = upload_template_file(
-            "fill", path, title="上传填表模板（未填图框 + 值格 [列名] 占位）")
+            "fill", path, title="上传图纸模板（未填图框 + 值格 [列名] 占位）")
         if name:
             self._refresh_templates()
             self.var_template.set(name)
-            _save_panel_config({"template": name})
+            _save_panel_config({"fill_template": name})
 
     def _delete_template(self) -> None:
         name = self.var_template.get().strip()
         if delete_template_file("fill", name):
             self._refresh_templates()
-            _save_panel_config({"template": self.var_template.get()})
+            _save_panel_config({"fill_template": self.var_template.get()})
 
     def _on_drop_upload_template(self, event) -> None:
         paths = self._parse_dnd_data(event.data)

@@ -1,4 +1,4 @@
-"""一键流程（目录助手）：标记模板 DWG + 图纸文件列表 → 目录 Excel。
+"""一键流程（目录助手）：图纸模板 DWG + 图纸文件列表 → 目录 Excel。
 
 流程：解析模板锚点 → 图纸/模板统一转 DXF → 按锚点提取每字段值
 （图号取不到用文件名兜底）→ 文件粒度目录 → 输出 Excel。
@@ -46,7 +46,7 @@ class PipelineResult:
 
 
 def parse_template_fields(template_dwg: str | Path, oda: str = "") -> list[str]:
-    """解析标记模板，返回按出现顺序去重后的字段名列表。
+    """解析图纸模板，返回按出现顺序去重后的字段名列表。
 
     模板为 DWG 时先复制到临时目录并转 DXF（oda 为空时自动探测
     ODAFileConverter）；无占位符/转换失败时抛异常，由调用方决定处理
@@ -90,7 +90,7 @@ def run_pipeline(
 ) -> PipelineResult:
     """执行完整流程（模板标记取值）。失败时返回 ok=False 的结果。
 
-    template_dwg : 标记模板 DWG（[字段名] 占位符 + 矩形区域）
+    template_dwg : 图纸模板 DWG（[字段名] 占位符 + 矩形区域）
     xlsx_template : 用户提供的表格模板（sheet 自动定位、表头行由占位符
                     字段名反推，列名 = 字段名/页码，必填）
     sheet_name : 指定表格模板使用的 sheet 名（可空；为空时自动定位
@@ -103,7 +103,7 @@ def run_pipeline(
     # 1. 校验输入
     template = Path(str(template_dwg))
     if not template.is_file():
-        result.error = f"标记模板 DWG 不存在: {template}"
+        result.error = f"图纸模板 DWG 不存在: {template}"
         return result
     xlsx = Path(str(xlsx_template)) if str(xlsx_template).strip() else None
     if xlsx is None or not xlsx.is_file():

@@ -24,7 +24,6 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from cadbatchassistant import __version__
 
 # GitHub 仓库与更新包信息（与 .github/workflows/build.yml 发布的资产一致）
 GITHUB_REPO = "AIerlIz/CADBatchAssistant"

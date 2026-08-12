@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import glob
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -159,6 +160,36 @@ def wait_for_outputs(
             return
         time.sleep(interval)
     raise ODAError(f"等待 ODA 输出超时，仍缺失 {len(missing)} 个文件: {sorted(missing)[:5]} ...")
+
+
+def convert_template_to_dxf(
+    template: str | Path,
+    workdir: str | Path,
+    oda: str | Path = "",
+    out_version: str = DEFAULT_OUT_VERSION,
+    subdir: str = "_tmpl_dxf",
+) -> str:
+    """把图纸模板（.dwg/.dxf）转成 DXF，返回模板 DXF 路径。
+
+    模板复制到 workdir 根目录（保持原名）。
+    - .dwg：经 ODA 转 DXF，产物输出到 workdir/subdir（ODA 要求输入输出
+      目录不同，故用独立子目录承接）；oda 为空时自动探测，仍未找到抛 ODAError。
+    - .dxf：直接返回复制后的路径。
+    """
+    template = Path(template)
+    workdir = Path(workdir)
+    dst = workdir / template.name
+    shutil.copy2(template, dst)
+    if template.suffix.lower() != ".dwg":
+        return str(dst)
+    oda = (oda or "").strip()
+    if not oda or not Path(oda).is_file():
+        found = find_oda_converter()
+        oda = str(found) if found else ""
+    out_dir = workdir / subdir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    convert_dwg_batch_to_dxf(oda, workdir, out_dir, [template.name], out_version)
+    return str(out_dir / (template.stem + ".dxf"))
 
 
 def convert_dwg_batch_to_dxf(

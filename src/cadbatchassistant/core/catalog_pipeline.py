@@ -14,7 +14,6 @@ from typing import Callable
 
 from cadbatchassistant.core import catalog_excel_writer
 from cadbatchassistant.core.catalog_builder import (
-    Catalog,
     FileEntry,
     build_file_catalog,
 )
@@ -23,7 +22,9 @@ from cadbatchassistant.core.catalog_template_reader import parse_template
 from cadbatchassistant.core.dwg_converter import (
     ODAError,
     convert_dwg_batch_to_dxf,
+    convert_template_to_dxf,
     find_oda_converter,
+    require_oda_for_dwg,
 )
 
 # 回调：log(msg)，progress(0-100 整数)
@@ -55,19 +56,8 @@ def parse_template_fields(template_dwg: str | Path, oda: str = "") -> list[str]:
     template = Path(str(template_dwg))
     with tempfile.TemporaryDirectory(prefix="cad_fields_") as td:
         tmp = Path(td)
-        shutil.copy2(template, tmp / template.name)
-        if template.suffix.lower() == ".dwg":
-            oda = (oda or "").strip()
-            if not oda or not Path(oda).is_file():
-                found = find_oda_converter()
-                oda = str(found) if found else ""
-            # ODA 要求输出目录与输入目录不同，用独立子目录承接 DXF 产物
-            out_dir = tmp / "_dxf_out"
-            out_dir.mkdir(parents=True, exist_ok=True)
-            convert_dwg_batch_to_dxf(oda, tmp, out_dir, [template.name])
-            anchors = parse_template(out_dir / (template.stem + ".dxf"))
-        else:
-            anchors = parse_template(tmp / (template.stem + ".dxf"))
+        t_dxf = convert_template_to_dxf(template, tmp, oda)
+        anchors = parse_template(t_dxf)
     fields: list[str] = []
     for a in anchors:
         if a.field not in fields:
@@ -129,9 +119,9 @@ def run_pipeline(
         oda = str(found) if found else ""
     has_dwg = template.suffix.lower() == ".dwg" or any(
         p.suffix.lower() == ".dwg" for p in files)
-    if has_dwg and (not oda or not Path(oda).is_file()):
-        result.error = ("输入包含 DWG 文件，未找到 ODAFileConverter.exe，"
-                        "请安装或在「设置」页配置其路径。（仅 DXF 文件无需 ODA）")
+    err = require_oda_for_dwg(has_dwg, oda)
+    if err:
+        result.error = err
         return result
 
     # 3. 统一复制到临时目录并转换 DXF（跨目录图纸 + 模板）
@@ -161,15 +151,12 @@ def run_pipeline(
 
         # 4. 解析模板锚点（模板若为 DWG 先转 DXF）
         progress(10)
-        if template.suffix.lower() == ".dwg":
-            try:
-                convert_dwg_batch_to_dxf(oda, tmp_dir, dxf_out, [template.name])
-            except ODAError as ex:
-                result.error = f"模板 DWG 转换失败: {ex}"
-                return result
-            template_dxf = dxf_out / (template.stem + ".dxf")
-        else:
-            template_dxf = tmp_dir / (template.stem + ".dxf")
+        try:
+            template_dxf = convert_template_to_dxf(
+                template, tmp_dir, oda, subdir="_dxf_out")
+        except ODAError as ex:
+            result.error = f"模板 DWG 转换失败: {ex}"
+            return result
         try:
             anchors = parse_template(template_dxf)
         except Exception as ex:  # noqa: BLE001

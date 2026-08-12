@@ -14,20 +14,17 @@ import shutil
 import tempfile
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import messagebox, ttk
 
 from tkinterdnd2 import DND_FILES
 
 from cadbatchassistant.common import (
-    APP_CONFIG_FILE,
     AsyncPanel,
     build_file_list,
     build_log_panel,
     build_output_row,
-    dedup_paths as _dedup_paths_common,
     get_oda,
     get_out_version,
-    parse_dnd_data,
 )
 from cadbatchassistant.core.text_replace import ReplaceRule, process_dxf_file
 from cadbatchassistant.core.dwg_converter import (
@@ -35,6 +32,11 @@ from cadbatchassistant.core.dwg_converter import (
     convert_dwg_batch_to_dxf,
     convert_dxf_batch_to_dwg,
     require_oda_for_dwg,
+)
+from cadbatchassistant.gui.gui_shared import (
+    FilesPanelMixin,
+    begin_run,
+    finish_popup,
 )
 
 
@@ -153,12 +155,11 @@ class EditableTreeview(ttk.Treeview):
         return "break"
 
 
-class CadTextApp(AsyncPanel):
+class CadTextApp(AsyncPanel, FilesPanelMixin):
     def __init__(self, parent: tk.Widget) -> None:
         """构建「改字助手」面板；parent 为嵌入容器（如 Notebook 的 tab 页）。"""
         super().__init__(parent)
-        self.scanned_dwg: list[Path] = []
-        self.scanned_dxf: list[Path] = []
+        self.scanned_files: list[str] = []
         self.rules_data: list[tuple[str, str]] = []
 
         self._build_ui()
@@ -231,7 +232,7 @@ class CadTextApp(AsyncPanel):
         self.var_output = tk.StringVar()
         build_output_row(
             out_frame, self.var_output,
-            on_browse=self._browse_output,
+            on_browse=lambda: self._browse_dir(self.var_output),
             on_default=self._default_output,
             entry_hook=lambda e: (e.drop_target_register(DND_FILES),
                                   e.dnd_bind("<<Drop>>", self._on_drop_out_dir)))
@@ -250,97 +251,6 @@ class CadTextApp(AsyncPanel):
         # 6. 日志区
         log_frame, self.log_text = build_log_panel(main, height=8)
         log_frame.pack(fill="both", expand=True, **pad)
-
-    # ---------------- 输入与输出 ----------------
-    def _browse_input_files(self) -> None:
-        files = filedialog.askopenfilenames(
-            title="选择要处理的 DWG/DXF 文件（可多次追加选择）",
-            filetypes=[
-                ("CAD 文件", "*.dwg *.dxf"),
-                ("DWG 文件", "*.dwg"),
-                ("DXF 文件", "*.dxf"),
-                ("所有文件", "*.*"),
-            ],
-        )
-        if not files:
-            return
-        for f in files:
-            p = Path(f)
-            ext = p.suffix.lower()
-            if ext == ".dwg":
-                self.scanned_dwg.append(p)
-            elif ext == ".dxf":
-                self.scanned_dxf.append(p)
-        # 追加选择并去重（Windows 路径大小写不敏感）
-        self.scanned_dxf = self._dedup_paths(self.scanned_dxf)
-        self.scanned_dwg = self._dedup_paths(self.scanned_dwg)
-        self._refresh_file_list()
-        if not self.var_output.get().strip():
-            self._default_output()
-
-    @staticmethod
-    def _dedup_paths(paths: list[Path]) -> list[Path]:
-        return _dedup_paths_common(paths)
-
-    def _delete_selected_files(self) -> None:
-        """删除文件列表中选中的条目（支持多选）。"""
-        sel = sorted(self.file_list.curselection(), reverse=True)
-        n_dwg = len(self.scanned_dwg)
-        for idx in sel:
-            if idx < n_dwg:
-                del self.scanned_dwg[idx]
-            else:
-                del self.scanned_dxf[idx - n_dwg]
-        self._refresh_file_list()
-
-    # ---------------- 拖拽文件 ----------------
-    def _on_drop_files(self, event) -> None:
-        """拖入 DWG/DXF 追加到列表（按扩展名分类）。"""
-        added = False
-        for p in parse_dnd_data(event.data):
-            low = p.lower()
-            if low.endswith(".dwg") and os.path.isfile(p):
-                self.scanned_dwg.append(Path(p))
-                added = True
-            elif low.endswith(".dxf") and os.path.isfile(p):
-                self.scanned_dxf.append(Path(p))
-                added = True
-        if not added:
-            messagebox.showwarning("提示", "仅支持拖入 DWG/DXF 文件")
-            return
-        self.scanned_dxf = self._dedup_paths(self.scanned_dxf)
-        self.scanned_dwg = self._dedup_paths(self.scanned_dwg)
-        self._refresh_file_list()
-        if not self.var_output.get().strip():
-            self._default_output()
-
-    def _on_drop_out_dir(self, event) -> None:
-        """拖入文件夹设为输出目录。"""
-        paths = parse_dnd_data(event.data)
-        d = next((p for p in paths if os.path.isdir(p)), None)
-        if d is not None:
-            self.var_output.set(d)
-        elif paths:
-            messagebox.showwarning("提示", "输出目录请拖入文件夹")
-
-    def _browse_output(self) -> None:
-        d = filedialog.askdirectory(title="选择输出目录")
-        if d:
-            self.var_output.set(d)
-
-    def _default_output(self) -> None:
-        srcs = self.scanned_dxf + self.scanned_dwg
-        if srcs:
-            self.var_output.set(str(srcs[0].parent / "output"))
-
-    def _refresh_file_list(self) -> None:
-        self.file_list.delete(0, "end")
-        for p in self.scanned_dwg + self.scanned_dxf:
-            self.file_list.insert("end", p.name)
-        self.var_scan_info.set(
-            f"共 {len(self.scanned_dwg) + len(self.scanned_dxf)} 个文件："
-            f"DXF {len(self.scanned_dxf)} 个，DWG {len(self.scanned_dwg)} 个"
-        )
 
     # ---------------- 规则管理（表格内联增删改） ----------------
     def _refresh_rule_list(self) -> None:
@@ -425,7 +335,7 @@ class CadTextApp(AsyncPanel):
             messagebox.showwarning("提示", "请至少添加一条替换规则")
             return
         inp = ""
-        if not (self.scanned_dxf or self.scanned_dwg):
+        if not self.scanned_files:
             messagebox.showwarning("提示", "请选择要处理的 DWG/DXF 文件")
             return
         out = self.var_output.get().strip()
@@ -437,25 +347,21 @@ class CadTextApp(AsyncPanel):
             return
         oda = get_oda()
         out_version = get_out_version()
-        if self.scanned_dwg and not self.var_dry.get():
+        has_dwg = any(p.lower().endswith(".dwg") for p in self.scanned_files)
+        if has_dwg and not self.var_dry.get():
             err = require_oda_for_dwg(True, oda)
             if err:
                 messagebox.showerror("缺少 ODA File Converter", err)
                 return
 
-        self.running = True
-        self._cancel_event.clear()
-        self.btn_start.config(state="disabled")
-        self.btn_stop.config(state="normal")
-        self.progress.config(maximum=len(self.scanned_dxf) + len(self.scanned_dwg), value=0)
-        self.log_text.delete("1.0", "end")
+        begin_run(self, maximum=len(self.scanned_files))
 
         # 文件模式下：把所选文件复制到临时输入目录（DWG 转换需要目录），处理完清理
         work_in = None
         if not self.var_dry.get():
             work_in = tempfile.mkdtemp(prefix="cad_text_input_")
-            for p in list(self.scanned_dxf) + list(self.scanned_dwg):
-                shutil.copy2(str(p), os.path.join(work_in, p.name))
+            for p in list(self.scanned_files):
+                shutil.copy2(str(p), os.path.join(work_in, os.path.basename(p)))
             inp = work_in
 
         self._start_worker((inp, out, rules, self.var_dry.get(),
@@ -469,7 +375,7 @@ class CadTextApp(AsyncPanel):
             self._run_batch(inp, out, rules, dry_run, oda, out_version)
             success = not self._is_cancelled()  # 中途被停止时不算完成
             if success:
-                total = len(self.scanned_dxf) + len(self.scanned_dwg)
+                total = len(self.scanned_files)
                 self._emit(f"==== 全部完成：{total} 个文件，输出见 {out} ====")
             return success
         finally:
@@ -482,8 +388,8 @@ class CadTextApp(AsyncPanel):
         if not dry_run:
             out_dir.mkdir(parents=True, exist_ok=True)
 
-        dxf_files = [p for p in self.scanned_dxf]
-        dwg_files = [p for p in self.scanned_dwg]
+        dxf_files = [Path(p) for p in self.scanned_files if p.lower().endswith(".dxf")]
+        dwg_files = [Path(p) for p in self.scanned_files if p.lower().endswith(".dwg")]
         done = 0
         total_ok, total_fail, total_replaced = 0, 0, 0
 
@@ -561,10 +467,7 @@ class CadTextApp(AsyncPanel):
     def _on_finish(self, success: bool) -> None:
         """完成收尾：恢复按钮并弹窗汇总。"""
         super()._on_finish(success)
-        if success:
-            messagebox.showinfo("完成", "处理完成，请查看日志。")
-        else:
-            messagebox.showwarning("完成", "处理中断，详见日志。")
+        finish_popup(success)
 
 
 

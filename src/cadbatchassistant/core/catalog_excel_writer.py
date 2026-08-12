@@ -22,17 +22,11 @@ from cadbatchassistant.core.catalog_builder import (
 # ---- 内置样式 ----
 _HEADER_FILL = PatternFill("solid", fgColor="4472C4")   # 深蓝表头
 _HEADER_FONT = Font(bold=True, color="FFFFFF")
-_NA_FONT = Font(color="C00000")                          # NA 红色
 _THIN_SIDE = Side(style="thin", color="BFBFBF")
 _BORDER = Border(left=_THIN_SIDE, right=_THIN_SIDE,
                  top=_THIN_SIDE, bottom=_THIN_SIDE)
 _CENTER = Alignment(horizontal="center", vertical="center")
 _LEFT = Alignment(horizontal="left", vertical="center")
-
-
-def default_output_path(dwg_dir: str | Path) -> Path:
-    """默认输出路径：DWG 目录下 output 子目录的 目录.xlsx。"""
-    return Path(dwg_dir) / "output" / "目录.xlsx"
 
 
 def write_style_template(path: str | Path, fields: list[str] | None = None) -> None:
@@ -41,8 +35,8 @@ def write_style_template(path: str | Path, fields: list[str] | None = None) -> N
     fields : 表头列名列表（默认示例 ["字段名", "字段名", "页码"]），
     程序按表头列名与占位符字段名反推表头行，故生成时传入实际字段名
     可保证反推命中。
-    用户可编辑此文件自定义表头/数据样式；在 config.json 的 rules 中
-    配置 style_template 指向它，生成目录时按模板样式套用。
+    用户可编辑此文件自定义表头/数据样式，并在「目录助手」中把它
+    选为表格模板；表头行由图纸模板 [字段名] 占位符自动定位。
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -54,7 +48,7 @@ def write_style_template(path: str | Path, fields: list[str] | None = None) -> N
     ws.append(["示例值" if h != "页码" else 1 for h in headers])
     ws.append([])
     ws.append(["说明", "第一行为表头样式，第二行为数据行样式（含边框/字体/对齐/底色）。"])
-    ws.append(["使用", "编辑后保存，把路径填到 config.json 的 rules.style_template；留空则用程序内置样式。"])
+    ws.append(["使用", "编辑后保存，在「目录助手」中把它选为表格模板；表头行由图纸模板字段自动定位。"])
     for cell in ws[1]:
         cell.font = _HEADER_FONT
         cell.fill = _HEADER_FILL
@@ -120,78 +114,6 @@ def detect_sheet(wb, fields: list[str],
     if not candidates:
         return None
     return candidates[0][1], candidates[0][2]
-
-
-def write_simple_catalog(catalog: Catalog, out_path: str | Path,
-                         style_template: str | Path | None = None) -> None:
-    """以内置样式生成目录 Excel（文件粒度 + 动态列 + NA）。
-
-    样式：深蓝表头（白字加粗居中）、数据区细边框、NA 红色字、
-    冻结首行、按内容自适应列宽。
-    """
-    out_path = Path(out_path)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "目录"
-    ws.freeze_panes = "A2"
-
-    headers = list(catalog.fields) + ["页码"]
-    ws.append(headers)
-    for cell in ws[1]:
-        cell.font = _HEADER_FONT
-        cell.fill = _HEADER_FILL
-        cell.alignment = _CENTER
-        cell.border = _BORDER
-    ws.row_dimensions[1].height = 20
-
-    col_max = {ci: len(str(h)) for ci, h in enumerate(headers)}
-    row = 2
-    for idx, entry in enumerate(catalog.entries):
-        n_rows = entry_rows(entry, catalog.fields)
-        page = catalog.total_pages - len(catalog.entries) + idx + 1  # 文件序页码
-        entry_start = row
-        for i in range(n_rows):
-            for ci, f in enumerate(catalog.fields):
-                vals = entry.values.get(f, [])
-                if vals:
-                    v = vals[i] if i < len(vals) else ""
-                    cell = ws.cell(row=row, column=ci + 1, value=v)
-                    col_max[ci] = max(col_max[ci], len(str(v)))
-                else:
-                    cell = ws.cell(row=row, column=ci + 1, value=NA)
-                    cell.font = _NA_FONT
-                cell.border = _BORDER
-                cell.alignment = _LEFT
-            pc = ws.cell(row=row, column=len(catalog.fields) + 1, value=page)
-            pc.border = _BORDER
-            pc.alignment = _CENTER
-            row += 1
-        # 单值字段跨行合并（值数为 1 的列）
-        for ci, f in enumerate(catalog.fields):
-            if len(entry.values.get(f, [])) == 1 and n_rows > 1:
-                ws.merge_cells(
-                    start_row=entry_start, start_column=ci + 1,
-                    end_row=row - 1, end_column=ci + 1)
-        # 页码列跨文件行合并
-        if n_rows > 1:
-            ws.merge_cells(
-                start_row=entry_start, start_column=len(catalog.fields) + 1,
-                end_row=row - 1, end_column=len(catalog.fields) + 1)
-
-    # 自适应列宽（内容 + 2，上限 60；页码列固定 8）
-    for ci in range(len(catalog.fields)):
-        ws.column_dimensions[get_column_letter(ci + 1)].width = \
-            min(max(col_max.get(ci, 10) + 2, 12), 60)
-    ws.column_dimensions[get_column_letter(len(catalog.fields) + 1)].width = 8
-    wb.save(out_path)
-
-
-# 兼容旧导出名（供外部/测试引用）
-def write_catalog(catalog: Catalog, out_path: str | Path) -> None:
-    """旧名兼容：同 write_simple_catalog。"""
-    write_simple_catalog(catalog, out_path)
 
 
 def write_catalog_from_template(catalog: Catalog, xlsx_template: str | Path,

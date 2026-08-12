@@ -18,13 +18,17 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import ttk
 
-from cadbatchassistant.core.dwg_converter import find_oda_converter
+from cadbatchassistant.core.dwg_converter import (
+    DEFAULT_OUT_VERSION,
+    find_oda_converter,
+)
 
-# DWG 输出版本下拉选项（两个面板共用）
-OUT_VERSION_CHOICES = [
-    "ACAD2018", "ACAD2013", "ACAD2010", "ACAD2007",
-    "ACAD2004", "ACAD2000",
+# DWG 输出版本下拉选项（两个面板共用）；默认值取自 dwg_converter.DEFAULT_OUT_VERSION，
+# 与转换层默认保持一致，避免多处常量发散
+_OUT_VERSION_CHOICES = [
+    "ACAD2013", "ACAD2010", "ACAD2007", "ACAD2004", "ACAD2000",
 ]
+OUT_VERSION_CHOICES = [DEFAULT_OUT_VERSION] + _OUT_VERSION_CHOICES
 
 # 全局设置（ODA 路径、DWG 输出版本）存放于统一配置目录，「设置」页与两个面板共享
 APP_CONFIG_DIR = Path(os.environ.get("APPDATA") or Path.home()) / "CADBatchAssistant"

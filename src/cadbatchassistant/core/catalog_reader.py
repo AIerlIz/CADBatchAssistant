@@ -1,29 +1,21 @@
 """DXF 文字实体工具与「按模板锚点取值」模块（目录助手）。
 
 - iter_text_entities / _plain_text / decode_text：遍历与取纯文本基础工具
+  （TEXT_TYPES / decode_text / iter_text_entities 复用 text_replace，避免重复定义）
 - extract_by_anchors：按模板解析出的锚点（区域/单点）从实际图纸 DXF 中
   提取每个字段的值列表；该位置无值则忽略（目录层按 NA 处理）
 """
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import ezdxf
 
-# 直接携带文字的实体类型
-TEXT_TYPES = ("TEXT", "MTEXT", "ATTRIB", "ATTDEF")
-
-# R12 / 代码页无法表示时的 \\U+XXXX 转义
-_U_ESCAPE_RE = re.compile(r"\\U\+([0-9A-Fa-f]{4})")
-
-
-def decode_text(s: str) -> str:
-    """把 \\U+XXXX 转义序列解码为真实 Unicode 字符。"""
-    if "\\U+" not in s:
-        return s
-    return _U_ESCAPE_RE.sub(lambda m: chr(int(m.group(1), 16)), s)
+from cadbatchassistant.core.text_replace import (
+    decode_text,
+    iter_text_entities,
+)
 
 
 def _plain_text(e) -> str:
@@ -34,18 +26,6 @@ def _plain_text(e) -> str:
         except Exception:  # noqa: BLE001 - 个别 MTEXT 结构异常时回退原始文本
             return decode_text(e.text)
     return decode_text(str(e.dxf.text))
-
-
-def iter_text_entities(doc):
-    """遍历文档中所有文字实体（模型空间/图纸空间/块定义/INSERT 属性）。"""
-    for block in doc.blocks:
-        for e in block:
-            t = e.dxftype()
-            if t in TEXT_TYPES:
-                yield e
-            elif t == "INSERT":
-                for attrib in e.attribs:
-                    yield attrib
 
 
 def _entity_insert_point(e) -> tuple[float, float]:

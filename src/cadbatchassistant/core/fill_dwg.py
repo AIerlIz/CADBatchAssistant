@@ -28,7 +28,7 @@ SPECS = os.path.join(HERE, "specs.json")
 XLSX = r"D:\ISO图\数据表.xlsx"
 
 
-def make_text(value_rule: str, val: str, sep: str) -> str:
+def make_text(val: str) -> str:
     """数据表值原样填入（不分类加工）。"""
     return val.strip()
 
@@ -59,7 +59,7 @@ def fill_one(before_dxf: str, out_dxf: str, spec: dict, row: dict) -> list[str]:
         for field, fspec in fields.items():
             val = row.get(field, "")
             if val.strip():
-                text = make_text(fspec["value_rule"], val, fspec.get("sep", ""))
+                text = make_text(val)
             else:
                 text = ""   # xlsx 值为空：占位符的值也置空（仍克隆占位符）
             x, y = fspec["x"], fspec["y"]

@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 
 from cadbatchassistant.core.text_replace import decode_text, read_doc
@@ -57,18 +56,6 @@ def scan_placeholders(dxf_path: str, xlsx_path: str | None = None,
             "entity": e,
         }
     return spec
-
-
-def scan_to_file(dxf_path: str, xlsx_path: str | None = None,
-                 out_path: str | None = None) -> str:
-    """扫描占位并写入 JSON，返回文件路径。"""
-    spec = {"_template": scan_placeholders(dxf_path, xlsx_path)}
-    if out_path is None:
-        out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                "specs.json")
-    with open(out_path, "w", encoding="utf-8") as fh:
-        json.dump(spec, fh, ensure_ascii=False, indent=2)
-    return out_path
 
 
 def main() -> None:

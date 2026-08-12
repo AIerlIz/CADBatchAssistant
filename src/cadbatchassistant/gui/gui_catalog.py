@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import os
 import tkinter as tk
-from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from tkinterdnd2 import DND_FILES
@@ -25,17 +24,11 @@ from cadbatchassistant.common import (
     build_file_list,
     build_log_panel,
     build_output_row,
-    dedup_paths as _dedup_paths_common,
-    delete_template_file,
     get_oda,
     get_out_version,
-    list_templates,
     load_catalog_rules,
-    load_config,
     parse_dnd_data,
-    save_config,
     templates_dir,
-    upload_template_file,
 )
 from cadbatchassistant.core.catalog_excel_writer import detect_sheet_candidates
 from cadbatchassistant.core.catalog_pipeline import (
@@ -43,23 +36,21 @@ from cadbatchassistant.core.catalog_pipeline import (
     parse_template_fields,
     run_pipeline,
 )
-
-CONFIG_DIR = Path(os.environ.get("APPDATA") or Path.home()) / "CadFill"
-CONFIG_FILE = CONFIG_DIR / "config.json"
-
-
-def _load_panel_config() -> dict:
-    """读取「目录助手」面板配置（模板/表格模板/输出记忆，catalog_ 前缀分组）。"""
-    return load_config(CONFIG_FILE)
-
-
-def _save_panel_config(data: dict) -> None:
-    """写入「目录助手」面板配置（与填表助手同文件，catalog_ 前缀键互不干扰）。"""
-    save_config(CONFIG_FILE, data)
+from cadbatchassistant.gui.gui_shared import (
+    FilesPanelMixin,
+    TemplateLibraryMixin,
+    begin_run,
+    load_panel_config,
+    save_panel_config,
+)
 
 
-class CatalogPanel(AsyncPanel):
-    """目录生成面板（模板标记取值）。"""
+class CatalogPanel(AsyncPanel, FilesPanelMixin, TemplateLibraryMixin):
+    """目录生成面板（模板标记取值）；文件列表/模板库复用共享组件。"""
+
+    TEMPLATE_CATEGORY = "catalog"
+    TEMPLATE_CONFIG_KEY = "catalog_template"
+    TEMPLATE_UPLOAD_TITLE = "上传图纸模板（[字段名] 取值位置）"
 
     def __init__(self, parent: tk.Widget) -> None:
         super().__init__(parent)
@@ -146,58 +137,6 @@ class CatalogPanel(AsyncPanel):
         log_frame, self.log_text = build_log_panel(main, height=8)
         log_frame.pack(fill="both", expand=True, **pad)
 
-    # ---------------- 图纸文件 ----------------
-    def _browse_input_files(self) -> None:
-        files = filedialog.askopenfilenames(
-            title="选择要处理的 DWG/DXF 文件（可多次追加选择）",
-            filetypes=[("CAD 文件", "*.dwg *.dxf"), ("DWG 文件", "*.dwg"),
-                       ("DXF 文件", "*.dxf"), ("所有文件", "*.*")],
-        )
-        if not files:
-            return
-        for f in files:
-            if os.path.isfile(f):
-                self.scanned_files.append(f)
-        self.scanned_files = self._dedup_paths(self.scanned_files)
-        self._refresh_file_list()
-        if not self.var_out.get().strip():
-            self._default_output()
-
-    def _on_drop_files(self, event) -> None:
-        added = False
-        for p in parse_dnd_data(event.data):
-            if p.lower().endswith((".dwg", ".dxf")) and os.path.isfile(p):
-                self.scanned_files.append(p)
-                added = True
-        if not added:
-            messagebox.showwarning("提示", "仅支持拖入 DWG/DXF 文件")
-            return
-        self.scanned_files = self._dedup_paths(self.scanned_files)
-        self._refresh_file_list()
-        if not self.var_out.get().strip():
-            self._default_output()
-
-    def _delete_selected_files(self) -> None:
-        sel = sorted(self.file_list.curselection(), reverse=True)
-        for idx in sel:
-            if 0 <= idx < len(self.scanned_files):
-                del self.scanned_files[idx]
-        self._refresh_file_list()
-
-    def _refresh_file_list(self) -> None:
-        self.file_list.delete(0, "end")
-        for p in self.scanned_files:
-            self.file_list.insert("end", os.path.basename(p))
-        n_dxf = sum(1 for p in self.scanned_files if p.lower().endswith(".dxf"))
-        n_dwg = len(self.scanned_files) - n_dxf
-        self.var_scan_info.set(
-            f"共 {len(self.scanned_files)} 个文件：DXF {n_dxf} 个，DWG {n_dwg} 个"
-        )
-
-    @staticmethod
-    def _dedup_paths(paths: list[str]) -> list[str]:
-        return _dedup_paths_common(paths)
-
     # ---------------- 表格模板（Excel） ----------------
     def _browse_xlsx(self) -> None:
         f = filedialog.askopenfilename(
@@ -206,78 +145,38 @@ class CatalogPanel(AsyncPanel):
         )
         if f:
             self.var_xlsx.set(f)
-            _save_panel_config({"catalog_xlsx": f})
+            save_panel_config({"catalog_xlsx": f})
 
     def _on_drop_single(self, event, var: tk.StringVar, exts: tuple) -> None:
-        hit = next((p for p in parse_dnd_data(event.data)
+        paths = parse_dnd_data(event.data)
+        hit = next((p for p in paths
                     if p.lower().endswith(exts)), None)
         if hit is not None:
             var.set(hit)
-            _save_panel_config({"catalog_xlsx": hit})
-        elif parse_dnd_data(event.data):
+            save_panel_config({"catalog_xlsx": hit})
+        elif paths:
             messagebox.showwarning("提示", f"仅支持 {', '.join(exts)} 文件")
-
-    # ---------------- 图纸模板库（templates/catalog） ----------------
-    def _refresh_templates(self) -> None:
-        """刷新下拉框并恢复上次选择（config.json 存模板文件名）。"""
-        names = list_templates("catalog")
-        self.tpl_combo["values"] = names
-        last = _load_panel_config().get("catalog_template", "")
-        if last in names:
-            self.var_template.set(last)
-        elif names and not self.var_template.get():
-            self.var_template.set(names[0])
-        else:
-            self.var_template.set("")
-
-    def _upload_template(self, path: str | None = None) -> None:
-        """把 dwg/dxf 复制进图纸模板库（templates/catalog）并选中。"""
-        name = upload_template_file(
-            "catalog", path, title="上传图纸模板（[字段名] 取值位置）")
-        if name:
-            self._refresh_templates()
-            self.var_template.set(name)
-            _save_panel_config({"catalog_template": name})
-
-    def _delete_template(self) -> None:
-        name = self.var_template.get().strip()
-        if delete_template_file("catalog", name):
-            _save_panel_config({"catalog_template": ""})
-            self._refresh_templates()
-
-    def _on_drop_upload_template(self, event) -> None:
-        hit = next((p for p in parse_dnd_data(event.data)
-                    if p.lower().endswith((".dwg", ".dxf")) and os.path.isfile(p)), None)
-        if hit is None:
-            messagebox.showwarning("提示", "仅支持拖入 .dwg/.dxf 图纸模板（将上传到模板库）")
-            return
-        self._upload_template(hit)
 
     # ---------------- 输出目录 ----------------
     def _default_output(self) -> None:
-        if self.scanned_files:
-            out = str(Path(self.scanned_files[0]).parent / "output")
-            self.var_out.set(out)
-            _save_panel_config({"catalog_out": out})
+        super()._default_output()
+        if self.var_out.get().strip():
+            save_panel_config({"catalog_out": self.var_out.get()})
 
     def _browse_dir(self, var: tk.StringVar) -> None:
-        d = filedialog.askdirectory(title="选择目录")
-        if d:
-            var.set(d)
-            _save_panel_config({"catalog_out": d})
+        super()._browse_dir(var)
+        if var.get().strip():
+            save_panel_config({"catalog_out": var.get()})
 
     def _on_drop_out_dir(self, event) -> None:
-        d = next((p for p in parse_dnd_data(event.data) if os.path.isdir(p)), None)
-        if d is not None:
-            self.var_out.set(d)
-            _save_panel_config({"catalog_out": d})
-        elif parse_dnd_data(event.data):
-            messagebox.showwarning("提示", "输出目录请拖入文件夹")
+        super()._on_drop_out_dir(event)
+        if self.var_out.get().strip():
+            save_panel_config({"catalog_out": self.var_out.get()})
 
     # ---------------- 配置记忆 ----------------
     def _load(self) -> None:
         self._refresh_templates()  # 恢复上次选择的图纸模板
-        cfg = _load_panel_config()
+        cfg = load_panel_config()
         last_xlsx = cfg.get("catalog_xlsx", "")
         if last_xlsx and os.path.isfile(last_xlsx):
             self.var_xlsx.set(last_xlsx)
@@ -339,13 +238,8 @@ class CatalogPanel(AsyncPanel):
             sheet_name = self._ask_sheet(tied, fields)
             if sheet_name is None:
                 return
-        self.log_text.delete("1.0", "end")
+        begin_run(self)
         self._emit(f"表格模板 sheet：{sheet_name or '自动定位'}")
-        self.running = True
-        self._cancel_event.clear()
-        self.btn_start.config(state="disabled")
-        self.btn_stop.config(state="normal")
-        self.progress.config(value=0)
         self._start_worker((
             template, xlsx, files, out,
             oda, get_out_version(), load_catalog_rules(), sheet_name,
@@ -391,15 +285,12 @@ class CatalogPanel(AsyncPanel):
         self._root.wait_window(win)
         return pick["name"]
 
-    def _emit_log(self, msg: str) -> None:
-        self._emit(msg)
-
     def _work(self, template, xlsx, files, out, oda, version, rules,
               sheet_name) -> bool:
         res = run_pipeline(
             template, xlsx, files, out, oda, version, rules,
             sheet_name=sheet_name,
-            log=self._emit_log, progress=lambda p: self._emit(None, int(p)),
+            log=self._emit, progress=lambda p: self._emit(None, int(p)),
             is_cancelled=self._is_cancelled,
         )
         self._last_result = res

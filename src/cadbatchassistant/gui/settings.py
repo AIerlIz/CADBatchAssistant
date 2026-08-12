@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import threading
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import ttk
 
 from cadbatchassistant import __version__
 from cadbatchassistant.common import (

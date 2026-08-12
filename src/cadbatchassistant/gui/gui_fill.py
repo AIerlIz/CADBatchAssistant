@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import os
 import tkinter as tk
-from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from tkinterdnd2 import DND_FILES
@@ -19,42 +18,37 @@ from cadbatchassistant.common import (
     build_file_list,
     build_log_panel,
     build_output_row,
-    dedup_paths as _dedup_paths_common,
-    delete_template_file,
     get_oda,
     get_out_version,
-    list_templates,
-    load_config,
     parse_dnd_data,
-    save_config,
     templates_dir,
-    upload_template_file,
 )
 from cadbatchassistant.core.dwg_converter import require_oda_for_dwg
 from cadbatchassistant.core.fill_pipeline import run_pipeline_files
-
-CONFIG_DIR = Path(os.environ.get("APPDATA") or Path.home()) / "CadFill"
-CONFIG_FILE = CONFIG_DIR / "config.json"
-
-
-def _load_panel_config() -> dict:
-    """读取「填表助手」面板配置（模板记忆）。"""
-    return load_config(CONFIG_FILE)
+from cadbatchassistant.gui.gui_shared import (
+    FilesPanelMixin,
+    TemplateLibraryMixin,
+    begin_run,
+    finish_popup,
+)
 
 
-def _save_panel_config(data: dict) -> None:
-    """写入「填表助手」面板配置。"""
-    save_config(CONFIG_FILE, data)
+class IsoFillApp(AsyncPanel, FilesPanelMixin, TemplateLibraryMixin):
+    """「填表助手」面板：文件列表/模板库/拖放/输出目录复用共享组件。"""
 
+    TEMPLATE_CATEGORY = "fill"
+    TEMPLATE_CONFIG_KEY = "fill_template"
+    TEMPLATE_UPLOAD_TITLE = "上传图纸模板（未填图框 + 值格 [列名] 占位）"
 
-class IsoFillApp(AsyncPanel):
     def __init__(self, parent: tk.Widget) -> None:
         """构建「填表助手」面板；parent 为嵌入容器（如 Notebook 的 tab 页）。"""
         super().__init__(parent)
         self.scanned_files: list[str] = []
         self._sheet_headers: dict[str, list[str]] = {}  # 工作表名 → 首行表头缓存
         self._build_ui()
-        self._load_paths()
+        # 仅恢复上次选择的图纸模板；输入输出路径不设默认值、不记忆恢复
+        # （ODA 路径与输出版本为全局设置，见「设置」tab）
+        self._refresh_templates()
 
     # ---------------- UI ----------------
     def _build_ui(self) -> None:
@@ -219,13 +213,8 @@ class IsoFillApp(AsyncPanel):
             self.var_match_col.set("")
 
     # ---------------- 拖拽文件 ----------------
-    @staticmethod
-    def _parse_dnd_data(data: str) -> list[str]:
-        """解析拖拽数据为路径列表（复用 common.parse_dnd_data）。"""
-        return parse_dnd_data(data)
-
     def _on_drop_single(self, event, var: tk.StringVar, exts: tuple) -> None:
-        paths = self._parse_dnd_data(event.data)
+        paths = parse_dnd_data(event.data)
         hit = next((p for p in paths
                     if p.lower().endswith(exts)), None)
         if hit is not None:
@@ -234,120 +223,6 @@ class IsoFillApp(AsyncPanel):
                 self._refresh_sources()
         elif paths:
             messagebox.showwarning("提示", f"仅支持 {', '.join(exts)} 文件")
-
-    def _on_drop_files(self, event) -> None:
-        added = False
-        for p in self._parse_dnd_data(event.data):
-            if p.lower().endswith((".dwg", ".dxf")) and os.path.isfile(p):
-                self.scanned_files.append(p)
-                added = True
-        if not added:
-            messagebox.showwarning("提示", "仅支持拖入 DWG/DXF 文件")
-            return
-        self.scanned_files = self._dedup_paths(self.scanned_files)
-        self._refresh_file_list()
-        if not self.var_out.get().strip():
-            self._default_output()
-
-    def _on_drop_out_dir(self, event) -> None:
-        paths = self._parse_dnd_data(event.data)
-        d = next((p for p in paths if os.path.isdir(p)), None)
-        if d is not None:
-            self.var_out.set(d)
-        elif paths:
-            messagebox.showwarning("提示", "输出目录请拖入文件夹")
-
-    def _browse_template(self) -> None:
-        """（已改为模板库上传，此方法保留兼容）"""
-        self._upload_template()
-
-    # ---------------- 图纸模板库（templates/fill） ----------------
-    def _refresh_templates(self) -> None:
-        """刷新下拉框并恢复上次选择（config.json 存模板文件名）。"""
-        names = list_templates("fill")
-        self.tpl_combo["values"] = names
-        last = _load_panel_config().get("fill_template", "")
-        if last in names:
-            self.var_template.set(last)
-        elif names and not self.var_template.get():
-            self.var_template.set(names[0])
-        else:
-            self.var_template.set("")
-
-    def _upload_template(self, path: str | None = None) -> None:
-        """把 dwg/dxf 复制进图纸模板库（templates/fill）并选中。"""
-        name = upload_template_file(
-            "fill", path, title="上传图纸模板（未填图框 + 值格 [列名] 占位）")
-        if name:
-            self._refresh_templates()
-            self.var_template.set(name)
-            _save_panel_config({"fill_template": name})
-
-    def _delete_template(self) -> None:
-        name = self.var_template.get().strip()
-        if delete_template_file("fill", name):
-            self._refresh_templates()
-            _save_panel_config({"fill_template": self.var_template.get()})
-
-    def _on_drop_upload_template(self, event) -> None:
-        paths = self._parse_dnd_data(event.data)
-        hit = next((p for p in paths
-                    if p.lower().endswith((".dwg", ".dxf")) and os.path.isfile(p)), None)
-        if hit is None:
-            messagebox.showwarning("提示", "仅支持拖入 .dwg/.dxf 图纸模板（将上传到模板库）")
-            return
-        self._upload_template(hit)
-
-    def _browse_input_files(self) -> None:
-        files = filedialog.askopenfilenames(
-            title="选择要处理的 DWG/DXF 文件（可多次追加选择）",
-            filetypes=[("CAD 文件", "*.dwg *.dxf"), ("DWG 文件", "*.dwg"),
-                       ("DXF 文件", "*.dxf"), ("所有文件", "*.*")],
-        )
-        if not files:
-            return
-        for f in files:
-            if os.path.isfile(f):
-                self.scanned_files.append(f)
-        self.scanned_files = self._dedup_paths(self.scanned_files)
-        self._refresh_file_list()
-        if not self.var_out.get().strip():
-            self._default_output()
-
-    @staticmethod
-    def _dedup_paths(paths: list[str]) -> list[str]:
-        return _dedup_paths_common(paths)
-
-    def _delete_selected_files(self) -> None:
-        sel = sorted(self.file_list.curselection(), reverse=True)
-        for idx in sel:
-            if 0 <= idx < len(self.scanned_files):
-                del self.scanned_files[idx]
-        self._refresh_file_list()
-
-    def _refresh_file_list(self) -> None:
-        self.file_list.delete(0, "end")
-        for p in self.scanned_files:
-            self.file_list.insert("end", os.path.basename(p))
-        n_dxf = sum(1 for p in self.scanned_files if p.lower().endswith(".dxf"))
-        n_dwg = len(self.scanned_files) - n_dxf
-        self.var_scan_info.set(
-            f"共 {len(self.scanned_files)} 个文件：DXF {n_dxf} 个，DWG {n_dwg} 个"
-        )
-
-    def _default_output(self) -> None:
-        if self.scanned_files:
-            self.var_out.set(str(Path(self.scanned_files[0]).parent / "output"))
-
-    def _browse_dir(self, var: tk.StringVar) -> None:
-        d = filedialog.askdirectory(title="选择目录")
-        if d:
-            var.set(d)
-
-    def _load_paths(self) -> None:
-        # 仅恢复上次选择的图纸模板；输入输出路径不设默认值、不记忆恢复
-        # （ODA 路径与输出版本为全局设置，见「设置」tab）
-        self._refresh_templates()
 
     # ---------------- 运行 ----------------
     def _start(self) -> None:
@@ -382,13 +257,7 @@ class IsoFillApp(AsyncPanel):
             messagebox.showerror("缺少 ODA File Converter", err)
             return
 
-        self.running = True
-        self._cancel_event.clear()
-        self.btn_start.config(state="disabled")
-        self.btn_stop.config(state="normal")
-        self.progress.config(value=0)
-        self.log_text.delete("1.0", "end")
-
+        begin_run(self)
         self._start_worker((xlsx, template, files, out, oda,
                             out_version, self._cancel_event, match_col, sheet))
 
@@ -414,10 +283,7 @@ class IsoFillApp(AsyncPanel):
     def _on_finish(self, success: bool) -> None:
         """完成收尾：恢复按钮并弹窗汇总（与「改字助手」一致）。"""
         super()._on_finish(success)
-        if success:
-            messagebox.showinfo("完成", "处理完成，请查看日志。")
-        else:
-            messagebox.showwarning("完成", "处理中断，详见日志。")
+        finish_popup(success)
 
 
 

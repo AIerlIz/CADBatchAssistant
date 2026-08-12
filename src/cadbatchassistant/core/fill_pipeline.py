@@ -41,27 +41,8 @@ def _report(progress, percent: int) -> None:
         progress(percent)
 
 
-def _template_to_dxf(template: str, oda_exe, tmp: str, out_version: str,
-                     emit=print) -> str:
-    """把图纸模板（.dwg/.dxf）转为 DXF，返回模板 DXF 路径。"""
-    tname = os.path.basename(template)
-    t_stem = os.path.splitext(tname)[0]
-    if tname.lower().endswith(".dwg"):
-        t_dir = os.path.join(tmp, "tmpl")
-        t_out = os.path.join(tmp, "tmpl_dxf")
-        os.makedirs(t_dir, exist_ok=True)
-        os.makedirs(t_out, exist_ok=True)
-        shutil.copy2(template, os.path.join(t_dir, tname))
-        dc.convert_dwg_batch_to_dxf(oda_exe, t_dir, t_out, [tname], out_version)
-        return os.path.join(t_out, t_stem + ".dxf")
-    # .dxf 直接复制
-    t_dxf = os.path.join(tmp, "tmpl.dxf")
-    shutil.copy2(template, t_dxf)
-    return t_dxf
-
-
 def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
-                 oda: str | None = None, out_version: str = "ACAD2004",
+                 oda: str | None = None, out_version: str = dc.DEFAULT_OUT_VERSION,
                  workdir: str | None = None, emit=print,
                  cancel=None, inputs: list[str] | None = None,
                  progress=None, template: str | None = None,
@@ -73,7 +54,7 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
     before_dir  : 输入图纸目录（含 DWG 与/或 DXF）
     out_dir     : 输出目录
     oda         : ODAFileConverter.exe 路径；None 时自动探测（纯 DXF 流程可 None）
-    out_version : 输出 DWG 版本（默认 ACAD2004）
+    out_version : 输出 DWG 版本（默认与 dwg_converter.DEFAULT_OUT_VERSION 一致）
     workdir     : 临时工作目录；None 时自动创建
     emit        : 日志回调
     cancel      : threading.Event
@@ -106,8 +87,9 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
     need_oda = bool(dwg_names)
 
     oda_exe = oda or dc.find_oda_converter()
-    if need_oda and (not oda_exe or not os.path.isfile(str(oda_exe))):
-        raise FileNotFoundError("未找到 ODAFileConverter.exe，请在选项里指定路径")
+    err = dc.require_oda_for_dwg(need_oda, str(oda_exe) if oda_exe else "")
+    if err:
+        raise FileNotFoundError(err)
 
     os.makedirs(out_dir, exist_ok=True)
     tmp = workdir or tempfile.mkdtemp(prefix="iso_fill_")
@@ -143,7 +125,7 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
     emit("[2/4] 扫描图纸模板占位文字 ...")
     if not template or not os.path.isfile(str(template)):
         raise ValueError("缺少图纸模板文件（值格填 [字段名] 占位的 .dwg/.dxf）")
-    t_dxf = _template_to_dxf(template, oda_exe, tmp, out_version, emit)
+    t_dxf = dc.convert_template_to_dxf(template, tmp, oda_exe, out_version)
     from cadbatchassistant.core.fill_learn_spec import scan_placeholders
 
     one_spec = scan_placeholders(t_dxf, xlsx, sheet)
@@ -165,8 +147,6 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
                       for layer, fields in one_spec.items()} for n in names}
     with open(specs_path, "w", encoding="utf-8") as fh:
         json.dump(json_specs, fh, ensure_ascii=False, indent=2)
-
-    # [2b]（无超限检查：不再推断单元格边界）
 
     _report(progress, 50)
 
@@ -209,7 +189,7 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
 
 
 def run_pipeline_files(xlsx: str, files: list[str], out_dir: str,
-                       oda: str | None = None, out_version: str = "ACAD2004",
+                       oda: str | None = None, out_version: str = dc.DEFAULT_OUT_VERSION,
                        emit=print, cancel=None, progress=None,
                        workdir: str | None = None,
                        template: str | None = None,
@@ -245,7 +225,8 @@ def main() -> None:
     ap.add_argument("--out", required=True, help="输出目录")
     ap.add_argument("--oda", default=None, help="ODAFileConverter.exe 路径（默认自动探测）")
     ap.add_argument("--template", required=True, help="图纸模板文件（已填好的 .dwg/.dxf 样例）")
-    ap.add_argument("--version", default="ACAD2004", help="输出 DWG 版本（默认 ACAD2004）")
+    ap.add_argument("--version", default=dc.DEFAULT_OUT_VERSION,
+                    help=f"输出 DWG 版本（默认 {dc.DEFAULT_OUT_VERSION}）")
     ap.add_argument("--match-col", default=None,
                     help="数据表中图纸名列（默认第一列）")
     ap.add_argument("--sheet", default=None,

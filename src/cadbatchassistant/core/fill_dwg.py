@@ -33,6 +33,26 @@ def make_text(val: str) -> str:
     return val.strip()
 
 
+def _entity_text(e) -> str:
+    """取 TEXT/MTEXT 实体的纯文本内容（用于已有内容比较）。
+
+    - TEXT：内容在 e.dxf.text（ezdxf 的 Text 类无 .text 属性，
+      getattr(e, "text", "") 恒为空——旧实现导致 TEXT 检测失效）；
+    - MTEXT：e.dxf.text 是含格式码（如 \\P 换行）的原始串，用
+      plain_text() 取去格式码后的文本，使同值比较不受格式码影响。
+    取不到返回 ""。
+    """
+    try:
+        if e.dxftype() == "MTEXT":
+            return e.plain_text()
+        return str(getattr(e.dxf, "text", "") or "")
+    except Exception:  # noqa: BLE001 - 个别实体结构异常时按空文本处理
+        try:
+            return str(getattr(e.dxf, "text", "") or "")
+        except Exception:  # noqa: BLE001 - 兜底空文本
+            return ""
+
+
 def find_texts(msp, layer: str, x: float, y: float, tol: float = 0.01):
     """在 (layer, x, y) 容差内查找 TEXT/MTEXT 实体。"""
     for e in msp:
@@ -67,16 +87,16 @@ def fill_one(before_dxf: str, out_dxf: str, spec: dict, row: dict) -> list[str]:
             if text:
                 # 排除空文本与压力格单位 'barg'（均不算已占位内容，允许写入值）
                 existing = [e for e in find_texts(msp, layer, x, y)
-                            if getattr(e, "text", "").strip() not in ("", "barg")]
+                            if _entity_text(e).strip() not in ("", "barg")]
                 if existing:
                     same = any(
-                        "".join(getattr(e, "text", "").split()) == "".join(text.split())
+                        "".join(_entity_text(e).split()) == "".join(text.split())
                         for e in existing
                     )
                     if same:
                         log.append(f"跳过 {field}（已存在 {text!r}）")
                     else:
-                        cur = getattr(existing[0], "text", "") or ""
+                        cur = _entity_text(existing[0])
                         log.append(f"跳过 {field}（位置已有内容，不覆盖：{cur!r}）")
                     continue
 
@@ -132,7 +152,7 @@ def fill_all(before_dxf_dir: str, out_dxf_dir: str, xlsx: str,
              specs: dict, emit=print, progress=None,
              match_col: str | None = None,
              sheet: str | None = None,
-             cancel=None) -> list[str]:
+             cancel=None) -> tuple[list[str], list[str]]:
     """批量填充：对 specs 中每张图执行 fill_one。
 
     单张图失败不中断，记录后继续处理其余图纸。
@@ -141,11 +161,14 @@ def fill_all(before_dxf_dir: str, out_dxf_dir: str, xlsx: str,
     progress : 可选回调 progress(done_index, total)，每处理一张图（成败均）调用一次。
     match_col: 数据表中图纸名列（None 默认第一列）。
     sheet    : 数据表中工作表名（None 默认第一个）。
-    返回失败图纸名列表（处理失败的）。
+    返回 (failed, skipped)：failed 为处理失败的图纸名；
+    skipped 为"没有产出"的图纸名（不在数据表中 / 缺少 before DXF），
+    调用方不得把它们当作成功（否则输出阶段会因产物缺失报错或挂起等待）。
     """
     data = load_xlsx(xlsx, match_col, sheet)
     stems = sorted(specs)
     failed: list[str] = []
+    skipped: list[str] = []
     for i, stem in enumerate(stems, 1):
         if cancel is not None and cancel.is_set():
             emit("[WARN] 收到取消请求，停止填表")
@@ -153,11 +176,13 @@ def fill_all(before_dxf_dir: str, out_dxf_dir: str, xlsx: str,
         try:
             if stem not in data:
                 emit(f"[WARN] {stem} 不在 xlsx 中，跳过")
+                skipped.append(stem)
                 continue
             before = os.path.join(before_dxf_dir, stem + ".dxf")
             out = os.path.join(out_dxf_dir, stem + ".dxf")
             if not os.path.isfile(before):
                 emit(f"[WARN] 缺少 before DXF: {before}")
+                skipped.append(stem)
                 continue
             emit(f"===== {stem}")
             for line in fill_one(before, out, specs[stem], data[stem]):
@@ -168,9 +193,12 @@ def fill_all(before_dxf_dir: str, out_dxf_dir: str, xlsx: str,
         finally:
             if progress:
                 progress(i, len(stems))
-    emit(f"      完成 {len(stems) - len(failed)}/{len(stems)} 张，"
-         + (f"失败 {len(failed)} 张：{', '.join(failed)}" if failed else "全部成功"))
-    return failed
+    ok = len(stems) - len(failed) - len(skipped)
+    emit(f"      完成 {ok}/{len(stems)} 张，"
+         + (f"失败 {len(failed)} 张：{', '.join(failed)}；" if failed else "")
+         + (f"跳过 {len(skipped)} 张：{', '.join(skipped)}" if skipped else "")
+         + ("全部成功" if not failed and not skipped else ""))
+    return failed, skipped
 
 
 def main() -> None:

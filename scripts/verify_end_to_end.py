@@ -1,11 +1,11 @@
 """端到端验证脚本（模板标记取值 + 用户表格模板输出，目录助手）。
 
 构造测试模板（矩形区域 + [图号]/[管段编号] 占位符）、三张测试图纸
-（有管段 / 无管段→NA / 无图号→文件名兜底）与表格模板
+（有管段 / 无管段→NA / 无图号→NA）与表格模板
 （表头列名 = 字段名 + 页码），跑完整 pipeline 并断言：
   1. 表格模板必填（缺模板报错）
   2. 输出按用户表格模板表头列名填值（动态列、样式保留）
-  3. 区域取值正确、无管段填 NA、图号兜底、页码每文件一页
+  3. 区域取值正确、无管段/无图号填 NA、页码每文件一页
   4. 表头行由占位符字段名反推：表头在第 3 行（前两行为标题）仍正确
   5. 表头与字段名完全不匹配时报错
   6. sheet 自动定位：表头在第二个 sheet（第一个为无关说明页）仍正确
@@ -70,7 +70,7 @@ def make_xlsx_template(header_row: int = 1) -> pathlib.Path:
 
 
 def make_drawings() -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
-    """图纸A：有管段+图号；图纸B：无管段→NA；图纸C：无图号→兜底。"""
+    """图纸A：有管段+图号；图纸B：无管段→NA；图纸C：无图号→NA（不做文件名兜底）。"""
     d1 = ezdxf.new("R2013")
     m1 = d1.modelspace()
     m1.add_text("PIPE-001-AA", dxfattribs={"insert": (2, 2), "height": 1.0})
@@ -120,8 +120,8 @@ def main() -> int:
     print(f"[1] 字段列 = {res.fields}，图纸 {res.total_files} 张，NA {res.na_rows} 行，总页 {res.total_pages}")
     if res.fields != ["管段编号", "图号"]:
         failures.append(f"字段列不符: {res.fields}")
-    if res.na_rows != 1:
-        failures.append(f"NA 行数不符: {res.na_rows}")
+    if res.na_rows != 2:
+        failures.append(f"NA 行数不符（图纸B 管段、图纸C 图号共 2 行）: {res.na_rows}")
 
     ws = load_workbook(out)["目录"]
     rows = [tuple(r) for r in ws.iter_rows(min_row=1, max_row=ws.max_row,
@@ -138,8 +138,8 @@ def main() -> int:
     if na_row is None or na_row[0] != "NA":
         failures.append("图纸B 管段应填 NA")
     fb_row = next((r for r in rows if r[0] == "PIPE-009-XX"), None)
-    if fb_row is None or fb_row[1] != "DRAW-5566":
-        failures.append("图纸C 图号应兜底为文件名")
+    if fb_row is None or fb_row[1] != "NA":
+        failures.append("图纸C 无图号应填 NA（不做文件名兜底）")
     pages = sorted({r[2] for r in rows[1:] if r[2] is not None})
     if pages != [3, 4, 5]:
         failures.append(f"页码不符: {pages}")

@@ -13,7 +13,9 @@ from tkinter import ttk
 from cadbatchassistant import __version__
 from cadbatchassistant.common import (
     WELCOME_SEEN_KEY,
+    center_window,
     mark_welcome_seen,
+    resource_path,
     save_app_config,
 )
 
@@ -41,7 +43,7 @@ class WelcomeDialog:
         self._win.resizable(False, False)
         self._win.protocol("WM_DELETE_WINDOW", self._close)
         self._build_ui()
-        self._center()
+        center_window(self._win, self._root)  # 相对主窗口居中
         self._win.grab_set()
 
     # ---------------- UI ----------------
@@ -49,6 +51,14 @@ class WelcomeDialog:
         pad = {"padx": 12, "pady": 6}
         main = ttk.Frame(self._win, padding=16)
         main.pack(fill="both", expand=True)
+
+        # 顶部 logo（缺失时静默跳过）
+        try:
+            logo = tk.PhotoImage(file=resource_path("assets/logo.png"))
+            self._logo = logo  # 保持引用防 GC
+            ttk.Label(main, image=logo).pack()
+        except tk.TclError:
+            pass
 
         ttk.Label(main, text="欢迎使用 CAD批处理助手",
                   font=("", 16, "bold")).pack(**pad)
@@ -80,16 +90,6 @@ class WelcomeDialog:
                    command=self._close).pack(side="right")
         ttk.Button(btn_row, text="稍后再说",
                    command=self._close).pack(side="right", padx=(0, 8))
-
-    def _center(self) -> None:
-        """相对主窗口居中。"""
-        self._win.update_idletasks()
-        root_x, root_y = self._root.winfo_rootx(), self._root.winfo_rooty()
-        root_w, root_h = self._root.winfo_width(), self._root.winfo_height()
-        w, h = self._win.winfo_width(), self._win.winfo_height()
-        x = root_x + max(0, (root_w - w) // 2)
-        y = root_y + max(0, (root_h - h) // 2)
-        self._win.geometry(f"+{x}+{y}")
 
     # ---------------- 关闭 ----------------
     def _close(self) -> None:

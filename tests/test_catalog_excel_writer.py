@@ -1,11 +1,13 @@
-"""catalog_excel_writer 表头反推与样式模板单测（目录助手）。"""
+"""catalog_excel_writer 表头反推、样式模板与合并逻辑单测（目录助手）。"""
 
 from openpyxl import Workbook, load_workbook
 
+from cadbatchassistant.core.catalog_builder import Catalog, FileEntry
 from cadbatchassistant.core.catalog_excel_writer import (
     detect_header_row,
     detect_sheet,
     detect_sheet_candidates,
+    write_catalog_from_template,
     write_style_template,
 )
 
@@ -60,6 +62,92 @@ def test_write_style_template_default_headers(tmp_path):
     ws = load_workbook(p).active
     assert ws.cell(row=1, column=1).value == "字段名"
     assert ws.cell(row=1, column=3).value == "页码"
+
+
+# ---------------- write_catalog_from_template 合并逻辑 ----------------
+
+
+def _fig_template(tmp_path):
+    """表格模板：表头 = 图纸号/包含管段/页码（第 1 行）。"""
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["图纸号", "包含管段", "页码"])
+    p = tmp_path / "tpl.xlsx"
+    wb.save(p)
+    return p
+
+
+def test_adjacent_same_fig_merged_across_files(tmp_path):
+    """相邻文件图号相同：图号列跨文件合并；页码列仍按文件合并。"""
+    cat = Catalog(
+        fields=["图纸号", "包含管段"],
+        entries=[
+            FileEntry(filename="A", values={"图纸号": ["DWG-1"],
+                                            "包含管段": ["P-1", "P-2"]}),
+            FileEntry(filename="B", values={"图纸号": ["DWG-1"],
+                                            "包含管段": ["P-3"]}),
+        ],
+        page_count=1, total_pages=4, na_rows=0,
+    )
+    out = tmp_path / "out.xlsx"
+    write_catalog_from_template(cat, _fig_template(tmp_path), out)
+    ws = load_workbook(out).active
+    # A 2 行 + B 1 行 = 3 行数据；图号列跨文件合并 A2:A4
+    assert "A2:A4" in {str(m) for m in ws.merged_cells.ranges}
+    assert ws.cell(row=2, column=1).value == "DWG-1"
+    assert ws.cell(row=2, column=2).value == "P-1"
+    assert ws.cell(row=3, column=2).value == "P-2"
+    assert ws.cell(row=4, column=2).value == "P-3"
+    # 页码列：A 的 2 行合并为 3，B 独立 4
+    assert "C2:C3" in {str(m) for m in ws.merged_cells.ranges}
+    assert ws.cell(row=2, column=3).value == 3
+    assert ws.cell(row=4, column=3).value == 4
+
+
+def test_adjacent_diff_fig_not_merged_across_files(tmp_path):
+    """相邻文件图号不同：图号列不跨文件合并，文件内仍合并。"""
+    cat = Catalog(
+        fields=["图纸号", "包含管段"],
+        entries=[
+            FileEntry(filename="A", values={"图纸号": ["DWG-1"],
+                                            "包含管段": ["P-1", "P-2"]}),
+            FileEntry(filename="B", values={"图纸号": ["DWG-2"],
+                                            "包含管段": ["P-3"]}),
+        ],
+        page_count=1, total_pages=4, na_rows=0,
+    )
+    out = tmp_path / "out2.xlsx"
+    write_catalog_from_template(cat, _fig_template(tmp_path), out)
+    ws = load_workbook(out).active
+    merged = {str(m) for m in ws.merged_cells.ranges}
+    assert "A2:A3" in merged      # 文件 A 内部 2 行合并
+    assert "A2:A4" not in merged  # 不跨文件
+    assert ws.cell(row=2, column=1).value == "DWG-1"
+    assert ws.cell(row=4, column=1).value == "DWG-2"
+
+
+def test_same_fig_not_adjacent_not_merged(tmp_path):
+    """图号相同但不相邻（中间隔了其他图号）：不合并。"""
+    cat = Catalog(
+        fields=["图纸号", "包含管段"],
+        entries=[
+            FileEntry(filename="A", values={"图纸号": ["DWG-1"],
+                                            "包含管段": ["P-1"]}),
+            FileEntry(filename="B", values={"图纸号": ["DWG-2"],
+                                            "包含管段": ["P-2"]}),
+            FileEntry(filename="C", values={"图纸号": ["DWG-1"],
+                                            "包含管段": ["P-3"]}),
+        ],
+        page_count=1, total_pages=5, na_rows=0,
+    )
+    out = tmp_path / "out3.xlsx"
+    write_catalog_from_template(cat, _fig_template(tmp_path), out)
+    ws = load_workbook(out).active
+    merged = {str(m) for m in ws.merged_cells.ranges}
+    assert "A2:A4" not in merged
+    assert ws.cell(row=2, column=1).value == "DWG-1"
+    assert ws.cell(row=3, column=1).value == "DWG-2"
+    assert ws.cell(row=4, column=1).value == "DWG-1"
 
 
 # ---------------- detect_sheet / detect_sheet_candidates ----------------

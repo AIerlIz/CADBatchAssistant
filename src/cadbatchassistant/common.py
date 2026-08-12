@@ -119,6 +119,16 @@ def software_dir() -> Path:
     return Path(__file__).resolve().parent.parent.parent
 
 
+def resource_path(name: str) -> str:
+    """返回打包进 exe 的资源文件路径（如 "assets/logo.ico"）。
+
+    打包运行时从 PyInstaller 解压目录 sys._MEIPASS 取；源码运行时取项目根。
+    供窗口图标、欢迎窗 logo 等读取随包分发的资源。
+    """
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent.parent))
+    return str(base / name)
+
+
 def rules_file() -> Path:
     """目录助手规则配置文件：软件目录下的 config.json（可手动编辑）。"""
     return software_dir() / "config.json"
@@ -235,6 +245,26 @@ def apply_vista_theme(style: "tk.ttk.Style | None" = None) -> None:
         style.theme_use("vista")
     except tk.TclError:
         pass
+
+
+def center_window(win, parent: tk.Widget | None = None) -> None:
+    """让窗口相对 parent 居中；parent 为空时相对屏幕居中。
+
+    需在窗口内容布局完成后调用（内部 update_idletasks 取实际尺寸），
+    供主窗口（屏幕居中）与各 Toplevel 弹窗（相对主窗口居中）复用。
+    """
+    win.update_idletasks()
+    w, h = win.winfo_width(), win.winfo_height()
+    if parent is not None:
+        root = parent.winfo_toplevel()
+        base_x, base_y = root.winfo_rootx(), root.winfo_rooty()
+        base_w, base_h = root.winfo_width(), root.winfo_height()
+    else:
+        base_x = base_y = 0
+        base_w, base_h = win.winfo_screenwidth(), win.winfo_screenheight()
+    x = base_x + max(0, (base_w - w) // 2)
+    y = base_y + max(0, (base_h - h) // 2)
+    win.geometry(f"+{x}+{y}")
 
 
 # ---------------- ODA 选项助手 ----------------

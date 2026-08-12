@@ -14,12 +14,16 @@ import os
 import tkinterdnd2
 
 _TKDND_SRC = os.path.join(os.path.dirname(tkinterdnd2.__file__), "tkdnd")
+_LOGO_PNG = os.path.join(SPECPATH, "assets", "logo.png")
+_LOGO_ICO = os.path.join(SPECPATH, "assets", "logo.ico")
 
 a = Analysis(
     ["main.py"],
     pathex=[os.path.join(SPECPATH, "src")],
     binaries=[],
-    datas=[(_TKDND_SRC, "tkinterdnd2/tkdnd")],
+    datas=[(_TKDND_SRC, "tkinterdnd2/tkdnd"),
+           (_LOGO_PNG, "assets"),
+           (_LOGO_ICO, "assets")],
     hiddenimports=["tkinterdnd2"],
     hookspath=[],
     hooksconfig={},
@@ -44,6 +48,7 @@ exe = EXE(
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
+    icon=_LOGO_ICO,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

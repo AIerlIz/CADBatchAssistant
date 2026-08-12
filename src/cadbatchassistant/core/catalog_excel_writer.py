@@ -129,7 +129,8 @@ def write_catalog_from_template(catalog: Catalog, xlsx_template: str | Path,
     表头行上方的内容（标题、公司名等）与样式原样保留；数据从表头行下一行
     起，列名 = 模板字段名（与占位符一致）或「页码」；无值的字段填 NA；
     「页码」列填每文件页码。数据区内原有的合并单元格会被取消，由程序按
-    单值列/页码列重新合并。
+    单值列/页码列重新合并；图号类列在相邻文件图号相同时跨文件合并为
+    一个单元格。
     """
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -176,6 +177,8 @@ def write_catalog_from_template(catalog: Catalog, xlsx_template: str | Path,
             ws.cell(row=r, column=ci).value = None
 
     row = first_data_row
+    # 图号类列：记录每个文件的图号值与行段，供下方「相邻相同图号跨文件合并」
+    fig_col_ranges: dict[int, list[tuple[str | None, int, int]]] = {}
     for idx, entry in enumerate(catalog.entries):
         n_rows = entry_rows(entry, catalog.fields)
         page = catalog.total_pages - len(catalog.entries) + idx + 1
@@ -199,9 +202,11 @@ def write_catalog_from_template(catalog: Catalog, xlsx_template: str | Path,
                 if ci in fig_cols:
                     cell.alignment = _CENTER
             row += 1
-        # 单值字段跨行合并
+        # 单值字段跨行合并（图号类列除外：改由下方按相邻相同值跨文件合并）
         for ci, col in enumerate(headers):
-            if col and len(entry.values.get(col, [])) == 1 and n_rows > 1:
+            if not col or ci in fig_cols:
+                continue
+            if len(entry.values.get(col, [])) == 1 and n_rows > 1:
                 ws.merge_cells(
                     start_row=entry_start, start_column=ci + 1,
                     end_row=row - 1, end_column=ci + 1)
@@ -210,5 +215,30 @@ def write_catalog_from_template(catalog: Catalog, xlsx_template: str | Path,
             ws.merge_cells(
                 start_row=entry_start, start_column=page_col + 1,
                 end_row=row - 1, end_column=page_col + 1)
+        # 记录图号类列的取值与行段（仅单值参与跨文件合并）
+        for ci, col in enumerate(headers):
+            if not col or ci not in fig_cols:
+                continue
+            vals = entry.values.get(col, [])
+            fig_col_ranges.setdefault(ci, []).append(
+                (vals[0] if len(vals) == 1 else None, entry_start, row))
+
+    # 图号类列：相邻文件图号相同 → 跨文件合并为一个单元格
+    for ci, ranges in fig_col_ranges.items():
+        i = 0
+        while i < len(ranges):
+            val, s0, _ = ranges[i]
+            if val is None:
+                i += 1
+                continue
+            j = i + 1
+            while j < len(ranges) and ranges[j][0] == val:
+                j += 1
+            end = ranges[j - 1][2]
+            if end - s0 > 1:
+                ws.merge_cells(
+                    start_row=s0, start_column=ci + 1,
+                    end_row=end - 1, end_column=ci + 1)
+            i = j
 
     wb.save(out_path)

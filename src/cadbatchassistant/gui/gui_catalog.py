@@ -24,6 +24,7 @@ from cadbatchassistant.common import (
     build_file_list,
     build_log_panel,
     build_output_row,
+    center_window,
     get_oda,
     get_out_version,
     load_catalog_rules,
@@ -281,6 +282,7 @@ class CatalogPanel(AsyncPanel, FilesPanelMixin, TemplateLibraryMixin):
         ttk.Button(btns, text="确定", command=_ok).pack(side="left", padx=6)
         ttk.Button(btns, text="取消", command=_cancel).pack(side="left", padx=6)
         win.protocol("WM_DELETE_WINDOW", _cancel)
+        center_window(win, self._root)  # 相对主窗口居中
         win.grab_set()
         self._root.wait_window(win)
         return pick["name"]

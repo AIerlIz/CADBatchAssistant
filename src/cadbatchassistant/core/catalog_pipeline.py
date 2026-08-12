@@ -199,12 +199,11 @@ def run_pipeline(
             result.error = "没有任何 DXF 产物，无法继续"
             return result
 
-        # 6. 逐文件按锚点取值 + 图号兜底
-        exclude_ids = frozenset(p.stem for p in files)
+        # 6. 逐文件按锚点取值（图纸号只从图纸中提取，不做文件名兜底）
         point_tol = float(rules.get("point_tolerance", 5))
         figure_field = str(rules.get("figure_field", "图号"))
-        # 图号字段识别：精确匹配优先，其次宽松匹配（配置 "图号" 可命中 "图纸号" 列）
-        # 仅用于豁免 exclude_ids 过滤（图纸文件名=图号时仍能提取），不改取值/兜底行为
+        # 图号字段识别：精确匹配优先，其次宽松匹配（配置 "图号" 可命中 "图纸号" 列）；
+        # 图号类字段的单点锚点只取距离最近 1 个文字（一个图号位一个值）
         fig_fields = frozenset(
             f for f in fields
             if figure_field and (f == figure_field
@@ -219,15 +218,11 @@ def run_pipeline(
             log(f"  处理 [{idx + 1}/{total}] {f.name}")
             try:
                 values = extract_by_anchors(
-                    f, anchors, exclude_ids=exclude_ids,
+                    f, anchors,
                     point_tolerance=point_tol, fig_fields=fig_fields)
             except Exception as ex:  # noqa: BLE001 - 单文件容错
                 log(f"     取值失败：{ex}")
                 values = {}
-            # 图号字段取不到 → 文件名去扩展名兜底
-            if figure_field in fields and not values.get(figure_field):
-                values[figure_field] = [f.stem]
-                log(f"     未取到图号，使用文件名：{f.stem}")
             entries.append(FileEntry(filename=f.stem, values=values))
 
         # 7. 构建目录并输出

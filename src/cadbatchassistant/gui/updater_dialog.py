@@ -16,6 +16,7 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 
 from cadbatchassistant import __version__
+from cadbatchassistant.common import center_window
 from cadbatchassistant.core import updater
 
 _DOWNLOAD_DIR = Path(tempfile.gettempdir()) / "CADBatchAssistant_update"
@@ -54,6 +55,7 @@ def ask_update_choice(parent: tk.Widget, tag: str) -> str:
     ttk.Button(btns, text="取消",
                command=lambda: _pick("cancel")).pack(side="left", padx=6)
     top.protocol("WM_DELETE_WINDOW", lambda: _pick("cancel"))
+    center_window(top, root)  # 相对主窗口居中
     top.wait_window()
     return result["choice"]
 
@@ -93,6 +95,7 @@ class UpdateDialog:
             anchor="e", pady=(8, 0))
 
         self._top.protocol("WM_DELETE_WINDOW", self._on_cancel)
+        center_window(self._top, self._root)  # 相对主窗口居中
         self._top.after(100, self._poll)
         threading.Thread(target=self._work, daemon=True).start()
 

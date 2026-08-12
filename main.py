@@ -36,10 +36,12 @@ from tkinterdnd2 import TkinterDnD
 from cadbatchassistant import __version__
 from cadbatchassistant.common import (
     APP_CONFIG_FILE,
+    center_window,
     default_font_family,
     is_welcome_needed,
     load_app_config,
     load_config,
+    resource_path,
 )
 from cadbatchassistant.core import updater
 from cadbatchassistant.gui import gui_catalog, gui_fill, gui_text, settings
@@ -118,6 +120,11 @@ def main(argv: list[str] | None = None) -> int:
     root.title(APP_TITLE)
     root.geometry("820x900")
     root.minsize(720, 700)
+    try:
+        root.iconbitmap(resource_path("assets/logo.ico"))  # 窗口/任务栏图标
+    except Exception:  # noqa: BLE001 - 图标缺失时使用默认图标
+        pass
+    center_window(root)  # 主窗口屏幕居中
     root.option_add("*Font", (default_font_family(), 10))
 
     notebook = ttk.Notebook(root)

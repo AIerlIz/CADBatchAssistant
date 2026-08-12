@@ -45,16 +45,15 @@ def _is_id_chars(s: str) -> bool:
 def extract_by_anchors(
     dxf_path: str | Path,
     anchors,
-    exclude_ids: frozenset[str] = frozenset(),
     point_tolerance: float = 5.0,
     fig_fields: frozenset[str] = frozenset(),
 ) -> dict[str, list[str]]:
     """按模板锚点从单个 DXF 提取每字段值列表。
 
     - 区域锚点：取矩形内全部文字纯文本；单点锚点：取坐标 ± point_tolerance 内文字
-    - 过滤：编号型字符、排除图号文本（exclude_ids，避免把与图纸文件名相同的
-      文字误当其他字段值）；fig_fields 中的字段（图号列）豁免该排除——
-      图纸文件名即图号时仍应正常提取
+    - 仅保留编号型字符（字母/数字/连字符/下划线）；文件名不参与取值过滤
+    - 图号类字段（fig_fields）的单点锚点：只取距离最近 1 个文字（一个图号位
+      只对应一个图号，避免把相邻位置的其他文字误取进来）；其他字段取容差内全部
     - 同一字段多个锚点（候选位置）的值合并，保序去重；无值锚点忽略
     返回 {字段名: [值, ...]}（按锚点出现顺序）。
     """
@@ -71,18 +70,25 @@ def extract_by_anchors(
     out: dict[str, list[str]] = {}
     for a in anchors:
         vals: list[str] = []
-        is_fig = a.field in fig_fields  # 图号列豁免 exclude（图纸名=图号场景）
+        is_fig = a.field in fig_fields  # 图号类字段：单点锚点只取最近 1 个
         if a.is_area:
             for x, y, t in texts:
                 if a.min_x <= x <= a.max_x and a.min_y <= y <= a.max_y:
-                    if _is_id_chars(t) and (is_fig or t not in exclude_ids):
+                    if _is_id_chars(t):
                         vals.append(t)
         else:
+            hits: list[tuple[float, str]] = []
             for x, y, t in texts:
                 if abs(x - a.point_x) <= point_tolerance \
                         and abs(y - a.point_y) <= point_tolerance:
-                    if _is_id_chars(t) and (is_fig or t not in exclude_ids):
-                        vals.append(t)
+                    if _is_id_chars(t):
+                        hits.append((max(abs(x - a.point_x), abs(y - a.point_y)), t))
+            if is_fig:
+                # 图号类单点锚点：容差内只取距离最近 1 个文字
+                if hits:
+                    vals.append(min(hits, key=lambda h: h[0])[1])
+            else:
+                vals = [t for _, t in hits]
         # 保序去重后并入该字段（多候选锚点合并）
         bucket = out.setdefault(a.field, [])
         for v in vals:

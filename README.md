@@ -80,9 +80,11 @@ uv run pyinstaller --noconfirm --clean CADBatchAssistant.spec
 
 ## 首次使用引导
 
-首次启动（或删除全局配置文件后）会弹出欢迎引导窗口，简介三个功能页与 DWG 处理提示；
-关闭引导（「开始使用」/「稍后再说」/窗口 X 均可）即在全局配置写入 `welcome_seen`
-标记（`%APPDATA%\CADBatchAssistant\config.json`），之后不再自动弹出。
+首次启动（或删除全局配置文件后）会弹出多步引导向导，分 5 步带您上手：
+欢迎 → 改字助手 → 填表助手 → 目录助手 → 设置与 ODA（DWG 转换提示）。
+每步可「上一步 / 下一步」翻页，末步「完成使用」收尾；首步「跳过引导」与
+任意页关闭（窗口 X）均在全局配置写入 `welcome_seen` 标记
+（`%APPDATA%\CADBatchAssistant\config.json`），之后不再自动弹出。
 需要回看时，在「设置」页点击「重新显示使用引导」。
 
 ## 诊断模式

@@ -116,10 +116,14 @@ class UpdateDialog:
             updater.download_asset(
                 self._latest["url"], dest, self._mirror, progress,
                 size=self._latest.get("size"),
-                abort_event=self._cancel)
+                abort_event=self._cancel,
+                sha256_url=self._latest.get("sha256_url"))
             self._queue.put(("done", str(dest)))
         except updater.UpdateError as e:
             self._queue.put(("error", str(e)))
+        except Exception as e:  # noqa: BLE001 - 意外异常也要回主线程提示，
+            # 否则对话框永远停在"正在下载"（无任何消息）无法关闭
+            self._queue.put(("error", f"下载过程中发生意外错误：{e}"))
 
     # ---------------- 主线程轮询 ----------------
     def _poll(self) -> None:

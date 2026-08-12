@@ -12,6 +12,7 @@ https://ghproxy.com/https://github.com/... 或 https://github.com/...
 from __future__ import annotations
 
 import base64
+import hashlib
 import http.client
 import json
 import os
@@ -28,8 +29,12 @@ from pathlib import Path
 # GitHub 仓库与更新包信息（与 .github/workflows/build.yml 发布的资产一致）
 GITHUB_REPO = "AIerlIz/CADBatchAssistant"
 ASSET_NAME = "CADBatchAssistant.exe"
+# 随 Release 一并发布的 sha256 校验和资产（名 = 安装包名 + ".sha256"）
+SHA256_ASSET_NAME = ASSET_NAME + ".sha256"
 API_TIMEOUT = 15
 USER_AGENT = "CADBatchAssistant-Updater"
+# L6：响应体大小上限（10MB），防止恶意服务器返回超大 body 耗尽内存
+MAX_RESPONSE_BYTES = 10 * 1024 * 1024
 
 
 class UpdateError(Exception):
@@ -96,7 +101,11 @@ def _request_json(url: str, timeout: int = API_TIMEOUT) -> dict:
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = resp.read()
+            body = resp.read(MAX_RESPONSE_BYTES + 1)
+            if len(body) > MAX_RESPONSE_BYTES:
+                raise UpdateError("更新信息响应过大，已中止读取")
+    except UpdateError:
+        raise
     except urllib.error.HTTPError as e:
         raise UpdateError(f"服务器返回 {e.code}（{e.reason}）") from e
     except (urllib.error.URLError, socket.timeout, OSError,
@@ -134,17 +143,22 @@ def check_latest(repo: str = GITHUB_REPO,
     assets = data.get("assets")
     if not isinstance(assets, list):
         assets = []
-    url, size = None, None
+    url, size, sha256_url = None, None, None
     for asset in assets:
-        if asset.get("name") == ASSET_NAME:
+        name = asset.get("name")
+        if name == ASSET_NAME:
             url = asset.get("browser_download_url")
             size = asset.get("size")
+        elif name == SHA256_ASSET_NAME:
+            sha256_url = asset.get("browser_download_url")
+        if url and sha256_url:  # 两者都命中即可提前结束
             break
     if not url:
         return {"ok": False, "error": f"最新版本未包含安装包 {ASSET_NAME}"}
 
     return {"ok": True, "tag": tag, "version": version,
-            "url": str(url), "size": int(size) if size else None}
+            "url": str(url), "size": int(size) if size else None,
+            "sha256_url": str(sha256_url) if sha256_url else None}
 
 
 def _mirror_url(url: str, mirror: str | None) -> str:
@@ -153,6 +167,65 @@ def _mirror_url(url: str, mirror: str | None) -> str:
     if not mirror:
         return url
     return f"{mirror}/{url}"
+
+
+def _validate_mirror_scheme(mirror: str | None) -> None:
+    """M9：拒绝明文 HTTP 镜像（中间人可篡改 exe/校验和），仅允许 HTTPS。
+
+    mirror 为空（未配置）时直接通过——直连 GitHub 本身是 HTTPS。
+    """
+    mirror = (mirror or "").strip()
+    if mirror.lower().startswith("http://"):
+        raise UpdateError(
+            "下载镜像仅支持 HTTPS（明文 http 会被中间人篡改，已拒绝）。"
+            "请改用 https 镜像或清空镜像配置直连 GitHub。")
+
+
+def _parse_sha256(text: str) -> str:
+    """从 .sha256 校验和文件文本中解析 64 位十六进制哈希。
+
+    兼容两种常见格式：
+    - "<64位hex>  <文件名>"（sha256sum 输出）
+    - 纯 "<64位hex>"（单列）
+    解析失败抛 UpdateError。剥离 UTF-8 BOM（\\ufeff）以防手动上传文件带 BOM。
+    """
+    text = text.lstrip("\ufeff")
+    for line in text.splitlines():
+        token = line.strip().split(maxsplit=1)[0] if line.strip() else ""
+        token = token.lower()
+        if len(token) == 64 and all(c in "0123456789abcdef" for c in token):
+            return token
+    raise UpdateError("校验和文件格式无法解析（未找到 64 位 SHA-256 哈希）")
+
+
+def _fetch_sha256(sha256_url: str, mirror: str | None,
+                  timeout: int = API_TIMEOUT) -> str:
+    """下载 .sha256 校验和文件并解析哈希；失败抛 UpdateError。
+
+    与 exe 相同地应用镜像前缀并支持「镜像失败回退直连」（校验和是
+    内容哈希，从直连 GitHub 获取同样可信——直连本就是 HTTPS）。
+    """
+    direct_url = sha256_url
+    mirror_url = _mirror_url(sha256_url, mirror)
+    candidates: list[str] = []
+    if mirror_url != direct_url:
+        candidates.append(mirror_url)
+    if direct_url not in candidates:  # 直连始终作为兜底
+        candidates.append(direct_url)
+
+    last_err: Exception | None = None
+    for url in candidates:
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                body = resp.read(MAX_RESPONSE_BYTES + 1)
+            if len(body) > MAX_RESPONSE_BYTES:
+                raise UpdateError("校验和响应过大，已中止读取")
+            return _parse_sha256(body.decode("utf-8", errors="replace"))
+        except (urllib.error.HTTPError, urllib.error.URLError, socket.timeout,
+                OSError, http.client.HTTPException, UpdateError) as e:
+            last_err = e
+    raise UpdateError(f"获取校验和失败：{last_err}") from last_err
 
 
 # progress_cb 抛出的取消消息；重试逻辑须原样放行，不做重试。
@@ -170,12 +243,14 @@ def _cleanup(dest: Path) -> None:
 
 def _download_once(dest: Path, url: str, source: str,
                    progress_cb, size: int | None,
-                   expect_exe: bool) -> str:
+                   expect_exe: bool,
+                   expected_sha256: str | None = None) -> str:
     """单次下载 + 校验（不做重试）。
 
     - 网络 / 协议错误（含 IncompleteRead 等 HTTPException）转 UpdateError 并清理；
     - progress_cb 抛出的 UpdateError（用户取消）原样传播，不清理、不重试；
-    - 下载完成后校验 size（提供时）与 PE 头（expect_exe 时）。
+    - 下载完成后校验 size（提供时）、PE 头（expect_exe 时）与
+      sha256（expected_sha256 提供时，M9 强校验）。
     """
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
@@ -206,6 +281,21 @@ def _download_once(dest: Path, url: str, source: str,
         if actual != size:
             _cleanup(dest)
             raise UpdateError(f"{source}下载文件不完整（{actual} / {size} 字节）")
+    if expected_sha256 is not None:
+        # M9：sha256 强校验——镜像/服务器内容被篡改（即使凑齐 size 与 MZ 头）也会被拦截
+        hasher = hashlib.sha256()
+        try:
+            with open(dest, "rb") as f:
+                for chunk in iter(lambda: f.read(64 * 1024), b""):
+                    hasher.update(chunk)
+        except OSError as e:
+            _cleanup(dest)
+            raise UpdateError(f"读取下载文件失败：{e}") from e
+        if hasher.hexdigest() != expected_sha256.lower():
+            _cleanup(dest)
+            raise UpdateError(
+                f"{source}下载文件校验失败（SHA-256 不匹配），"
+                "文件可能被篡改，请检查网络或更换下载镜像")
     if expect_exe:
         try:
             with open(dest, "rb") as f:
@@ -226,12 +316,14 @@ def download_asset(url: str, dest: str | Path, mirror: str | None = None,
                    retries: int = 3, retry_delay: float = 1.0,
                    fallback_to_direct: bool = True,
                    expect_exe: bool = True,
-                   abort_event: threading.Event | None = None) -> str:
+                   abort_event: threading.Event | None = None,
+                   sha256_url: str | None = None) -> str:
     """分块下载更新包到 dest，返回 dest 路径。
 
     progress_cb(downloaded, total) 在主线程之外的调用线程执行。
-    下载完成后校验：提供 size 时比对实际大小（不符视为不完整）；
-    expect_exe 时校验 PE 头（MZ），防止镜像/服务器返回错误页冒充安装包。
+    下载完成后校验（M9）：提供 sha256_url 时先获取校验和，下载后强校验
+    SHA-256（内容被篡改即失败）；无 sha256_url（旧 Release 未发布校验和）
+    时回退 size + PE 头（MZ）校验。mirror 为明文 http:// 时直接拒绝。
     网络错误与校验失败自动重试 retries 次（指数退避，起始 retry_delay 秒）；
     配置了镜像且失败时（fallback_to_direct）自动改用原始 URL 直连再试。
     用户取消（progress_cb 抛 UpdateError(CANCEL_MSG)）或 abort_event 被置位
@@ -241,6 +333,14 @@ def download_asset(url: str, dest: str | Path, mirror: str | None = None,
     retries = max(1, int(retries))
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
+    _validate_mirror_scheme(mirror)
+
+    # M9：取 sha256 校验和（与 exe 同源/同镜像）。获取失败视为异常中断，
+    # 避免在"应可强校验"的场景降级为弱校验。
+    expected_sha256: str | None = None
+    if sha256_url:
+        expected_sha256 = _fetch_sha256(sha256_url, mirror)
+
     direct_url = url
     mirror_url = _mirror_url(url, mirror)
     candidates: list[tuple[str, str]] = []  # (url, 来源描述)
@@ -254,7 +354,8 @@ def download_asset(url: str, dest: str | Path, mirror: str | None = None,
         for attempt in range(1, retries + 1):
             try:
                 return _download_once(dest, candidate_url, source,
-                                      progress_cb, size, expect_exe)
+                                      progress_cb, size, expect_exe,
+                                      expected_sha256)
             except UpdateError as e:
                 if e.args and e.args[0] == CANCEL_MSG:
                     raise
@@ -280,16 +381,62 @@ def build_replace_command(downloaded: str, current_exe: str,
 
     使用 PowerShell -EncodedCommand（base64/UTF-16LE 内嵌整段命令），
     路径含中文/空格/单引号也能正确传递。返回完整可执行的命令行字符串。
+
+    M6 加固（替换旧版固定 Start-Sleep 1500ms + 单次 Copy-Item 的竞态）：
+    - 轮询探测目标 exe 是否仍被占用（文件句柄不可写 = 主进程未退出），
+      最长等待 60 秒，避免主进程退出慢于固定延时导致覆盖失败；
+    - Copy-Item 失败自动重试（最多 10 次 × 500ms）；
+    - 最终仍失败时把原因写入 %TEMP%\\CADBatchAssistant_update.log 供用户查看
+      （PowerShell 窗口默认隐藏，静默失败用户无从得知）。
     """
     src_esc = downloaded.replace("'", "''")
     dst_esc = current_exe.replace("'", "''")
+    log_esc = os.path.join(
+        os.environ.get("TEMP", os.environ.get("TMP", ".")),
+        "CADBatchAssistant_update.log").replace("'", "''")
     script = f"""
 $ErrorActionPreference = 'Stop'
 $src = '{src_esc}'
 $dst = '{dst_esc}'
-Start-Sleep -Milliseconds 1500
-Copy-Item -LiteralPath $src -Destination $dst -Force
-if (-not $?) {{ exit 1 }}
+$log = '{log_esc}'
+function Write-Log($msg) {{
+    try {{ Add-Content -LiteralPath $log -Value $msg -Encoding UTF8 }} catch {{}}
+}}
+# 1) 轮询等待目标 exe 不再被占用（主进程退出释放文件句柄），最长 60s
+$deadline = (Get-Date).AddSeconds(60)
+$ready = $false
+while ((Get-Date) -lt $deadline) {{
+    try {{
+        $fs = [System.IO.File]::Open($dst, 'Open', 'ReadWrite', 'None')
+        $fs.Close()
+        $ready = $true
+        break
+    }} catch {{
+        Start-Sleep -Milliseconds 300
+    }}
+}}
+if (-not $ready) {{
+    Write-Log '更新失败：等待原程序退出超时（60s），未覆盖 exe。'
+    exit 1
+}}
+# 2) 覆盖 exe（重试最多 10 次，应对句柄延迟释放等瞬时占用）
+$copied = $false
+$lastErr = $null
+for ($i = 0; $i -lt 10; $i++) {{
+    try {{
+        Copy-Item -LiteralPath $src -Destination $dst -Force
+        $copied = $true
+        break
+    }} catch {{
+        $lastErr = $_.Exception.Message
+        Start-Sleep -Milliseconds 500
+    }}
+}}
+if (-not $copied) {{
+    Write-Log ('更新失败：覆盖 exe 失败：' + $lastErr)
+    exit 1
+}}
+Write-Log '更新成功：exe 已替换。'
 """
     if restart:
         script += f"Start-Process -FilePath '{dst_esc}'\n"

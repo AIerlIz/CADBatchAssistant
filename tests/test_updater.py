@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import tempfile
 import threading
@@ -157,6 +158,48 @@ class CheckLatestTest(unittest.TestCase):
             result = updater.check_latest()
         self.assertFalse(result["ok"])
         self.assertIn("无法连接", result["error"])
+
+    def test_oversized_response_rejected(self):
+        """L6：响应超过大小上限时中止读取并报错（防恶意超大 body 耗尽内存）。"""
+        oversized = mock.MagicMock()
+        oversized.read.return_value = b"x" * (updater.MAX_RESPONSE_BYTES + 1)
+        oversized.__enter__.return_value = oversized
+        oversized.__exit__.return_value = False
+        with mock.patch.object(updater.urllib.request, "urlopen",
+                               return_value=oversized):
+            result = updater.check_latest()
+        self.assertFalse(result["ok"])
+        self.assertIn("响应过大", result["error"])
+
+    def test_sha256_asset_url_returned(self):
+        """M9：Release 含 .sha256 资产时返回其下载 URL；缺省时返回 None。"""
+        exe_url = "https://github.com/AIerlIz/CADBatchAssistant/releases/" \
+                  "download/v1.1.0/CADBatchAssistant.exe"
+        sha_url = exe_url + ".sha256"
+        data = {
+            "tag_name": "v1.1.0",
+            "assets": [
+                {"name": updater.ASSET_NAME,
+                 "browser_download_url": exe_url, "size": 123},
+                {"name": updater.SHA256_ASSET_NAME,
+                 "browser_download_url": sha_url},
+            ],
+        }
+        with mock.patch.object(updater.urllib.request, "urlopen",
+                               return_value=_json_response(data)):
+            result = updater.check_latest()
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["sha256_url"], sha_url)
+
+        # 无 .sha256 资产（旧 Release）→ sha256_url 为 None（回退 size+MZ 校验）
+        data_no_sha = {"tag_name": "v1.0.0", "assets": [
+            {"name": updater.ASSET_NAME,
+             "browser_download_url": exe_url, "size": 123}]}
+        with mock.patch.object(updater.urllib.request, "urlopen",
+                               return_value=_json_response(data_no_sha)):
+            result = updater.check_latest()
+        self.assertTrue(result["ok"])
+        self.assertIsNone(result["sha256_url"])
 
 
 class DownloadAssetTest(unittest.TestCase):
@@ -346,6 +389,146 @@ class DownloadAssetTest(unittest.TestCase):
         self.assertEqual(m.call_count, 1)
 
 
+class Sha256VerificationTest(unittest.TestCase):
+    """M9：sha256 强校验 + 明文 HTTP 镜像拒绝。"""
+
+    def setUp(self):
+        self._tmp = Path(tempfile.mkdtemp(prefix="cad_sha256_test_"))
+        self.exe_url = "https://github.com/a/b/CADBatchAssistant.exe"
+        self.sha_url = self.exe_url + ".sha256"
+
+    def tearDown(self):
+        for f in self._tmp.iterdir():
+            f.unlink(missing_ok=True)
+        self._tmp.rmdir()
+
+    def _dest(self, name: str) -> Path:
+        return self._tmp / name
+
+    def _sha_resp(self, body: bytes):
+        resp = mock.MagicMock()
+        resp.read.return_value = body
+        resp.__enter__.return_value = resp
+        resp.__exit__.return_value = False
+        return resp
+
+    def test_sha256_match_succeeds(self):
+        """exe 内容与 .sha256 一致 → 下载成功。"""
+        dest = self._dest("ok.exe")
+        content = b"MZ" + b"body"
+        real_hash = hashlib.sha256(content).hexdigest()
+        calls = {"n": 0}
+
+        def fake_urlopen(req, timeout=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return self._sha_resp(f"{real_hash}  CADBatchAssistant.exe".encode())
+            return _download_resp([content, b""], total=len(content))
+
+        with mock.patch.object(updater.urllib.request, "urlopen",
+                               side_effect=fake_urlopen):
+            result = updater.download_asset(
+                self.exe_url, dest, retries=1, retry_delay=0,
+                sha256_url=self.sha_url)
+        self.assertEqual(result, str(dest))
+        self.assertEqual(dest.read_bytes(), content)
+
+    def test_sha256_mismatch_rejected_and_cleaned(self):
+        """exe 内容与 .sha256 不符（被篡改）→ 报校验失败并清理半成品。"""
+        dest = self._dest("bad.exe")
+        content = b"MZ" + b"tampered"
+        other_hash = "0" * 64  # 与真实内容不符
+
+        def fake_urlopen(req, timeout=None):
+            if req.full_url == self.sha_url:
+                return self._sha_resp(f"{other_hash}  a.exe".encode())
+            return _download_resp([content, b""], total=len(content))
+
+        with mock.patch.object(updater.urllib.request, "urlopen",
+                               side_effect=fake_urlopen):
+            with self.assertRaises(updater.UpdateError) as cm:
+                updater.download_asset(
+                    self.exe_url, dest, retries=1, retry_delay=0,
+                    sha256_url=self.sha_url)
+        self.assertIn("SHA-256 不匹配", str(cm.exception))
+        self.assertFalse(dest.exists())
+
+    def test_parse_sha256_both_formats(self):
+        """_parse_sha256 兼容「hash  文件名」与纯 hash 两种格式。"""
+        h = "a" * 64
+        self.assertEqual(updater._parse_sha256(f"{h}  CADBatchAssistant.exe\n"), h)
+        self.assertEqual(updater._parse_sha256(f"{h.upper()}\n"), h)
+        with self.assertRaises(updater.UpdateError):
+            updater._parse_sha256("not a hash")
+
+    def test_plain_http_mirror_rejected(self):
+        """M9：明文 http:// 镜像被拒绝，不发起任何下载。"""
+        dest = self._dest("http.exe")
+        with mock.patch.object(updater.urllib.request, "urlopen") as m:
+            with self.assertRaises(updater.UpdateError) as cm:
+                updater.download_asset(
+                    self.exe_url, dest, mirror="http://mirror.example.com/",
+                    retries=1, retry_delay=0)
+        self.assertIn("仅支持 HTTPS", str(cm.exception))
+        m.assert_not_called()
+
+    def test_https_mirror_allowed(self):
+        """https 镜像正常使用（sha256 也走镜像）。"""
+        dest = self._dest("mirror.exe")
+        content = b"MZ" + b"ok"
+        real_hash = hashlib.sha256(content).hexdigest()
+        calls = {"n": 0}
+
+        def fake_urlopen(req, timeout=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return self._sha_resp(real_hash.encode())
+            return _download_resp([content, b""], total=len(content))
+
+        with mock.patch.object(updater.urllib.request, "urlopen",
+                               side_effect=fake_urlopen) as m:
+            updater.download_asset(
+                self.exe_url, dest, mirror="https://ghproxy.com/",
+                retries=1, retry_delay=0, sha256_url=self.sha_url)
+        urls = [c.args[0].full_url for c in m.call_args_list]
+        self.assertEqual(urls[0], f"https://ghproxy.com/{self.sha_url}")
+        self.assertEqual(urls[1], f"https://ghproxy.com/{self.exe_url}")
+
+    def test_sha256_mirror_down_falls_back_to_direct(self):
+        """镜像不可达时 sha256 获取回退直连 GitHub（与 exe 回退语义一致）。"""
+        dest = self._dest("fallback_sha.exe")
+        content = b"MZ" + b"body"
+        real_hash = hashlib.sha256(content).hexdigest()
+        calls = {"n": 0}
+
+        def fake_urlopen(req, timeout=None):
+            calls["n"] += 1
+            if "ghproxy.com" in req.full_url:
+                raise updater.urllib.error.URLError("mirror down")
+            if calls["n"] == 2:  # 直连取 sha256
+                return self._sha_resp(f"{real_hash}  a.exe".encode())
+            return _download_resp([content, b""], total=len(content))
+
+        with mock.patch.object(updater.urllib.request, "urlopen",
+                               side_effect=fake_urlopen) as m:
+            result = updater.download_asset(
+                self.exe_url, dest, mirror="https://ghproxy.com/",
+                retries=1, retry_delay=0, sha256_url=self.sha_url)
+        self.assertEqual(result, str(dest))
+        self.assertEqual(dest.read_bytes(), content)
+        urls = [c.args[0].full_url for c in m.call_args_list]
+        # 镜像 sha256 失败 → 直连 sha256 → 镜像 exe 失败 → 直连 exe
+        self.assertEqual(urls[0], f"https://ghproxy.com/{self.sha_url}")
+        self.assertEqual(urls[1], self.sha_url)
+        self.assertEqual(urls[2], f"https://ghproxy.com/{self.exe_url}")
+        self.assertEqual(urls[3], self.exe_url)
+
+    def test_parse_sha256_strips_bom(self):
+        """带 UTF-8 BOM 的校验和文件也能解析（防手动上传）。"""
+        h = "b" * 64
+        self.assertEqual(updater._parse_sha256("\ufeff" + h + "\n"), h)
+
+
 class BuildReplaceCommandTest(unittest.TestCase):
     def test_script_embedded_utf16(self):
         cmd = updater.build_replace_command(
@@ -372,6 +555,31 @@ class BuildReplaceCommandTest(unittest.TestCase):
         cmd = updater.build_replace_command("a.exe", "b.exe", restart=False)
         script = base64.b64decode(cmd.rsplit(" ", 1)[-1]).decode("utf-16-le")
         self.assertNotIn("Start-Process", script)
+
+    def test_wait_for_exit_polling_and_retry_in_script(self):
+        """M6：脚本含轮询等待退出（60s 上限）+ Copy-Item 重试 + 失败日志。"""
+        cmd = updater.build_replace_command(
+            r"C:\tmp\new.exe", r"C:\app\CADBatchAssistant.exe")
+        script = base64.b64decode(cmd.rsplit(" ", 1)[-1]).decode("utf-16-le")
+        # 轮询等待：文件句柄占用探测 + 60s 截止
+        self.assertIn("[System.IO.File]::Open", script)
+        self.assertIn("AddSeconds(60)", script)
+        # 覆盖重试：循环 + 多次 Copy-Item + 500ms 间隔
+        self.assertIn("for ($i = 0; $i -lt 10; $i++)", script)
+        self.assertIn("Start-Sleep -Milliseconds 500", script)
+        # 失败写日志（静默失败用户无从得知）
+        self.assertIn("CADBatchAssistant_update.log", script)
+        self.assertIn("Write-Log", script)
+        # 旧的固定延时已被移除
+        self.assertNotIn("Start-Sleep -Milliseconds 1500", script)
+
+    def test_wait_timeout_failure_writes_log_and_exits(self):
+        """M6：等待超时/覆盖失败分支写日志并 exit 1。"""
+        cmd = updater.build_replace_command("a.exe", "b.exe")
+        script = base64.b64decode(cmd.rsplit(" ", 1)[-1]).decode("utf-16-le")
+        self.assertIn("等待原程序退出超时", script)
+        self.assertIn("更新失败：覆盖 exe 失败", script)
+        self.assertIn("exit 1", script)
 
 
 class RunReplaceTest(unittest.TestCase):

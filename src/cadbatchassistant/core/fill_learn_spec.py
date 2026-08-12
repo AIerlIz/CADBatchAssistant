@@ -13,8 +13,8 @@ import json
 import os
 import sys
 
-from cadbatchassistant.core.dxf_processor import decode_text, read_doc
-from cadbatchassistant.core.parse_xlsx import get_headers
+from cadbatchassistant.core.text_replace import decode_text, read_doc
+from cadbatchassistant.core.fill_parse_xlsx import get_headers
 
 def scan_placeholders(dxf_path: str, xlsx_path: str | None = None,
                       sheet: str | None = None) -> dict:

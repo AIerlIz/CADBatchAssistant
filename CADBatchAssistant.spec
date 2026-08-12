@@ -1,11 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec：「CAD批处理助手」统一应用（改字助手 + 填表助手）。
+"""PyInstaller spec：「CAD批处理助手」统一应用（改字助手 + 填表助手 + 目录助手）。
 
-- 入口：main.py（Notebook 统一窗口）
+- 入口：main.py（Notebook 统一窗口，三个功能 tab + 设置；含 --selftest 诊断模式）
 - 产物：dist/CADBatchAssistant.exe（单文件、无控制台窗口；与 Release 资产同名，
   本地构建产物与 CI 一致）
 - tkinterdnd2：手动收集其 tkdnd 扩展目录（hook-contrib 未覆盖），
   运行时从 os.path.dirname(__file__)/tkdnd/<platform> 加载
+- 模板库 templates/fill 与 templates/catalog 由程序在上传时自动创建（exe 同目录）
 """
 
 import os

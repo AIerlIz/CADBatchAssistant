@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import sys
 import threading
 import tkinter as tk
 from pathlib import Path
@@ -74,6 +75,106 @@ def get_oda() -> str:
 def get_out_version() -> str:
     """全局配置中的 DWG 输出版本（默认 ACAD2018，与 dwg_converter 默认一致）。"""
     return str(load_app_config().get("version", "ACAD2018")).strip() or "ACAD2018"
+
+
+# ---------------- 软件目录 / 模板库 / 目录助手规则 ----------------
+
+# 目录助手（catalog）规则默认值：软件目录 config.json 的 rules 段可覆盖
+DEFAULT_CATALOG_RULES = {
+    "point_tolerance": 5,
+    "figure_field": "图号",
+    "data_rows_per_page": 50,
+    "cover_pages": 1,
+}
+
+
+def software_dir() -> Path:
+    """软件目录：exe 所在目录（打包运行）或项目根（源码运行）。"""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent
+    return Path(__file__).resolve().parent.parent.parent
+
+
+def rules_file() -> Path:
+    """目录助手规则配置文件：软件目录下的 config.json（可手动编辑）。"""
+    return software_dir() / "config.json"
+
+
+def load_catalog_rules() -> dict:
+    """读取目录助手规则（软件目录 config.json 的 rules 段），缺省返回内置默认。"""
+    cfg = load_config(rules_file())
+    rules = dict(DEFAULT_CATALOG_RULES)
+    user_rules = cfg.get("rules")
+    if isinstance(user_rules, dict):
+        rules.update({k: v for k, v in user_rules.items() if v not in (None, "")})
+    return rules
+
+
+def templates_dir(category: str) -> Path:
+    """模板库目录：软件目录/templates/<category>（如 fill / catalog）。"""
+    return software_dir() / "templates" / category
+
+
+def list_templates(category: str) -> list[str]:
+    """返回模板库（category 子目录）中的 .dwg/.dxf 模板文件名（排序）。"""
+    d = templates_dir(category)
+    if not d.is_dir():
+        return []
+    return sorted(f.name for f in d.iterdir()
+                  if f.is_file() and f.suffix.lower() in (".dwg", ".dxf"))
+
+
+def upload_template_file(category: str, src: str | None = None,
+                         title: str = "上传图纸模板（复制到模板库）") -> str | None:
+    """把 dwg/dxf 复制进模板库（category 子目录），返回模板文件名。
+
+    未传 src 时弹出文件选择框；文件非法 / 用户取消 / 覆盖被拒时返回 None
+    （提示弹窗在此统一处理）。
+    """
+    from tkinter import filedialog, messagebox
+
+    import shutil
+
+    if src is None:
+        src = filedialog.askopenfilename(
+            title=title,
+            filetypes=[("CAD 文件", "*.dwg *.dxf"), ("DWG 文件", "*.dwg"),
+                       ("DXF 文件", "*.dxf"), ("所有文件", "*.*")],
+        )
+        if not src:
+            return None
+    if not (src.lower().endswith((".dwg", ".dxf")) and os.path.isfile(src)):
+        messagebox.showwarning("提示", "仅支持上传 .dwg/.dxf 文件")
+        return None
+    d = templates_dir(category)
+    d.mkdir(parents=True, exist_ok=True)
+    name = os.path.basename(src)
+    target = d / name
+    if target.exists() and os.path.normcase(str(target)) != os.path.normcase(src):
+        if not messagebox.askyesno("覆盖", f"模板库已存在 {name}，是否覆盖？"):
+            return None
+    shutil.copy2(src, target)
+    return name
+
+
+def delete_template_file(category: str, name: str) -> bool:
+    """确认后删除模板库（category 子目录）中的模板；成功返回 True。
+
+    name 为空 / 用户取消 / 删除失败时返回 False（提示弹窗在此统一处理）。
+    """
+    from tkinter import messagebox
+
+    if not name:
+        messagebox.showwarning("提示", "请先选择要删除的模板")
+        return False
+    if not messagebox.askyesno("确认删除", f"确定删除模板「{name}」吗？"):
+        return False
+    try:
+        (templates_dir(category) / name).unlink()
+    except OSError as ex:  # noqa: BLE001
+        messagebox.showerror("删除失败", str(ex))
+        return False
+    return True
 
 
 def default_font_family() -> str:

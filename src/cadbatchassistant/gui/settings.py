@@ -76,9 +76,6 @@ class SettingsPanel:
             state="disabled")
         self.btn_clear_ignore.pack(side="left", padx=(4, 0))
         self.var_update_info = tk.StringVar()
-        ttk.Label(upd_frame, textvariable=self.var_update_info,
-                  foreground="#666666").grid(
-            row=0, column=2, sticky="w", padx=4)
 
         ttk.Label(upd_frame, text="下载镜像(可选):").grid(
             row=1, column=0, sticky="w", pady=(6, 0))
@@ -87,22 +84,8 @@ class SettingsPanel:
         mirror_entry.grid(row=1, column=1, columnspan=2,
                           sticky="ew", padx=4, pady=(6, 0))
         upd_frame.columnconfigure(1, weight=1)
-        ttk.Label(
-            upd_frame,
-            text="镜像用于加速 GitHub 下载（如 https://ghproxy.com），直连失败时可填写；留空直连。",
-            foreground="#666666",
-        ).grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 0))
 
         self.var_ignore_info = tk.StringVar()
-        ttk.Label(upd_frame, textvariable=self.var_ignore_info,
-                  foreground="#666666").grid(
-            row=3, column=0, columnspan=3, sticky="w", pady=(6, 0))
-
-        ttk.Label(
-            main,
-            text="改动自动保存；「改字助手」与「填表助手」处理 DWG 时共用此配置。",
-            foreground="#666666",
-        ).pack(anchor="w", **pad)
 
     # ---------------- 配置 ----------------
     def _load(self) -> None:

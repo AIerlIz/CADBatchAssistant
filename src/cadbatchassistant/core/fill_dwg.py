@@ -20,8 +20,8 @@ import json
 import os
 import sys
 
-from cadbatchassistant.core.dxf_processor import read_doc
-from cadbatchassistant.core.parse_xlsx import load_xlsx
+from cadbatchassistant.core.text_replace import read_doc
+from cadbatchassistant.core.fill_parse_xlsx import load_xlsx
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SPECS = os.path.join(HERE, "specs.json")

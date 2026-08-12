@@ -144,7 +144,7 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
     if not template or not os.path.isfile(str(template)):
         raise ValueError("缺少图纸模板文件（值格填 [字段名] 占位的 .dwg/.dxf）")
     t_dxf = _template_to_dxf(template, oda_exe, tmp, out_version, emit)
-    from cadbatchassistant.core.learn_spec import scan_placeholders
+    from cadbatchassistant.core.fill_learn_spec import scan_placeholders
 
     one_spec = scan_placeholders(t_dxf, xlsx, sheet)
     n_fields = sum(len(v) for v in one_spec.values())

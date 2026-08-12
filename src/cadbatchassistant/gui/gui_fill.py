@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import os
-import sys
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -21,27 +20,21 @@ from cadbatchassistant.common import (
     build_log_panel,
     build_output_row,
     dedup_paths as _dedup_paths_common,
+    delete_template_file,
     get_oda,
     get_out_version,
+    list_templates,
     load_config,
     parse_dnd_data,
     save_config,
+    templates_dir,
+    upload_template_file,
 )
 from cadbatchassistant.core.dwg_converter import require_oda_for_dwg
-from cadbatchassistant.core.pipeline import run_pipeline_files
+from cadbatchassistant.core.fill_pipeline import run_pipeline_files
 
 CONFIG_DIR = Path(os.environ.get("APPDATA") or Path.home()) / "CadFill"
 CONFIG_FILE = CONFIG_DIR / "config.json"
-
-
-def _software_dir() -> Path:
-    """软件目录：exe 所在目录（打包运行）或脚本目录（源码运行）。"""
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).parent
-    return Path(os.path.dirname(os.path.abspath(__file__)))
-
-
-TEMPLATES_DIR = _software_dir() / "templates"   # 图纸模板库：软件目录下 templates
 
 
 def _load_panel_config() -> dict:
@@ -123,7 +116,7 @@ class IsoFillApp(AsyncPanel):
         # 图纸模板（模板库下拉选择）
         row_tpl = ttk.Frame(src_frame)
         row_tpl.pack(fill="x", pady=(6, 0))
-        ttk.Label(row_tpl, text="图纸模板:").pack(side="left")
+        ttk.Label(row_tpl, text="填表模板:").pack(side="left")
         self.var_template = tk.StringVar()
         self.tpl_combo = ttk.Combobox(row_tpl, textvariable=self.var_template,
                                       state="readonly", width=16)
@@ -182,7 +175,7 @@ class IsoFillApp(AsyncPanel):
         headers: dict[str, list[str]] = {}
         if path and os.path.isfile(path):
             try:
-                from cadbatchassistant.core.parse_xlsx import load_sheet_meta
+                from cadbatchassistant.core.fill_parse_xlsx import load_sheet_meta
 
                 sheets, headers = load_sheet_meta(path)
             except Exception:  # noqa: BLE001 - 文件损坏/不可读时无工作表可选
@@ -268,17 +261,10 @@ class IsoFillApp(AsyncPanel):
         """（已改为模板库上传，此方法保留兼容）"""
         self._upload_template()
 
-    # ---------------- 图纸模板库 ----------------
-    def _list_templates(self) -> list[str]:
-        """返回模板库中的模板文件名（.dwg/.dxf，排序）。"""
-        if not TEMPLATES_DIR.is_dir():
-            return []
-        return sorted(f.name for f in TEMPLATES_DIR.iterdir()
-                      if f.is_file() and f.suffix.lower() in (".dwg", ".dxf"))
-
+    # ---------------- 图纸模板库（填表模板：templates/fill） ----------------
     def _refresh_templates(self) -> None:
         """刷新下拉框并恢复上次选择（config.json 存模板文件名）。"""
-        names = self._list_templates()
+        names = list_templates("fill")
         self.tpl_combo["values"] = names
         last = _load_panel_config().get("template", "")
         if last in names:
@@ -289,46 +275,19 @@ class IsoFillApp(AsyncPanel):
             self.var_template.set("")
 
     def _upload_template(self, path: str | None = None) -> None:
-        """把 dwg/dxf 复制进模板库并选中。"""
-        if path is None:
-            path = filedialog.askopenfilename(
-                title="上传图纸模板（复制到模板库）",
-                filetypes=[("CAD 文件", "*.dwg *.dxf"), ("DWG 文件", "*.dwg"),
-                           ("DXF 文件", "*.dxf"), ("所有文件", "*.*")],
-            )
-            if not path:
-                return
-        if path.lower().endswith((".dwg", ".dxf")) and os.path.isfile(path):
-            TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
-            name = os.path.basename(path)
-            target = TEMPLATES_DIR / name
-            if target.exists() and os.path.normcase(str(target)) != os.path.normcase(path):
-                if not messagebox.askyesno("覆盖", f"模板库已存在 {name}，是否覆盖？"):
-                    return
-            import shutil
-
-            shutil.copy2(path, target)
+        """把 dwg/dxf 复制进填表模板库（templates/fill）并选中。"""
+        name = upload_template_file(
+            "fill", path, title="上传填表模板（未填图框 + 值格 [列名] 占位）")
+        if name:
             self._refresh_templates()
             self.var_template.set(name)
             _save_panel_config({"template": name})
-        else:
-            messagebox.showwarning("提示", "仅支持上传 .dwg/.dxf 文件")
 
     def _delete_template(self) -> None:
         name = self.var_template.get().strip()
-        if not name:
-            messagebox.showwarning("提示", "请先选择要删除的模板")
-            return
-        if not messagebox.askyesno("确认删除", f"确定删除模板「{name}」吗？"):
-            return
-        target = TEMPLATES_DIR / name
-        try:
-            target.unlink()
-        except OSError as ex:  # noqa: BLE001
-            messagebox.showerror("删除失败", str(ex))
-            return
-        self._refresh_templates()
-        _save_panel_config({"template": self.var_template.get()})
+        if delete_template_file("fill", name):
+            self._refresh_templates()
+            _save_panel_config({"template": self.var_template.get()})
 
     def _on_drop_upload_template(self, event) -> None:
         paths = self._parse_dnd_data(event.data)
@@ -396,7 +355,7 @@ class IsoFillApp(AsyncPanel):
             return
         xlsx = self.var_xlsx.get().strip()
         tpl_name = self.var_template.get().strip()
-        template = os.path.join(TEMPLATES_DIR, tpl_name) if tpl_name else ""
+        template = str(templates_dir("fill") / tpl_name) if tpl_name else ""
         sheet = self.var_sheet.get().strip() or None
         match_col = self.var_match_col.get().strip() or None
         files = list(self.scanned_files)

@@ -7,7 +7,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cadbatchassistant.core.dwg_converter import require_oda_for_dwg
+import pytest
+
+import cadbatchassistant.core.dwg_converter as dc
+from cadbatchassistant.core.dwg_converter import ODAError, convert_batch, require_oda_for_dwg
 
 
 class RequireOdaForDwgTest(unittest.TestCase):
@@ -45,6 +48,59 @@ class RequireOdaForDwgTest(unittest.TestCase):
             self.assertIsNone(require_oda_for_dwg(True, f"  {p}  "))
         finally:
             p.unlink(missing_ok=True)
+
+
+# ---------------- 探测与参数校验（合并自 CADCatalogAssistant） ----------------
+
+
+def test_find_oda_converter_via_env_file(tmp_path, monkeypatch):
+    exe = tmp_path / "ODAFileConverter.exe"
+    exe.write_bytes(b"")
+    monkeypatch.setenv("ODA_PATH", str(exe))
+    assert dc.find_oda_converter() == exe
+
+
+def test_find_oda_converter_via_env_dir(tmp_path, monkeypatch):
+    d = tmp_path / "oda"
+    d.mkdir()
+    exe = d / "ODAFileConverter.exe"
+    exe.write_bytes(b"")
+    monkeypatch.setenv("ODA_PATH", str(d))
+    assert dc.find_oda_converter() == exe
+
+
+def test_find_oda_converter_none(monkeypatch):
+    monkeypatch.delenv("ODA_PATH", raising=False)
+    monkeypatch.setattr(dc, "_CANDIDATE_GLOBS", [])
+    assert dc.find_oda_converter() is None
+
+
+def test_convert_batch_missing_exe(tmp_path):
+    with pytest.raises(ODAError, match="不存在"):
+        convert_batch(tmp_path / "none.exe", tmp_path, tmp_path)
+
+
+def test_convert_batch_invalid_version(tmp_path):
+    exe = tmp_path / "ODAFileConverter.exe"
+    exe.write_bytes(b"")
+    out = tmp_path / "out"
+    with pytest.raises(ODAError, match="版本"):
+        convert_batch(exe, tmp_path, out, out_version="ACAD2999")
+
+
+def test_convert_batch_invalid_type(tmp_path):
+    exe = tmp_path / "ODAFileConverter.exe"
+    exe.write_bytes(b"")
+    out = tmp_path / "out"
+    with pytest.raises(ODAError, match="类型"):
+        convert_batch(exe, tmp_path, out, out_type="PDF")
+
+
+def test_convert_batch_missing_in_dir(tmp_path):
+    exe = tmp_path / "ODAFileConverter.exe"
+    exe.write_bytes(b"")
+    with pytest.raises(ODAError, match="输入目录不存在"):
+        convert_batch(exe, tmp_path / "no_such_dir", tmp_path)
 
 
 if __name__ == "__main__":

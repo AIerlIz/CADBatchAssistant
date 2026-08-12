@@ -10,7 +10,7 @@ from pathlib import Path
 import ezdxf
 import openpyxl
 
-from cadbatchassistant.core import learn_spec
+from cadbatchassistant.core import fill_learn_spec
 
 
 def _make_xlsx_multi(path, sheets: dict) -> None:
@@ -58,11 +58,11 @@ class ScanPlaceholdersSheetTest(unittest.TestCase):
         _make_dxf_with_placeholders(dxf, ["[压力]"])
 
         # 默认第一个 sheet（SheetA 无「压力」列）→ 匹配不到（spec 为空）
-        by_default = learn_spec.scan_placeholders(str(dxf), str(xlsx))
+        by_default = fill_learn_spec.scan_placeholders(str(dxf), str(xlsx))
         self.assertEqual(by_default, {})
 
         # 指定 SheetB → 按名称精确匹配到「压力」
-        by_sheet = learn_spec.scan_placeholders(
+        by_sheet = fill_learn_spec.scan_placeholders(
             str(dxf), str(xlsx), sheet="SheetB")
         self.assertEqual(list(by_sheet["0"].keys()), ["压力"])
 
@@ -72,7 +72,7 @@ class ScanPlaceholdersSheetTest(unittest.TestCase):
         dxf = self._tmp / "t.dxf"
         _make_dxf_with_placeholders(dxf, ["[name]", "[图号]"])
 
-        spec = learn_spec.scan_placeholders(str(dxf), str(xlsx))
+        spec = fill_learn_spec.scan_placeholders(str(dxf), str(xlsx))
         # 「name」≠「Name」不匹配（不归一化）；「图号」精确匹配
         self.assertEqual(list(spec["0"].keys()), ["图号"])
 
@@ -83,7 +83,7 @@ class ScanPlaceholdersSheetTest(unittest.TestCase):
         dxf = self._tmp / "t.dxf"
         _make_dxf_with_placeholders(dxf, ["[图号]", "[名称]"], layer="TEXT1")
 
-        spec = learn_spec.scan_placeholders(str(dxf), str(xlsx))
+        spec = fill_learn_spec.scan_placeholders(str(dxf), str(xlsx))
         self.assertEqual(list(spec["TEXT1"].keys()), ["图号", "名称"])
 
     def test_placeholders_in_multiple_layers_grouped(self):
@@ -98,7 +98,7 @@ class ScanPlaceholdersSheetTest(unittest.TestCase):
                 "insert": (50, 10), "height": 3.0, "layer": "TEXT1"})
         doc.saveas(dxf)
 
-        spec = learn_spec.scan_placeholders(str(dxf), str(xlsx))
+        spec = fill_learn_spec.scan_placeholders(str(dxf), str(xlsx))
         self.assertEqual(list(spec["0"].keys()), ["图号"])
         self.assertEqual(list(spec["TEXT1"].keys()), ["名称"])
 

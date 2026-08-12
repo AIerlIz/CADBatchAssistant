@@ -1,18 +1,18 @@
 # CAD批处理助手 (CADBatchAssistant)
 
-统一的 CAD 图纸批处理桌面工具：一个窗口、两个功能页（tab 切换）。
+统一的 CAD 图纸批处理桌面工具：一个窗口、三个功能页 + 设置页（tab 切换），
+支持 DWG / DXF 图纸的**批量改字**、**数据表填图**与**图纸目录生成**。
 
 | Tab | 功能 | 核心模块 |
 |---|---|---|
-| **改字助手** | 批量修改 DWG/DXF 图纸文字（TEXT / MTEXT / 块属性），支持正则查找替换 | `gui/gui.py` + `core/dxf_processor.py` |
-| **填表助手** | 把数据表（.xlsx/.xls）内容按「图纸模板占位」填入 DWG/DXF 图纸标题栏 | `gui/gui_fill.py` + `core/pipeline.py` 等 |
-| **设置** | ODA File Converter 路径、DWG 输出版本（全局共享，两个功能页共用） | `gui/settings.py` |
+| **改字助手** | 批量修改 DWG/DXF 图纸文字（TEXT/MTEXT/块属性），支持正则查找替换 | `gui/gui_text.py` + `core/text_replace.py` |
+| **填表助手** | 把数据表（.xlsx/.xls）按「图纸模板占位」填入图纸标题栏 | `gui/gui_fill.py` + `core/fill_pipeline.py` |
+| **目录助手** | 按「标记模板」从一批图纸取值，生成图纸目录 Excel | `gui/gui_catalog.py` + `core/catalog_pipeline.py` |
+| **设置** | ODA File Converter 路径、DWG 输出版本、软件更新（全局共享） | `gui/settings.py` |
 
-> 前身：CADBatchText（改字助手）与 CAD填表助手（CadFill）两个独立工具，现已整合为统一应用。
+> 前身：CADBatchText、CadFill、CADCatalogAssistant 三个独立工具，现已整合为统一应用。
 
 ## 界面使用
-
-启动后顶部为两个 tab，点按切换：
 
 ```bash
 uv run python main.py
@@ -20,120 +20,106 @@ uv run python main.py
 
 ### 改字助手
 
-1. **选择文件**：点击「选择文件...」或直接把 dwg/dxf 拖进窗口（可多次追加）
-2. **配置规则**：在表格中编辑——双击单元格输入"查找（正则）"与"替换为"；单击底部「＋ 点击添加规则」新增行；选中行按 `Delete` 或右键删除
-3. **设置输出**：默认输出到所选文件目录下的 `output`，可手动改或点「默认」还原
-4. **选项**：DWG 输出版本（AutoCAD 2018/2013/…）、大小写敏感、dry-run 预览
-5. **开始处理**：点击「开始处理」，进度条与日志实时显示每个文件的替换结果；完成后弹窗汇总
-
-#### 查找替换规则说明
-
-**默认「普通文本」模式**：查找与替换都按字面文本匹配，输入什么就匹配什么
-（括号、点、星号等正则元字符自动转义，无需处理）。
-
-**勾选「正则模式」后**：查找按正则表达式解释，替换支持 `\1` 反向引用。
-
-| 模式 | 示例 | 说明 |
-|---|---|---|
-| 普通文本（默认） | 查找 `机舱A2DK区域管子制作图(四十一)` | 含括号的整句直接匹配 |
-| 普通文本（默认） | 查找 `FABRICATION`，替换 `FABRICATION-NEW` | 纯文字直接替换 |
-| 正则模式 | 查找 `REV\d+` | 匹配 `REV` 后跟数字（如 REV1、REV23） |
-| 正则模式 | 查找 `(FABRICATION)`，替换 `\1-NEW` | 捕获组反向引用 → `FABRICATION-NEW` |
-| 正则模式 | 替换 `C:\\Users\\X` | 路径等反斜杠需写成 `\\` |
-
-> 正则模式下，替换文本中的无效反向引用（如 `\1` 无对应捕获组）或未转义反斜杠，提交时会被拦截并弹窗提示；普通文本模式不拦截。
+选择 DWG/DXF（可拖放追加）→ 编辑查找/替换规则（双击单元格编辑、底部「＋」添加、Delete/右键删除）→ 设置输出目录 → 开始处理。
+默认「普通文本」模式按字面匹配；勾选「正则模式」后查找按正则解释、替换支持 `\1` 反向引用。
 
 ### 填表助手
 
-1. **数据表**：选择项目数据表（.xlsx 或 .xls）
-2. **图纸模板**：从模板库下拉框选择本项目图纸模板（可「上传」将 .dwg/.dxf 复制进软件目录下 `templates` 库）
-3. **选择图纸文件...**：多选要处理的 DWG/DXF（可追加、右键删除、拖放）
-4. **输出目录**：默认 = 第一个图纸所在目录下 `output`，可改
-5. **开始处理**：进度条按阶段/图纸推进，完成后保持 100%
+1. **数据表格**：选择 .xlsx/.xls，可选「工作表格」（sheet）与「匹配列」（图纸名列，默认第一列）
+2. **填表模板**：从模板库下拉选择（可「上传」到 `templates/fill`），模板为「未填图框 + 值格填 `[列名]` 占位」的样例图，占位符列名与数据表表头**精确匹配**
+3. 选择图纸（可拖放）→ 设置输出目录 → 开始处理
 
-DWG 输入输出 DWG（需 ODA File Converter，自动探测）；DXF 输入输出 DXF（无需 ODA）。
+**取值规则**：每个占位符 `[列名]` 只从数据表对应列取值，其他列不参与；列缺失/值为空时该字段置空。
 
-#### 图纸模板占位格式（规范）
+### 目录助手
 
-**模板 = 一张"未填图框 + 值格填占位文字"的样例图**，一个项目准备一份，全项目通用。
-制作：打开任一张项目图纸（修改前/未填的图框），在**需要填入数据的值格**里，
-填入**该数据表列名加方括号**的占位文字（如列名 `NPD (inch)` → 值格填 `[NPD (inch)]`），
-另存为 `.dwg` 或 `.dxf` 均可（文件名随意）。
+1. **标记模板**：在取值位置放 `[字段名]` 文字（如 `[图号]`），可放多个同名候选位；用小矩形圈住区域则按区域内全部文字取值。上传到模板库下拉（`templates/catalog`）
+2. **表格模板（必填）**：Excel 表头列名 = 模板字段名 +「页码」，程序自动定位 sheet 与表头行；多个 sheet 并列时弹窗选择。可用 `write_style_template` 生成参考模板
+3. 选择图纸 → 设置输出目录 → 开始处理
 
-规则：
+输出：每图纸一个条目，列 = 占位符字段名 + 页码；无值字段填 `NA`；单值字段跨行合并；页码每文件一页；图号取不到时用文件名兜底。
 
-- **占位符文字 = 数据表该列的表头**（如列名 `NPD` → 填 `[NPD]`），**精确匹配、不做归一化**（大小写/空格/符号需与表头完全一致）。
-- 占位所在位置即该字段的填入位置；每个要填的字段都放一个占位，缺哪个字段输出就漏填哪个。
-- **数据表值原样填入**：不转分数、不加单位，表里是什么值就填什么值（如 `1.5` 填 `1.5`）。
-- 数据表某字段值为空时，该字段占位符置空（输出为空白）。
-- 模板与处理图纸必须**同一图框**（同布局/标签/图层/字体）；不同项目图框不同则各做一份。
+**配置规则**（软件目录 `config.json` 的 `rules` 段，缺省用默认）：
+
+| 键 | 默认值 | 说明 |
+|---|---|---|
+| `figure_field` | `图号` | 图号字段名（取不到用文件名兜底） |
+| `point_tolerance` | `5` | 单点锚点取值坐标容差 |
+| `data_rows_per_page` | `50` | 目录每页数据行数 |
+| `cover_pages` | `1` | 封皮页数 |
+
+## 模板库存放约定
+
+| 目录 | 用途 | 使用功能页 |
+|---|---|---|
+| `templates/fill/` | 填表模板（未填图框 + 值格 `[列名]` 占位） | 填表助手 |
+| `templates/catalog/` | 标记模板（`[字段名]` 取值位置） | 目录助手 |
+
+两个模板库各自独立管理（上传/删除/拖放互不干扰），目录在软件目录下自动创建。
 
 ## 环境要求
 
 - Windows（Tk 图形界面）
-- 处理 **DWG** 需要安装 [ODA File Converter](https://www.opendesign.com/guestfiles/oda_file_converter)（纯 DXF 场景不需要）
-- 开发/构建需要 [uv](https://docs.astral.sh/uv/) + Python 3.12
+- 处理 DWG 需安装 [ODA File Converter](https://www.opendesign.com/guestfiles/oda_file_converter)（纯 DXF 场景不需要）
+- 开发/构建：Python 3.12 + [uv](https://docs.astral.sh/uv/)
 - 依赖：`ezdxf`、`openpyxl`、`xlrd`、`tkinterdnd2`
-
-## 快速开始
-
-```bash
-uv sync                # 安装依赖
-uv run python main.py  # 启动统一窗口（两个 tab 切换）
-```
 
 ## 打包 exe
 
-运行：
-
 ```bash
-uv run python scripts/inject_version.py   # 自动注入版本号（本地取 pyproject.toml 的 version）
+uv run python scripts/inject_version.py   # 注入版本号（本地取 pyproject.toml）
 uv run pyinstaller --noconfirm --clean CADBatchAssistant.spec
 ```
 
-产物在 `dist\CADBatchAssistant.exe`（单文件、免安装、无控制台窗口），包含「改字助手」与「填表助手」两个 tab。
-
-- **版本号编译时自动注入**：CI 发版时从 tag（如 `v1.0.1`）写入应用内 `__version__`，本地打包从 `pyproject.toml` 读取；无需手动同步版本号
-- 填表助手的文件拖放依赖 `tkinterdnd2`：`CADBatchAssistant.spec` 已手动收集其 `tkdnd` 扩展目录（PyInstaller hook-contrib 未覆盖）
-- DWG 处理仍需目标机器安装 [ODA File Converter](https://www.opendesign.com/guestfiles/oda_file_converter)（纯 DXF 流程不需要）
+产物 `dist\CADBatchAssistant.exe`（单文件、无控制台窗口），DWG 处理仍需目标机安装 ODA File Converter。
 
 ## 软件更新
 
-应用支持基于 GitHub Release 的**在线自动更新**（仅打包 exe 生效；开发模式 `python main.py` 不检查）：
+打包版启动后静默检查 GitHub Release，发现新版本可应用内下载并替换重启；支持下载镜像与失败重试。
+发布：推送 `v*` tag（如 `v2.0.0`）→ CI 构建并发布 Release（资产名 `CADBatchAssistant.exe`）。
 
-- **检查时机**：启动 2 秒后后台静默检查 + 「设置 → 软件更新 → 检查更新」手动检查
-- **更新流程**：发现新版本 → 弹窗确认 → 应用内下载（显示进度，可取消）→ 校验文件大小与安装包有效性 → 自动替换 exe 并重启
-- **下载镜像**：国内直连 GitHub 失败时，可在「设置 → 软件更新 → 下载镜像」填镜像前缀（如 `https://ghproxy.com`，即把原始下载地址拼接在镜像之后），留空则直连。镜像仅做下载加速，请填写可信的镜像地址
-- **失败重试**：下载中断 / 文件不完整 / 网络错误时自动重试（最多 3 次，退避间隔递增），镜像下载失败会自动改用直连再试；仍失败时弹窗提示原因并可手动重试
+## 诊断模式
 
-### 发布新版本（维护者）
+```bash
+CADBatchAssistant.exe --selftest <标记模板DWG> <图纸文件...>
+```
 
-1. 推送 tag `v1.1.0`（格式 `v` + 三位数字版本）：GitHub Actions 构建时自动从 tag 注入版本号、构建 exe 并发布到 Release（资产名 `CADBatchAssistant.exe`）
-2. 用户端启动后即会提示更新；未自动提示时可手动「检查更新」
-
-> 版本号以 tag 为准：CI 构建时自动写入 `__version__`，无需手动改 `pyproject.toml` / `__init__.py`（`pyproject.toml` 的 `version` 仅作本地打包回退）。tag 版本需高于当前版本，用户端才会提示更新。
-
-> 更新查询走 `https://api.github.com/repos/AIerlIz/CADBatchAssistant/releases/latest`，仅识别资产 `CADBatchAssistant.exe`。
+不启动界面跑完整目录流程，日志写入 `selftest_log.txt`，供定位打包版问题。
 
 ## 项目结构
 
 ```
-main.py                   # 根薄入口：Notebook 窗口，装配两个面板 + 设置页
+main.py                    # 入口：Notebook 窗口 + --selftest
 src/cadbatchassistant/
-  common.py               # 两面板共享的公共组件：输出版本/配置/字体/去重/主题、
-                          #   AsyncPanel 后台任务骨架（线程+队列+轮询）、ODA 行构建/探测/浏览助手、
-                          #   通用控件构建（文件列表/日志面板/输出行/右键菜单）
-  core/                   # 核心处理层
-    dxf_processor.py      # DXF 文字查找替换核心（正则、编码、实体遍历）
-    dwg_converter.py      # ODA File Converter 集成（探测、静默批量转换；两面板共用）
-    pipeline.py           # 填表一键流程（xlsx + 图纸 → 模板推断规格 → 填表 → 输出）
-    learn_spec.py         # 图纸模板占位扫描（[列名] 与数据表表头匹配）
-    fill_dwg.py           # 按规格 + 数据表填充标题栏值格
-    parse_xlsx.py         # 读取数据表 .xlsx/.xls → {图纸名: {列名: 值}}
-    updater.py            # 在线更新：GitHub Release 查询 / 镜像下载 / 替换重启命令
-  gui/                    # 界面层
-    gui.py                # 「改字助手」面板（CadTextApp）
-    gui_fill.py           # 「填表助手」面板（IsoFillApp，含模板库与拖放）
-    settings.py           # 「设置」面板（SettingsPanel）：ODA 路径、DWG 输出版本、软件更新，自动保存
-    updater_dialog.py     # 更新下载对话框（进度展示 / 取消 / 下载完成替换重启）
+  common.py                # 共享组件：配置、软件目录/模板库函数、控件、AsyncPanel
+  core/
+    text_replace.py        # 改字：DXF 文字查找替换
+    dwg_converter.py       # ODA 集成（三功能共用）
+    fill_pipeline.py       # 填表：一键流程
+    fill_learn_spec.py     # 填表：模板占位扫描
+    fill_dwg.py            # 填表：按规格填充
+    fill_parse_xlsx.py     # 填表：读取数据表
+    catalog_pipeline.py    # 目录：一键流程
+    catalog_template_reader.py  # 目录：模板解析
+    catalog_reader.py      # 目录：按锚点取值
+    catalog_builder.py     # 目录：目录数据构建
+    catalog_excel_writer.py     # 目录：Excel 输出
+    updater.py             # 在线更新
+  gui/
+    gui_text.py            # 改字助手面板
+    gui_fill.py            # 填表助手面板
+    gui_catalog.py         # 目录助手面板
+    settings.py            # 设置面板
+    updater_dialog.py      # 更新对话框
+scripts/
+  inject_version.py        # 打包版本注入
+  verify_end_to_end.py     # 目录助手端到端验证
+tests/                     # pytest 单测
+```
+
+## 验证
+
+```bash
+uv run pytest
+uv run python scripts/verify_end_to_end.py
 ```

@@ -29,7 +29,7 @@ from cadbatchassistant.common import (
     get_out_version,
     parse_dnd_data,
 )
-from cadbatchassistant.core.dxf_processor import ReplaceRule, process_dxf_file
+from cadbatchassistant.core.text_replace import ReplaceRule, process_dxf_file
 from cadbatchassistant.core.dwg_converter import (
     ODAError,
     convert_dwg_batch_to_dxf,
@@ -206,12 +206,6 @@ class CadTextApp(AsyncPanel):
         self.rule_tree.pack(side="left", fill="both", expand=True)
         tree_scroll.pack(side="right", fill="y")
         rule_tree_frame.columnconfigure(0, weight=1)
-
-        ttk.Label(
-            rule_frame,
-            text="提示：双击编辑，底部行添加，Delete/右键删除",
-            foreground="#666666",
-        ).pack(anchor="w", pady=(4, 0))
 
         # 3. 选项区（ODA 路径与输出版本已移至「设置」tab，全局共享）
         opt_frame = ttk.LabelFrame(main, text="选项", padding=8)

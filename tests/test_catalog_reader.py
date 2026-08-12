@@ -83,3 +83,26 @@ def test_file_name_like_text_is_not_excluded(tmp_path):
     out = extract_by_anchors(dxf, anchors, point_tolerance=5.0,
                              fig_fields=frozenset({"图号"}))
     assert out["图号"] == ["024707VA2292_HAFT-A2DK-B"]
+
+
+def test_chinese_id_chars_kept(tmp_path):
+    """M7：中文图号/编号被保留（不再被整体过滤）。"""
+    dxf = _make_dxf(tmp_path / "cn.dxf",
+                    [((0, 0), "图号甲-01"), ((2, 0), "管段乙_02")])
+    anchors = [Anchor(field="图号", is_area=False,
+                      point_x=0.0, point_y=0.0)]
+    out = extract_by_anchors(dxf, anchors, point_tolerance=5.0,
+                             fig_fields=frozenset({"图号"}))
+    # 最近 1 个：纯中文+连字符（"-"保留），"图号甲-01"
+    assert out["图号"] == ["图号甲-01"]
+
+
+def test_chinese_with_space_still_filtered(tmp_path):
+    """M7：中文放行但含空格等分隔符的文字仍被过滤。"""
+    dxf = _make_dxf(tmp_path / "cnsp.dxf",
+                    [((0, 0), "图号 甲-01"), ((2, 0), "管段乙-02")])
+    anchors = [Anchor(field="图号", is_area=False,
+                      point_x=0.0, point_y=0.0)]
+    out = extract_by_anchors(dxf, anchors, point_tolerance=5.0,
+                             fig_fields=frozenset({"图号"}))
+    assert out["图号"] == ["管段乙-02"]  # 空格版被过滤，无空格版被取到

@@ -103,5 +103,52 @@ def test_convert_batch_missing_in_dir(tmp_path):
         convert_batch(exe, tmp_path / "no_such_dir", tmp_path)
 
 
+# ---------------- M4：失败时 stderr 并入错误消息 ----------------
+
+
+def test_convert_batch_nonzero_includes_stderr(tmp_path, monkeypatch):
+    """ODA 进程返回非零时，错误消息应包含 stderr/stdout 尾部内容。"""
+    exe = tmp_path / "ODAFileConverter.exe"
+    exe.write_bytes(b"")
+    in_dir = tmp_path / "in"
+    in_dir.mkdir()
+    out_dir = tmp_path / "out"
+
+    class FakeProc:
+        returncode = 3
+        stderr = b"[Error] license invalid\nmissing dependency\n"
+        stdout = b"ODA File Converter 8.0\n"
+
+    monkeypatch.setattr(dc.subprocess, "run", lambda *a, **k: FakeProc())
+    with pytest.raises(ODAError) as ei:
+        convert_batch(exe, in_dir, out_dir)
+    msg = str(ei.value)
+    assert "退出码 3" in msg
+    assert "license invalid" in msg        # stderr 尾部
+    assert "missing dependency" in msg
+    assert "ODA File Converter" in msg     # stdout 尾部
+
+
+def test_convert_batch_nonzero_without_output(tmp_path, monkeypatch):
+    """无 stderr/stdout 时错误消息不附带空明细。"""
+    exe = tmp_path / "ODAFileConverter.exe"
+    exe.write_bytes(b"")
+    in_dir = tmp_path / "in"
+    in_dir.mkdir()
+    out_dir = tmp_path / "out"
+
+    class FakeProc:
+        returncode = 1
+        stderr = b""
+        stdout = None
+
+    monkeypatch.setattr(dc.subprocess, "run", lambda *a, **k: FakeProc())
+    with pytest.raises(ODAError) as ei:
+        convert_batch(exe, in_dir, out_dir)
+    msg = str(ei.value)
+    assert "退出码 1" in msg
+    assert "stderr" not in msg
+
+
 if __name__ == "__main__":
     unittest.main()

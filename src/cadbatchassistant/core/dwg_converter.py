@@ -137,7 +137,24 @@ def convert_batch(
         raise ODAError(f"无法启动 ODAFileConverter: {ex}") from ex
 
     if proc.returncode not in (0, None):
-        raise ODAError(f"ODA 转换失败，退出码 {proc.returncode}")
+        detail = ""
+        for stream, name in ((proc.stdout, "stdout"), (proc.stderr, "stderr")):
+            if stream:
+                # 中文 Windows 下 ODA 常输出 GBK，先按 UTF-8 解码失败再回退 GBK
+                text = None
+                for enc in ("utf-8", "gbk"):
+                    try:
+                        text = stream.decode(enc)
+                        break
+                    except (UnicodeDecodeError, LookupError):
+                        continue
+                if text is None:
+                    text = stream.decode("utf-8", errors="replace")
+                tail = text.strip()[-500:]
+                if tail:
+                    detail += f"\n  {name}: {tail}"
+        raise ODAError(
+            f"ODA 转换失败，退出码 {proc.returncode}{detail}")
 
 
 def wait_for_outputs(

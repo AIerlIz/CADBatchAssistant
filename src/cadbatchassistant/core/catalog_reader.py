@@ -38,8 +38,12 @@ def _entity_insert_point(e) -> tuple[float, float]:
 
 
 def _is_id_chars(s: str) -> bool:
-    """编号型字符：字母/数字/连字符/下划线（无空格、括号、中文等）。"""
-    return all(c.isascii() and (c.isalnum() or c in "_-") for c in s)
+    """编号型字符：字母/数字/中文/连字符/下划线（无空格、括号等）。
+
+    放行中文（isalnum 对中文为 True），否则中文图号/管段编号会被整体
+    过滤导致取值恒为 NA；仍排除空白与括号等分隔符号。
+    """
+    return all(c.isalnum() or c in "_-" for c in s)
 
 
 def extract_by_anchors(

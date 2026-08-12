@@ -32,6 +32,17 @@ LogFn = Callable[[str], None]
 ProgressFn = Callable[[int], None]
 
 
+def _point_tolerance(rules: dict | None) -> float:
+    """安全解析 point_tolerance 配置；缺失/非法值时回退默认 5.0。
+
+    配置来自用户可编辑的 config.json，非法值不应让整个流程中断。
+    """
+    try:
+        return float((rules or {}).get("point_tolerance", 5))
+    except (TypeError, ValueError):
+        return 5.0
+
+
 class PipelineResult:
     """一次流程的结果。"""
 
@@ -200,7 +211,7 @@ def run_pipeline(
             return result
 
         # 6. 逐文件按锚点取值（图纸号只从图纸中提取，不做文件名兜底）
-        point_tol = float(rules.get("point_tolerance", 5))
+        point_tol = _point_tolerance(rules)
         figure_field = str(rules.get("figure_field", "图号"))
         # 图号字段识别：精确匹配优先，其次宽松匹配（配置 "图号" 可命中 "图纸号" 列）；
         # 图号类字段的单点锚点只取距离最近 1 个文字（一个图号位一个值）

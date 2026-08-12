@@ -376,8 +376,9 @@ def download_asset(url: str, dest: str | Path, mirror: str | None = None,
 
 
 def build_replace_command(downloaded: str, current_exe: str,
-                          restart: bool = True) -> str:
-    """生成更新替换命令：等待主进程退出 → 覆盖 exe → 重启。
+                          restart: bool = True,
+                          expected_sha256: str | None = None) -> str:
+    """生成更新替换命令：等待主进程退出 → 覆盖 exe → 校验 → 重启。
 
     使用 PowerShell -EncodedCommand（base64/UTF-16LE 内嵌整段命令），
     路径含中文/空格/单引号也能正确传递。返回完整可执行的命令行字符串。
@@ -386,6 +387,9 @@ def build_replace_command(downloaded: str, current_exe: str,
     - 轮询探测目标 exe 是否仍被占用（文件句柄不可写 = 主进程未退出），
       最长等待 60 秒，避免主进程退出慢于固定延时导致覆盖失败；
     - Copy-Item 失败自动重试（最多 10 次 × 500ms）；
+    - 复制后校验目标 exe 的 SHA-256（expected_sha256 提供时）：
+      落盘/复制环节损坏的文件不会被重启（否则就是"升级后启动即崩"），
+      校验失败写日志并 exit 1，保留旧 exe 由用户手动处理；
     - 最终仍失败时把原因写入 %TEMP%\\CADBatchAssistant_update.log 供用户查看
       （PowerShell 窗口默认隐藏，静默失败用户无从得知）。
     """
@@ -394,6 +398,18 @@ def build_replace_command(downloaded: str, current_exe: str,
     log_esc = os.path.join(
         os.environ.get("TEMP", os.environ.get("TMP", ".")),
         "CADBatchAssistant_update.log").replace("'", "''")
+    verify_ps = ""
+    if expected_sha256:
+        expected_ps = expected_sha256.lower()
+        verify_ps = f"""
+# 3) 校验落盘 exe 的 SHA-256，防止复制环节产生损坏文件后仍重启
+$expected = '{expected_ps}'
+$actual = (Get-FileHash -LiteralPath $dst -Algorithm SHA256).Hash.ToLower()
+if ($actual -ne $expected) {{
+    Write-Log ('更新失败：替换后的 exe 校验失败（SHA-256 不匹配），已停止重启。')
+    exit 1
+}}
+"""
     script = f"""
 $ErrorActionPreference = 'Stop'
 $src = '{src_esc}'
@@ -436,7 +452,7 @@ if (-not $copied) {{
     Write-Log ('更新失败：覆盖 exe 失败：' + $lastErr)
     exit 1
 }}
-Write-Log '更新成功：exe 已替换。'
+{verify_ps}Write-Log '更新成功：exe 已替换。'
 """
     if restart:
         script += f"Start-Process -FilePath '{dst_esc}'\n"
@@ -444,10 +460,17 @@ Write-Log '更新成功：exe 已替换。'
     return f"powershell -NoProfile -NonInteractive -EncodedCommand {encoded}"
 
 
-def run_replace(downloaded: str, current_exe: str, restart: bool = True) -> None:
-    """启动替换进程（不等待）；随后应尽快让主进程退出。"""
+def run_replace(downloaded: str, current_exe: str, restart: bool = True,
+                expected_sha256: str | None = None) -> None:
+    """启动替换进程（不等待）；随后应尽快让主进程退出。
+
+    expected_sha256 : 下载 exe 的 SHA-256（可选）。提供时替换脚本在
+        覆盖后、重启前先校验落盘文件，防止复制环节损坏导致"升级后启动即崩"
+        （如 Failed to load Python DLL）。
+    """
     subprocess.Popen(
-        build_replace_command(downloaded, current_exe, restart),
+        build_replace_command(downloaded, current_exe, restart,
+                             expected_sha256),
         shell=False,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )

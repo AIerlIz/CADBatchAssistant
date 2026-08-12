@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import queue
 import tempfile
 import threading
@@ -172,6 +173,15 @@ class UpdateDialog:
         except OSError:
             pass
 
+    @staticmethod
+    def _sha256_of(dest: str) -> str:
+        """分块计算文件 SHA-256（hex 小写）。"""
+        hasher = hashlib.sha256()
+        with open(dest, "rb") as f:
+            for chunk in iter(lambda: f.read(64 * 1024), b""):
+                hasher.update(chunk)
+        return hasher.hexdigest()
+
     def _on_downloaded(self, dest: str) -> None:
         self._status.set("下载完成")
         self._progress.stop()
@@ -182,8 +192,13 @@ class UpdateDialog:
         ):
             self._top.destroy()
             return
-        # 启动 PowerShell 替换进程（等待本进程退出 → 覆盖 exe → 重启）
-        updater.run_replace(dest, updater.current_exe_path(), restart=True)
+        # 计算下载 exe 的 SHA-256，交给替换脚本在校验后重启：
+        # 防止复制环节产生损坏文件导致"升级后启动即崩"（如 Failed to load
+        # Python DLL），校验失败保留旧 exe 并写日志。
+        sha256 = self._sha256_of(dest)
+        # 启动 PowerShell 替换进程（等待本进程退出 → 覆盖 exe → 校验 → 重启）
+        updater.run_replace(dest, updater.current_exe_path(), restart=True,
+                            expected_sha256=sha256)
         self._top.destroy()
         # 先让各面板停止后台线程，再销毁主窗口（与 main.py 的关闭钩子一致）
         handler = getattr(self._root, "on_close", None)

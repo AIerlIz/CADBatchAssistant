@@ -581,6 +581,25 @@ class BuildReplaceCommandTest(unittest.TestCase):
         self.assertIn("更新失败：覆盖 exe 失败", script)
         self.assertIn("exit 1", script)
 
+    def test_replace_verify_sha256_after_copy(self):
+        """启动即崩防护：提供 expected_sha256 时，脚本复制后校验再重启。"""
+        h = "c" * 64
+        cmd = updater.build_replace_command(
+            r"C:\tmp\new.exe", r"C:\app\app.exe",
+            expected_sha256=h)
+        script = base64.b64decode(cmd.rsplit(" ", 1)[-1]).decode("utf-16-le")
+        # 校验块：Get-FileHash SHA256 与期望比对，失败写日志并 exit 1（不重启）
+        self.assertIn("Get-FileHash -LiteralPath $dst -Algorithm SHA256", script)
+        self.assertIn(h, script)
+        self.assertIn("替换后的 exe 校验失败", script)
+        self.assertIn("exit 1", script)
+
+    def test_replace_without_sha256_has_no_verify_block(self):
+        """未提供 expected_sha256 时不生成校验块（旧流程不受影响）。"""
+        cmd = updater.build_replace_command("a.exe", "b.exe")
+        script = base64.b64decode(cmd.rsplit(" ", 1)[-1]).decode("utf-16-le")
+        self.assertNotIn("Get-FileHash -LiteralPath $dst", script)
+
 
 class RunReplaceTest(unittest.TestCase):
     def test_spawns_powershell_without_shell(self):
@@ -590,6 +609,16 @@ class RunReplaceTest(unittest.TestCase):
         cmd = m.call_args.args[0]
         self.assertTrue(cmd.startswith("powershell -NoProfile"))
         self.assertFalse(m.call_args.kwargs.get("shell"))
+
+    def test_run_replace_forwards_sha256(self):
+        """run_replace 把 expected_sha256 透传给替换命令。"""
+        h = "d" * 64
+        with mock.patch.object(updater.subprocess, "Popen") as m:
+            updater.run_replace(r"C:\a\new.exe", r"C:\a\app.exe",
+                                expected_sha256=h)
+        cmd = m.call_args.args[0]
+        script = base64.b64decode(cmd.rsplit(" ", 1)[-1]).decode("utf-16-le")
+        self.assertIn(h, script)
 
 
 class IsFrozenTest(unittest.TestCase):

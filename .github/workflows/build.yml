@@ -43,6 +43,18 @@ jobs:
             exit $LASTEXITCODE
           }
 
+      - name: Install UPX
+        # UPX 压缩 exe（spec 已置 upx=True，PyInstaller 自动从 PATH 发现 upx；
+        # 不装则静默跳过压缩）。版本与本地构建保持一致。
+        shell: pwsh
+        run: |
+          $upxVersion = "4.2.4"
+          $zip = "$env:RUNNER_TEMP\upx.zip"
+          Invoke-WebRequest -Uri "https://github.com/upx/upx/releases/download/v$upxVersion/upx-$upxVersion-win64.zip" -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP\upx" -Force
+          "$env:RUNNER_TEMP\upx\upx-$upxVersion-win64" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          Get-Command upx | Select-Object -ExpandProperty Source
+
       - name: Build EXE
         # spec 输出名即 Release 资产名（CADBatchAssistant.exe），本地与 CI 产物一致
         run: uv run pyinstaller --noconfirm --clean CADBatchAssistant.spec

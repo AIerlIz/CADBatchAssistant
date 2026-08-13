@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -18,14 +17,18 @@ from cadbatchassistant.core.catalog_builder import (
     build_file_catalog,
 )
 from cadbatchassistant.core.catalog_reader import extract_by_anchors
-from cadbatchassistant.core.catalog_template_reader import parse_template
+from cadbatchassistant.core.catalog_template_reader import (
+    collect_fields,
+    parse_template,
+)
 from cadbatchassistant.core.dwg_converter import (
     ODAError,
     convert_dwg_batch_to_dxf,
     convert_template_to_dxf,
-    find_oda_converter,
     require_oda_for_dwg,
+    resolve_oda,
 )
+from cadbatchassistant.core.input_files import check_duplicate_names
 
 # 回调：log(msg)，progress(0-100 整数)
 LogFn = Callable[[str], None]
@@ -69,11 +72,7 @@ def parse_template_fields(template_dwg: str | Path, oda: str = "") -> list[str]:
         tmp = Path(td)
         t_dxf = convert_template_to_dxf(template, tmp, oda)
         anchors = parse_template(t_dxf)
-    fields: list[str] = []
-    for a in anchors:
-        if a.field not in fields:
-            fields.append(a.field)
-    return fields
+    return collect_fields(anchors)
 
 
 def run_pipeline(
@@ -124,10 +123,7 @@ def run_pipeline(
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     # 2. ODA 校验（有 DWG 时需要）
-    oda = (oda or "").strip()
-    if not oda or not Path(oda).is_file():
-        found = find_oda_converter()
-        oda = str(found) if found else ""
+    oda = resolve_oda(oda)
     has_dwg = template.suffix.lower() == ".dwg" or any(
         p.suffix.lower() == ".dwg" for p in files)
     err = require_oda_for_dwg(has_dwg, oda)
@@ -137,16 +133,12 @@ def run_pipeline(
 
     # 3. 统一复制到临时目录并转换 DXF（跨目录图纸 + 模板）
     #    先检测重名：同名文件（含大小写不敏感）会互相覆盖/漏处理，直接报错终止
-    name_map: dict[str, str] = {}
-    for src in [template] + files:
-        key = os.path.normcase(src.name)
-        if key in name_map:
-            result.error = (
-                "输入文件重名（复制到临时目录会互相覆盖，请重命名后重试）："
-                f"{name_map[key]} 与 {src}")
-            return result
-        name_map[key] = str(src)
     all_inputs = [template] + files
+    try:
+        check_duplicate_names(all_inputs)
+    except ValueError as ex:
+        result.error = str(ex)
+        return result
     with tempfile.TemporaryDirectory(prefix="cad_catalog_") as tmp:
         tmp_dir = Path(tmp)
         try:
@@ -173,11 +165,8 @@ def run_pipeline(
         except Exception as ex:  # noqa: BLE001
             result.error = f"解析模板失败: {ex}"
             return result
-        fields: list[str] = []
-        for a in anchors:
-            if a.field not in fields:
-                fields.append(a.field)
-        result.fields = fields
+        result.fields = collect_fields(anchors)
+        fields = result.fields
         log(f"模板解析完成：锚点 {len(anchors)} 个，字段：{'、'.join(fields)}")
 
         # 5. 图纸转换（DWG → DXF）

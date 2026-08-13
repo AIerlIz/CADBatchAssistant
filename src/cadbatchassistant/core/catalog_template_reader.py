@@ -118,3 +118,12 @@ def parse_template(template_path: str | Path,
         raise ValueError(
             f"模板中未找到 [字段名] 占位符: {template_path}（请在取值位置放 [字段名] 文字）")
     return anchors
+
+
+def collect_fields(anchors: list[Anchor]) -> list[str]:
+    """返回按出现顺序去重后的字段名列表（供解析模板与生成表头共用）。"""
+    fields: list[str] = []
+    for a in anchors:
+        if a.field not in fields:
+            fields.append(a.field)
+    return fields

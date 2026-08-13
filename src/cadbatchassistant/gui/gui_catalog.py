@@ -15,20 +15,14 @@ import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from tkinterdnd2 import DND_FILES
-
 from openpyxl import load_workbook
 
 from cadbatchassistant.common import (
     AsyncPanel,
-    build_file_list,
-    build_log_panel,
-    build_output_row,
     center_window,
     get_oda,
     get_out_version,
     load_catalog_rules,
-    parse_dnd_data,
     templates_dir,
 )
 from cadbatchassistant.core.catalog_excel_writer import detect_sheet_candidates
@@ -39,6 +33,7 @@ from cadbatchassistant.core.catalog_pipeline import (
 )
 from cadbatchassistant.gui.gui_shared import (
     FilesPanelMixin,
+    PanelLayoutMixin,
     TemplateLibraryMixin,
     begin_run,
     load_panel_config,
@@ -46,7 +41,8 @@ from cadbatchassistant.gui.gui_shared import (
 )
 
 
-class CatalogPanel(AsyncPanel, FilesPanelMixin, TemplateLibraryMixin):
+class CatalogPanel(FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin,
+                   AsyncPanel):
     """目录生成面板（模板标记取值）；文件列表/模板库复用共享组件。"""
 
     TEMPLATE_CATEGORY = "catalog"
@@ -62,81 +58,26 @@ class CatalogPanel(AsyncPanel, FilesPanelMixin, TemplateLibraryMixin):
 
     # ---------------- UI ----------------
     def _build_ui(self) -> None:
-        pad = {"padx": 8, "pady": 4}
-        main = ttk.Frame(self._parent, padding=8)
-        main.pack(fill="both", expand=True)
+        self._main = self._build_root()
 
         # 1. 待处理区：图纸文件多选
-        in_frame = ttk.LabelFrame(main, text="待处理", padding=8)
-        in_frame.pack(fill="x", **pad)
-        top = ttk.Frame(in_frame)
-        top.pack(fill="x", pady=(0, 4))
-        ttk.Button(top, text="选择文件", command=self._browse_input_files).pack(side="left")
-        self.var_scan_info = tk.StringVar(value="尚未选择文件")
-        ttk.Label(top, textvariable=self.var_scan_info).pack(side="left", padx=10)
-
-        self.file_list, self._file_menu = build_file_list(
-            in_frame, height=6, on_delete=self._delete_selected_files,
-            fill="both", width=60)
-        self.file_list.bind("<Delete>", lambda _e: self._delete_selected_files())
-        self.file_list.drop_target_register(DND_FILES)
-        self.file_list.dnd_bind("<<Drop>>", self._on_drop_files)
+        self._add_input_section(width=60, bind_delete=True)
 
         # 2. 数据源区：表格模板 + 图纸模板
-        src_frame = ttk.LabelFrame(main, text="数据源", padding=8)
-        src_frame.pack(fill="x", **pad)
-
-        row_xlsx = ttk.Frame(src_frame)
-        row_xlsx.pack(fill="x")
-        ttk.Label(row_xlsx, text="表格模板:").pack(side="left")
-        self.var_xlsx = tk.StringVar()
-        e_xlsx = ttk.Entry(row_xlsx, textvariable=self.var_xlsx)
-        e_xlsx.pack(side="left", fill="x", expand=True, padx=4)
-        e_xlsx.drop_target_register(DND_FILES)
-        e_xlsx.dnd_bind("<<Drop>>",
-                        lambda e: self._on_drop_single(e, self.var_xlsx, (".xlsx",)))
-        ttk.Button(row_xlsx, text="浏览", command=self._browse_xlsx).pack(
-            side="left", padx=4)
-
-        row_tpl = ttk.Frame(src_frame)
-        row_tpl.pack(fill="x", pady=(6, 0))
-        ttk.Label(row_tpl, text="图纸模板:").pack(side="left")
-        self.var_template = tk.StringVar()
-        self.tpl_combo = ttk.Combobox(row_tpl, textvariable=self.var_template,
-                                      state="readonly", width=24)
-        self.tpl_combo.pack(side="left", fill="x", expand=True, padx=4)
-        self.tpl_combo.drop_target_register(DND_FILES)
-        self.tpl_combo.dnd_bind("<<Drop>>", self._on_drop_upload_template)
-        ttk.Button(row_tpl, text="上传", command=self._upload_template).pack(
-            side="left", padx=4)
-        ttk.Button(row_tpl, text="删除", command=self._delete_template).pack(
-            side="left", padx=4)
+        self._add_src_section(
+            "表格模板:", (".xlsx",),
+            on_xlsx_hit=lambda h: save_panel_config({"catalog_xlsx": h}),
+            tpl_width=24)
 
         # 3. 输出区
-        out_frame = ttk.LabelFrame(main, text="输出", padding=8)
-        out_frame.pack(fill="x", **pad)
         self.var_out = tk.StringVar()
-        build_output_row(
-            out_frame, self.var_out,
-            on_browse=lambda: self._browse_dir(self.var_out),
-            on_default=self._default_output,
-            entry_hook=lambda e: (e.drop_target_register(DND_FILES),
-                                  e.dnd_bind("<<Drop>>", self._on_drop_out_dir)))
+        self._add_output_section(self.var_out)
 
         # 4. 运行区（ODA 路径与输出版本在「设置」tab，全局共享）
-        run_frame = ttk.Frame(main)
-        run_frame.pack(fill="x", **pad)
-        self.btn_start = ttk.Button(run_frame, text="开始处理", command=self._start)
-        self.btn_start.pack(side="left")
-        self.btn_stop = ttk.Button(run_frame, text="停止", command=self._stop,
-                                   state="disabled")
-        self.btn_stop.pack(side="left", padx=6)
-        self.progress = ttk.Progressbar(run_frame, mode="determinate", maximum=100)
-        self.progress.pack(side="left", fill="x", expand=True, padx=8)
+        self._add_run_section(maximum=100)
 
         # 5. 日志区
-        log_frame, self.log_text = build_log_panel(main, height=8)
-        log_frame.pack(fill="both", expand=True, **pad)
+        self._add_log_section()
 
     # ---------------- 表格模板（Excel） ----------------
     def _browse_xlsx(self) -> None:
@@ -147,16 +88,6 @@ class CatalogPanel(AsyncPanel, FilesPanelMixin, TemplateLibraryMixin):
         if f:
             self.var_xlsx.set(f)
             save_panel_config({"catalog_xlsx": f})
-
-    def _on_drop_single(self, event, var: tk.StringVar, exts: tuple) -> None:
-        paths = parse_dnd_data(event.data)
-        hit = next((p for p in paths
-                    if p.lower().endswith(exts)), None)
-        if hit is not None:
-            var.set(hit)
-            save_panel_config({"catalog_xlsx": hit})
-        elif paths:
-            messagebox.showwarning("提示", f"仅支持 {', '.join(exts)} 文件")
 
     # ---------------- 输出目录 ----------------
     def _default_output(self) -> None:

@@ -12,9 +12,14 @@ from __future__ import annotations
 import os
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
+
+from tkinterdnd2 import DND_FILES
 
 from cadbatchassistant.common import (
+    build_file_list,
+    build_log_panel,
+    build_output_row,
     dedup_paths,
     delete_template_file,
     list_templates,
@@ -198,3 +203,158 @@ def finish_popup(success: bool) -> None:
         messagebox.showinfo("完成", "处理完成，请查看日志。")
     else:
         messagebox.showwarning("完成", "处理中断，详见日志。")
+
+
+class PanelLayoutMixin:
+    """三个功能面板的公共 UI 骨架（待处理/输出/运行/日志区 + 数据源区行）。
+
+    子类在 _build_ui 中依次调用骨架方法组装界面：
+        self._main = self._build_root()
+        self._add_input_section(...)          # 「待处理」文件列表区
+        ...中间专属区（规则/选项/数据源等）...
+        self._add_output_section(var)         # 「输出」目录行
+        self._add_run_section(...)            # 开始/停止 + 进度条
+        self._add_log_section(...)            # 「日志」面板
+
+    同时提供公共行为：_on_drop_single（拖放单文件到输入框）与默认
+    _on_finish（恢复按钮 + finish_popup 弹窗，目录助手覆盖为统计弹窗）。
+    约定：本类须位于 AsyncPanel 之前的 MRO（继承顺序
+    (FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin, AsyncPanel)），
+    使 _on_finish 的 super() 能命中 AsyncPanel._on_finish。
+    """
+
+    def _build_root(self) -> ttk.Frame:
+        """创建面板根容器（padding + 布局字典），返回 main frame。"""
+        self._pad = {"padx": 8, "pady": 4}
+        main = ttk.Frame(self._parent, padding=8)
+        main.pack(fill="both", expand=True)
+        return main
+
+    def _add_input_section(self, width: int | None = None,
+                           bind_delete: bool = False) -> None:
+        """「待处理」输入区：选择文件 + 统计提示 + 多选文件列表（拖放追加）。
+
+        width 传给文件列表（None 用 build_file_list 默认）；
+        bind_delete 为 True 时额外绑定 Delete 键删除选中文件。
+        """
+        in_frame = ttk.LabelFrame(self._main, text="待处理", padding=8)
+        in_frame.pack(fill="x", **self._pad)
+        top = ttk.Frame(in_frame)
+        top.pack(fill="x", pady=(0, 4))
+        ttk.Button(top, text="选择文件", command=self._browse_input_files).pack(
+            side="left")
+        self.var_scan_info = tk.StringVar(value="尚未选择文件")
+        ttk.Label(top, textvariable=self.var_scan_info).pack(side="left", padx=10)
+
+        self.file_list, self._file_menu = build_file_list(
+            in_frame, height=6, on_delete=self._delete_selected_files,
+            fill="both", width=width)
+        if bind_delete:
+            self.file_list.bind("<Delete>", lambda _e: self._delete_selected_files())
+        # 拖拽 DWG/DXF 到列表追加
+        self.file_list.drop_target_register(DND_FILES)
+        self.file_list.dnd_bind("<<Drop>>", self._on_drop_files)
+
+    def _add_output_section(self, var: tk.StringVar) -> None:
+        """「输出」区：输出目录行（浏览/默认/拖放文件夹）。"""
+        out_frame = ttk.LabelFrame(self._main, text="输出", padding=8)
+        out_frame.pack(fill="x", **self._pad)
+        build_output_row(
+            out_frame, var,
+            on_browse=lambda: self._browse_dir(var),
+            on_default=self._default_output,
+            entry_hook=lambda e: (e.drop_target_register(DND_FILES),
+                                  e.dnd_bind("<<Drop>>", self._on_drop_out_dir)))
+
+    def _add_run_section(self, maximum: int | None = None) -> None:
+        """「运行」区：开始/停止按钮 + 进度条。
+
+        maximum 用于进度条上限（None 为默认 determinate 0-100）。
+        """
+        run_frame = ttk.Frame(self._main)
+        run_frame.pack(fill="x", **self._pad)
+        self.btn_start = ttk.Button(run_frame, text="开始处理", command=self._start)
+        self.btn_start.pack(side="left")
+        self.btn_stop = ttk.Button(run_frame, text="停止", command=self._stop,
+                                   state="disabled")
+        self.btn_stop.pack(side="left", padx=6)
+        kw: dict = {"mode": "determinate"}
+        if maximum is not None:
+            kw["maximum"] = maximum
+        self.progress = ttk.Progressbar(run_frame, **kw)
+        self.progress.pack(side="left", fill="x", expand=True, padx=8)
+
+    def _add_log_section(self, height: int = 8) -> None:
+        """「日志」区。"""
+        log_frame, self.log_text = build_log_panel(self._main, height=height)
+        log_frame.pack(fill="both", expand=True, **self._pad)
+
+    # ---------------- 数据源区（填表 / 目录助手共用） ----------------
+    def _add_src_section(self, xlsx_label: str, exts: tuple,
+                         on_xlsx_hit=None, tpl_width: int = 16) -> ttk.LabelFrame:
+        """「数据源」区：xlsx 行 + 图纸模板行；返回 frame 供追加专属行。
+
+        xlsx_label 为 xlsx 输入行文案（如 "数据表格:" / "表格模板:"）；
+        exts 为拖放接受的扩展名（如 (".xlsx", ".xls")）；
+        on_xlsx_hit 为拖放/选择 xlsx 后的回调（如刷新下拉/记忆配置）；
+        tpl_width 为图纸模板下拉宽度。
+        """
+        src_frame = ttk.LabelFrame(self._main, text="数据源", padding=8)
+        src_frame.pack(fill="x", **self._pad)
+        self._add_xlsx_row(src_frame, xlsx_label, exts, on_hit=on_xlsx_hit)
+        self._add_template_row(src_frame, width=tpl_width)
+        return src_frame
+
+    def _add_xlsx_row(self, parent, xlsx_label: str, exts: tuple,
+                      on_hit=None) -> None:
+        """xlsx 输入行：Label + Entry(拖放) + 浏览按钮；命中时回调 on_hit(路径)。"""
+        row = ttk.Frame(parent)
+        row.pack(fill="x")
+        ttk.Label(row, text=xlsx_label).pack(side="left")
+        self.var_xlsx = tk.StringVar()
+        e = ttk.Entry(row, textvariable=self.var_xlsx)
+        e.pack(side="left", fill="x", expand=True, padx=4)
+        e.drop_target_register(DND_FILES)
+        e.dnd_bind("<<Drop>>",
+                   lambda ev: self._on_drop_single(ev, self.var_xlsx, exts,
+                                                   on_hit=on_hit))
+        ttk.Button(row, text="浏览", command=self._browse_xlsx).pack(
+            side="left", padx=4)
+
+    def _add_template_row(self, parent, width: int = 16) -> None:
+        """图纸模板行：下拉（拖放上传）+ 上传/删除按钮。"""
+        row = ttk.Frame(parent)
+        row.pack(fill="x", pady=(6, 0))
+        ttk.Label(row, text="图纸模板:").pack(side="left")
+        self.var_template = tk.StringVar()
+        self.tpl_combo = ttk.Combobox(row, textvariable=self.var_template,
+                                      state="readonly", width=width)
+        self.tpl_combo.pack(side="left", fill="x", expand=True, padx=4)
+        self.tpl_combo.drop_target_register(DND_FILES)
+        self.tpl_combo.dnd_bind("<<Drop>>", self._on_drop_upload_template)
+        ttk.Button(row, text="上传", command=self._upload_template).pack(
+            side="left", padx=4)
+        ttk.Button(row, text="删除", command=self._delete_template).pack(
+            side="left", padx=4)
+
+    # ---------------- 公共行为 ----------------
+    def _on_drop_single(self, event, var: tk.StringVar, exts: tuple,
+                        on_hit=None) -> None:
+        """拖放单个文件到输入框；命中时设置 var 并调用可选 on_hit(路径)。
+
+        供 xlsx/表格模板等输入行复用（命中后的附加处理如刷新下拉/记忆
+        配置由 on_hit 注入，避免各面板重复实现）。
+        """
+        paths = parse_dnd_data(event.data)
+        hit = next((p for p in paths if p.lower().endswith(exts)), None)
+        if hit is not None:
+            var.set(hit)
+            if on_hit is not None:
+                on_hit(hit)
+        elif paths:
+            messagebox.showwarning("提示", f"仅支持 {', '.join(exts)} 文件")
+
+    def _on_finish(self, success: bool) -> None:
+        """完成收尾：恢复按钮并弹窗汇总（目录助手覆盖为自己的统计弹窗）。"""
+        super()._on_finish(success)
+        finish_popup(success)

@@ -53,6 +53,19 @@ def find_oda_converter() -> Path | None:
     return None
 
 
+def resolve_oda(oda: str | Path | None = None) -> str:
+    """返回可用的 ODAFileConverter 路径（字符串）；未显式指定时自动探测。
+
+    显式传入的路径无效（空 / 文件不存在）时回退自动探测；
+    探测仍未找到时返回空串，由调用方（require_oda_for_dwg 等）决定报错。
+    """
+    oda = (oda or "").strip() if not isinstance(oda, Path) else str(oda).strip()
+    if oda and Path(oda).is_file():
+        return oda
+    found = find_oda_converter()
+    return str(found) if found else ""
+
+
 class ODAError(RuntimeError):
     """ODA 转换失败。"""
 
@@ -199,10 +212,7 @@ def convert_template_to_dxf(
     shutil.copy2(template, dst)
     if template.suffix.lower() != ".dwg":
         return str(dst)
-    oda = (oda or "").strip()
-    if not oda or not Path(oda).is_file():
-        found = find_oda_converter()
-        oda = str(found) if found else ""
+    oda = resolve_oda(oda)
     out_dir = workdir / subdir
     out_dir.mkdir(parents=True, exist_ok=True)
     convert_dwg_batch_to_dxf(oda, workdir, out_dir, [template.name], out_version)

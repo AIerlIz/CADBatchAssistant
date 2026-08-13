@@ -17,15 +17,29 @@ import tempfile
 
 from cadbatchassistant.core import dwg_converter as dc
 from cadbatchassistant.core.fill_dwg import fill_all
+from cadbatchassistant.core.input_files import stage_inputs
+
+
+def _classify_by_ext(d: str) -> dict[str, str]:
+    """目录内 DWG/DXF 文件名（去扩展名）→ 类型（"dwg"/"dxf"，dwg 优先）。
+
+    同名 .dwg 与 .dxf 共存时显式优先按 DWG 处理（结果确定，不依赖遍历顺序）；
+    升序排序下 "*.dwg" < "*.dxf"（'w'<'x'），setdefault 保留先者 → dwg 优先。
+    """
+    by_ext: dict[str, str] = {}
+    for f in sorted(os.listdir(d), key=str.lower):
+        low = f.lower()
+        stem = os.path.splitext(f)[0]
+        if low.endswith(".dwg"):
+            by_ext.setdefault(stem, "dwg")
+        elif low.endswith(".dxf"):
+            by_ext.setdefault(stem, "dxf")
+    return by_ext
 
 
 def _names_from_dir(d: str) -> list[str]:
     """取目录内 DWG/DXF 文件名（去扩展名）并排序。"""
-    out = set()
-    for f in os.listdir(d):
-        if f.lower().endswith((".dwg", ".dxf")):
-            out.add(os.path.splitext(f)[0])
-    names = sorted(out)
+    names = sorted(_classify_by_ext(d))
     if not names:
         raise ValueError(f"目录中没有 DWG/DXF 文件：{d}")
     return names
@@ -85,16 +99,8 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
             "请选择其他输出目录，避免覆盖源文件。")
 
     # 判断哪些是 DWG（需 ODA 转换），哪些是 DXF（直接处理）——大小写不敏感；
-    # 同名 .dwg 与 .dxf 共存时显式优先按 DWG 处理（dwg 优先，结果确定，不依赖遍历顺序）。
-    # 升序排序下 "*.dwg" < "*.dxf"（'w'<'x'），setdefault 保留先者 → dwg 优先。
-    by_ext: dict[str, str] = {}
-    for f in sorted(os.listdir(before_dir), key=str.lower):
-        low = f.lower()
-        stem = os.path.splitext(f)[0]
-        if low.endswith(".dwg"):
-            by_ext.setdefault(stem, "dwg")
-        elif low.endswith(".dxf"):
-            by_ext.setdefault(stem, "dxf")
+    # 同名 .dwg 与 .dxf 共存时显式优先按 DWG 处理（见 _classify_by_ext）。
+    by_ext = _classify_by_ext(before_dir)
     dwg_names = [n for n in names if by_ext.get(n) == "dwg"]
     dxf_names = [n for n in names if by_ext.get(n) == "dxf"]
     missing = [n for n in names if n not in by_ext]
@@ -102,7 +108,7 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
         raise ValueError(f"以下图纸在目录中找不到文件：{', '.join(missing)}")
     need_oda = bool(dwg_names)
 
-    oda_exe = oda or dc.find_oda_converter()
+    oda_exe = dc.resolve_oda(oda)
     err = dc.require_oda_for_dwg(need_oda, str(oda_exe) if oda_exe else "")
     if err:
         raise FileNotFoundError(err)
@@ -233,25 +239,11 @@ def run_pipeline_files(xlsx: str, files: list[str], out_dir: str,
         raise ValueError(
             f"输出目录不能与输入图纸所在目录相同：{out_dir}。"
             "请选择其他输出目录，避免覆盖源文件。")
-    # 重名检测（大小写不敏感）：跨目录同名文件复制到同一临时目录会互相覆盖
-    name_map: dict[str, str] = {}
-    for f in files:
-        key = os.path.normcase(os.path.basename(f))
-        if key in name_map:
-            raise ValueError(
-                "输入文件重名（复制到临时目录会互相覆盖，请重命名后重试）："
-                f"{name_map[key]} 与 {f}")
-        name_map[key] = str(f)
+    # 重名检测（大小写不敏感）+ 复制到临时输入目录（input_files.stage_inputs）
     tmp_created = workdir is None  # 本函数自建临时目录时，结束后清理
     tmp = workdir or tempfile.mkdtemp(prefix="iso_fill_files_")
     try:
-        before_dir = os.path.join(tmp, "inputs")
-        os.makedirs(before_dir, exist_ok=True)
-        stems: list[str] = []
-        for f in files:
-            name = os.path.basename(f)
-            shutil.copy2(f, os.path.join(before_dir, name))
-            stems.append(os.path.splitext(name)[0])
+        before_dir, stems = stage_inputs(files, tmp, prefix="iso_fill_files_")
         return run_pipeline(xlsx, before_dir, out_dir, oda=oda,
                             out_version=out_version, workdir=tmp,
                             emit=emit, cancel=cancel, inputs=stems,

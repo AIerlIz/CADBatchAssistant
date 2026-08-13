@@ -16,13 +16,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 
-from tkinterdnd2 import DND_FILES
-
 from cadbatchassistant.common import (
     AsyncPanel,
-    build_file_list,
-    build_log_panel,
-    build_output_row,
     get_oda,
     get_out_version,
 )
@@ -35,8 +30,8 @@ from cadbatchassistant.core.dwg_converter import (
 )
 from cadbatchassistant.gui.gui_shared import (
     FilesPanelMixin,
+    PanelLayoutMixin,
     begin_run,
-    finish_popup,
 )
 
 
@@ -155,7 +150,7 @@ class EditableTreeview(ttk.Treeview):
         return "break"
 
 
-class CadTextApp(AsyncPanel, FilesPanelMixin):
+class CadTextApp(FilesPanelMixin, PanelLayoutMixin, AsyncPanel):
     def __init__(self, parent: tk.Widget) -> None:
         """构建「改字助手」面板；parent 为嵌入容器（如 Notebook 的 tab 页）。"""
         super().__init__(parent)
@@ -167,29 +162,12 @@ class CadTextApp(AsyncPanel, FilesPanelMixin):
 
     # ---------------- UI 构建 ----------------
     def _build_ui(self) -> None:
-        pad = {"padx": 8, "pady": 4}
-        main = ttk.Frame(self._parent, padding=8)
-        main.pack(fill="both", expand=True)
-
-        # 1. 输入区
-        file_frame = ttk.LabelFrame(main, text="待处理", padding=8)
-        file_frame.pack(fill="x", **pad)
-
-        top = ttk.Frame(file_frame)
-        top.pack(fill="x", pady=(0, 4))
-        ttk.Button(top, text="选择文件", command=self._browse_input_files).pack(side="left")
-        self.var_scan_info = tk.StringVar(value="尚未选择文件")
-        ttk.Label(top, textvariable=self.var_scan_info).pack(side="left", padx=10)
-
-        self.file_list, self._file_menu = build_file_list(
-            file_frame, height=6, on_delete=self._delete_selected_files)
-        # 拖拽 DWG/DXF 到列表追加
-        self.file_list.drop_target_register(DND_FILES)
-        self.file_list.dnd_bind("<<Drop>>", self._on_drop_files)
+        self._main = self._build_root()
+        self._add_input_section()
 
         # 2. 规则区（表格内直接增删改）
-        rule_frame = ttk.LabelFrame(main, text="替换规则（按顺序执行）", padding=8)
-        rule_frame.pack(fill="x", **pad)
+        rule_frame = ttk.LabelFrame(self._main, text="替换规则（按顺序执行）", padding=8)
+        rule_frame.pack(fill="x", **self._pad)
 
         rule_tree_frame = ttk.Frame(rule_frame)
         rule_tree_frame.pack(fill="x")
@@ -209,8 +187,8 @@ class CadTextApp(AsyncPanel, FilesPanelMixin):
         rule_tree_frame.columnconfigure(0, weight=1)
 
         # 3. 选项区（ODA 路径与输出版本已移至「设置」tab，全局共享）
-        opt_frame = ttk.LabelFrame(main, text="选项", padding=8)
-        opt_frame.pack(fill="x", **pad)
+        opt_frame = ttk.LabelFrame(self._main, text="选项", padding=8)
+        opt_frame.pack(fill="x", **self._pad)
 
         self.var_case = tk.BooleanVar(value=True)
         ttk.Checkbutton(opt_frame, text="大小写敏感", variable=self.var_case).grid(
@@ -227,30 +205,14 @@ class CadTextApp(AsyncPanel, FilesPanelMixin):
         opt_frame.columnconfigure(2, weight=1)
 
         # 4. 输出区
-        out_frame = ttk.LabelFrame(main, text="输出", padding=8)
-        out_frame.pack(fill="x", **pad)
         self.var_output = tk.StringVar()
-        build_output_row(
-            out_frame, self.var_output,
-            on_browse=lambda: self._browse_dir(self.var_output),
-            on_default=self._default_output,
-            entry_hook=lambda e: (e.drop_target_register(DND_FILES),
-                                  e.dnd_bind("<<Drop>>", self._on_drop_out_dir)))
+        self._add_output_section(self.var_output)
 
         # 5. 运行区
-        run_frame = ttk.Frame(main)
-        run_frame.pack(fill="x", **pad)
-        self.btn_start = ttk.Button(run_frame, text="开始处理", command=self._start)
-        self.btn_start.pack(side="left")
-        self.btn_stop = ttk.Button(run_frame, text="停止", command=self._stop, state="disabled")
-        self.btn_stop.pack(side="left", padx=6)
-
-        self.progress = ttk.Progressbar(run_frame, mode="determinate")
-        self.progress.pack(side="left", fill="x", expand=True, padx=8)
+        self._add_run_section()
 
         # 6. 日志区
-        log_frame, self.log_text = build_log_panel(main, height=8)
-        log_frame.pack(fill="both", expand=True, **pad)
+        self._add_log_section()
 
     # ---------------- 规则管理（表格内联增删改） ----------------
     def _refresh_rule_list(self) -> None:
@@ -485,11 +447,6 @@ class CadTextApp(AsyncPanel, FilesPanelMixin):
 
     def _progress(self, done: int, ok: int, fail: int, replaced: int) -> None:
         self._emit("", done)
-
-    def _on_finish(self, success: bool) -> None:
-        """完成收尾：恢复按钮并弹窗汇总。"""
-        super()._on_finish(success)
-        finish_popup(success)
 
 
 

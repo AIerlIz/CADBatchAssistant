@@ -28,7 +28,10 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["fonttools"],
+    # 排除 Qt 绑定：ezdxf 的绘图 addon 在函数内 try-import PySide6/PyQt5（可选），
+    # 本应用为 Tkinter 界面、不使用 ezdxf 绘图，PyInstaller 会把整个 PySide6
+    # （含 30MB Qt6 DLL）收集进来导致 exe 膨胀一倍 → 显式排除。
+    excludes=["fonttools", "PySide6", "shiboken6", "PyQt5"],
     noarchive=False,
     optimize=0,
 )

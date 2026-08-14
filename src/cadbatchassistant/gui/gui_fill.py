@@ -8,14 +8,22 @@
 from __future__ import annotations
 
 import os
+import tempfile
 import tkinter as tk
+from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+from cadbatchassistant.core import dwg_converter as dc
 from cadbatchassistant.core.app_config import get_oda, get_out_version
 from cadbatchassistant.core.dwg_converter import require_oda_for_dwg
 from cadbatchassistant.core.filetypes import XLSX_SUFFIXES
+from cadbatchassistant.core.fill_learn_spec import scan_all_placeholders
 from cadbatchassistant.core.fill_pipeline import run_pipeline_files
-from cadbatchassistant.core.templates import templates_dir
+from cadbatchassistant.core.template_meta import (
+    remove_template_meta,
+    save_template_meta,
+)
+from cadbatchassistant.core.templates import template_path, templates_dir
 from cadbatchassistant.gui.async_panel import AsyncPanel
 from cadbatchassistant.gui.gui_shared import (
     FilesPanelMixin,
@@ -44,6 +52,28 @@ class IsoFillApp(
         # 仅恢复上次选择的图纸模板；输入输出路径不设默认值、不记忆恢复
         # （ODA 路径与输出版本为全局设置，见「设置」tab）
         self._refresh_templates()
+
+    # ---------------- 模板库钩子 ----------------
+    def _after_upload(self, name: str) -> None:
+        """上传后扫描全部 [列名] 占位符写入伴生 meta。
+
+        模板为 DWG 时需 ODA 转 DXF（缺失时 template_to_dxf 抛 ODAError）；
+        无任何 [列名] 占位符的模板无法用于填表 → 抛 ValueError。
+        两者都会使基类回滚删除已入库模板并弹错（拒绝上传）。
+        """
+        template = template_path(self.TEMPLATE_CATEGORY, name)
+        converter = dc.get_converter()
+        oda = converter.resolve(get_oda())
+        with tempfile.TemporaryDirectory(prefix="cad_fill_meta_") as td:
+            t_dxf = converter.template_to_dxf(template, Path(td), oda)
+            placeholders = scan_all_placeholders(t_dxf)
+        if not placeholders:
+            raise ValueError("模板中未找到 [列名] 占位符，无法用于填表")
+        save_template_meta(template, {"placeholders": placeholders})
+
+    def _after_delete(self, name: str) -> None:
+        """删除模板时同步删除伴生 meta（不存在时静默）。"""
+        remove_template_meta(template_path(self.TEMPLATE_CATEGORY, name))
 
     # ---------------- UI ----------------
     def _build_ui(self) -> None:

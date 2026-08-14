@@ -28,8 +28,17 @@ from cadbatchassistant.core.catalog_pipeline import (
     parse_template_anchors,
     run_pipeline,
 )
-from cadbatchassistant.core.catalog_template_reader import collect_fields
-from cadbatchassistant.core.templates import templates_dir
+from cadbatchassistant.core.catalog_template_reader import (
+    anchor_to_dict,
+    anchors_from_dict,
+    collect_fields,
+)
+from cadbatchassistant.core.template_meta import (
+    load_template_meta,
+    remove_template_meta,
+    save_template_meta,
+)
+from cadbatchassistant.core.templates import template_path, templates_dir
 from cadbatchassistant.gui.async_panel import AsyncPanel
 from cadbatchassistant.gui.gui_shared import (
     FilesPanelMixin,
@@ -122,6 +131,25 @@ class CatalogPanel(
         if last_out and os.path.isdir(last_out):
             self.var_out.set(last_out)
 
+    # ---------------- 模板库钩子 ----------------
+    def _after_upload(self, name: str) -> None:
+        """上传后提取占位符并写入伴生 meta；解析失败抛异常由基类回滚。
+
+        解析依赖 ODA（模板为 DWG 时先转 DXF）；模板无 [字段名] 占位符时
+        parse_template_anchors 抛 ValueError → 一并拒绝上传。
+        """
+        template = template_path(self.TEMPLATE_CATEGORY, name)
+        anchors = parse_template_anchors(template, get_oda())
+        payload = {
+            "fields": collect_fields(anchors),
+            "anchors": [anchor_to_dict(a) for a in anchors],
+        }
+        save_template_meta(template, payload)
+
+    def _after_delete(self, name: str) -> None:
+        """删除模板时同步删除伴生 meta（不存在时静默）。"""
+        remove_template_meta(template_path(self.TEMPLATE_CATEGORY, name))
+
     # ---------------- 运行 ----------------
     def _prepare_run(self) -> tuple | None:
         """校验输入 + 预检（模板解析/sheet 定位）并收集 worker 参数。
@@ -156,12 +184,35 @@ class CatalogPanel(
             return None
 
         oda = get_oda()
-        try:
-            anchors = parse_template_anchors(template, oda)
-        except Exception as ex:  # noqa: BLE001 - 模板解析失败提前提示
-            messagebox.showerror("图纸目录助手", f"模板解析失败：{ex}")
+        meta = load_template_meta(template)
+        if meta is None:
+            messagebox.showerror(
+                "图纸目录助手",
+                f"模板「{tpl_name}」未配置，请删除后重新上传"
+                "（上传时会自动提取 [字段名] 占位符）",
+            )
             return None
-        fields = collect_fields(anchors)
+        try:
+            anchors = anchors_from_dict(meta.get("anchors"))
+        except (ValueError, TypeError) as ex:
+            messagebox.showerror(
+                "图纸目录助手",
+                f"模板「{tpl_name}」配置损坏：{ex}（请删除后重新上传）",
+            )
+            return None
+        if not anchors:
+            messagebox.showerror(
+                "图纸目录助手",
+                f"模板「{tpl_name}」未配置任何字段，请删除后重新上传",
+            )
+            return None
+        raw_fields = meta.get("fields")
+        if isinstance(raw_fields, list) and all(
+            isinstance(f, str) and f for f in raw_fields
+        ):
+            fields = list(raw_fields)
+        else:
+            fields = collect_fields(anchors)
         sheet_name: str | None = None
         try:
             wb = load_workbook(xlsx)

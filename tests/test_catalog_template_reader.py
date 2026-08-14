@@ -10,7 +10,11 @@
 import ezdxf
 import pytest
 
-from cadbatchassistant.core.catalog_template_reader import parse_template
+from cadbatchassistant.core.catalog_template_reader import (
+    anchor_to_dict,
+    anchors_from_dict,
+    parse_template,
+)
 
 
 def _make_tpl(path, add_rect=False):
@@ -96,3 +100,48 @@ def test_no_placeholder_raises(tmp_path):
 
     with pytest.raises(ValueError):
         parse_template(p)
+
+
+def test_anchor_to_dict_roundtrip():
+    """anchor_to_dict → anchors_from_dict 往返字段一致。"""
+    from cadbatchassistant.core.catalog_template_reader import Anchor
+
+    src = [
+        Anchor(field="图号", is_area=False, min_x=1.0, min_y=2.0,
+               max_x=3.0, max_y=4.0, point_x=2.0, point_y=3.0),
+        Anchor(field="管段编号", is_area=True, min_x=0.0, min_y=0.0,
+               max_x=10.0, max_y=5.0, point_x=5.0, point_y=2.5),
+    ]
+    data = [anchor_to_dict(a) for a in src]
+    back = anchors_from_dict(data)
+    assert [
+        (a.field, a.is_area, a.min_x, a.min_y, a.max_x, a.max_y,
+         a.point_x, a.point_y)
+        for a in back
+    ] == [
+        (a.field, a.is_area, a.min_x, a.min_y, a.max_x, a.max_y,
+         a.point_x, a.point_y)
+        for a in src
+    ]
+
+
+def test_anchors_from_dict_accepts_numeric_strings():
+    """坐标允许数字字符串（手工编辑 meta JSON 的宽容性）。"""
+    back = anchors_from_dict(
+        [{"field": "图号", "is_area": False, "min_x": "1.5", "max_y": "2"}]
+    )
+    assert back[0].min_x == 1.5 and back[0].max_y == 2.0
+
+
+def test_anchors_from_dict_rejects_bad_data():
+    """损坏数据抛异常：非列表 / 非对象 / field 缺失 / is_area 非布尔。"""
+    with pytest.raises((ValueError, TypeError)):
+        anchors_from_dict("not-a-list")
+    with pytest.raises((ValueError, TypeError)):
+        anchors_from_dict([42])
+    with pytest.raises((ValueError, TypeError)):
+        anchors_from_dict([{"is_area": False}])
+    with pytest.raises((ValueError, TypeError)):
+        anchors_from_dict([{"field": "图号", "is_area": "yes"}])
+    with pytest.raises((ValueError, TypeError)):
+        anchors_from_dict([{"field": "图号", "is_area": False, "min_x": "abc"}])

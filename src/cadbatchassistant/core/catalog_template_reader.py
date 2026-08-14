@@ -173,3 +173,57 @@ def collect_fields(anchors: list[Anchor]) -> list[str]:
         if a.field not in fields:
             fields.append(a.field)
     return fields
+
+
+def anchor_to_dict(a: Anchor) -> dict:
+    """锚点 → JSON 可序列化 dict（字段名 + 覆盖区域 + 单点坐标）。"""
+    return {
+        "field": a.field,
+        "is_area": a.is_area,
+        "min_x": a.min_x,
+        "min_y": a.min_y,
+        "max_x": a.max_x,
+        "max_y": a.max_y,
+        "point_x": a.point_x,
+        "point_y": a.point_y,
+    }
+
+
+def anchors_from_dict(data: object) -> list[Anchor]:
+    """JSON dict 列表 → Anchor 列表；逐字段校验，损坏数据抛异常。
+
+    坐标允许数字或数字字符串（float() 宽容转换，便于手工编辑 meta JSON）；
+    field 必须为非空字符串，is_area 必须为布尔。
+    类型非法抛 TypeError、数值非法抛 ValueError（调用方统一按
+    (ValueError, TypeError) 容错）。
+    """
+    if not isinstance(data, list):
+        raise TypeError(
+            f"锚点配置损坏：应为列表，实际为 {type(data).__name__}"
+        )
+    out: list[Anchor] = []
+    for i, item in enumerate(data):
+        if not isinstance(item, dict):
+            raise TypeError(f"锚点配置损坏：第 {i} 项不是对象")
+        field = item.get("field")
+        if not isinstance(field, str) or not field.strip():
+            raise TypeError(f"锚点配置损坏：第 {i} 项 field 非法")
+        is_area = item.get("is_area", False)
+        if not isinstance(is_area, bool):
+            raise TypeError(f"锚点配置损坏：第 {i} 项 is_area 非法")
+        try:
+            out.append(
+                Anchor(
+                    field=field.strip(),
+                    is_area=is_area,
+                    min_x=float(item.get("min_x", 0.0)),
+                    min_y=float(item.get("min_y", 0.0)),
+                    max_x=float(item.get("max_x", 0.0)),
+                    max_y=float(item.get("max_y", 0.0)),
+                    point_x=float(item.get("point_x", 0.0)),
+                    point_y=float(item.get("point_y", 0.0)),
+                )
+            )
+        except (TypeError, ValueError) as ex:
+            raise ValueError(f"锚点配置损坏：第 {i} 项坐标非法（{ex}）") from ex
+    return out

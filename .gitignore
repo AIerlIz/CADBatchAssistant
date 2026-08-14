@@ -10,3 +10,4 @@ __pycache__/
 reasonix.toml
 .pytest_cache/
 .dev_tmp/
+logs/

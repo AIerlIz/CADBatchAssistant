@@ -89,7 +89,9 @@ def build_oda_row(
 
 
 def upload_template_file(
-    category: str, src: str | None = None, title: str = "上传图纸模板（解析占位符存入模板库）"
+    category: str,
+    src: str | None = None,
+    title: str = "上传图纸模板（解析占位符存入模板库）",
 ) -> tuple[str, str] | None:
     """选择 dwg/dxf 模板，返回 (模板文件名, 源文件完整路径)。
 

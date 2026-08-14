@@ -138,6 +138,10 @@ def main(argv: list[str] | None = None) -> int:
     center_window(root)  # 主窗口屏幕居中
     root.option_add("*Font", (default_font_family(), 10))
 
+    from cadbatchassistant.core.app_log import setup_logging
+
+    setup_logging()  # 统一日志文件（软件目录/logs/app.log），异常排查用
+
     notebook = ttk.Notebook(root)
     notebook.pack(fill="both", expand=True)
 
@@ -171,6 +175,8 @@ def main(argv: list[str] | None = None) -> int:
 
 def _auto_check_update(root: tk.Tk) -> None:
     """启动后静默检查更新（仅打包版；失败不打扰用户），发现新版才提示。"""
+    import logging
+
     if not updater.is_frozen():
         return
     mirror = str(load_config(APP_CONFIG_FILE).get("update_mirror", "")).strip()
@@ -179,6 +185,9 @@ def _auto_check_update(root: tk.Tk) -> None:
         try:
             result = updater.check_latest()
         except Exception:  # noqa: BLE001 - 意外异常静默失败，不打扰
+            logging.getLogger("cadbatchassistant.main").exception(
+                "启动更新检查失败（静默）"
+            )
             return
         if not result.get("ok"):
             return  # 静默失败（网络等原因），不打扰

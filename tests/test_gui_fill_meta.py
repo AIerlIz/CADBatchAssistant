@@ -123,7 +123,7 @@ def test_prepare_run_accepts_meta_without_template_file(monkeypatch, tmp_path):
     """
     root = _make_root()
     try:
-        panel, gf, gs = _make_panel(root, monkeypatch, tmp_path)
+        panel, gf, _ = _make_panel(root, monkeypatch, tmp_path)
         src = tmp_path / "src.dxf"  # 库外源文件（模拟已上传）
         doc = ezdxf.new("R2004")
         doc.modelspace().add_text(
@@ -158,7 +158,7 @@ def test_prepare_run_bad_placeholder_structure_rejected(monkeypatch, tmp_path):
     """手改 meta：占位符缺键 → 预检报「配置损坏」并返回 None（不进入后台）。"""
     root = _make_root()
     try:
-        panel, gf, gs = _make_panel(root, monkeypatch, tmp_path)
+        panel, _, gs = _make_panel(root, monkeypatch, tmp_path)
         src = tmp_path / "src.dxf"
         doc = ezdxf.new("R2004")
         doc.modelspace().add_text(

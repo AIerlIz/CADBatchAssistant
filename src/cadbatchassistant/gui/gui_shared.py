@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import tkinter as tk
 from pathlib import Path
@@ -492,6 +493,9 @@ class RunStartMixin:
         try:
             self._after_begin_run(args)
             self._start_worker(args)
-        except Exception as ex:  # noqa: BLE001 - 启动异常兜底复位，避免面板卡死
+        except Exception as ex:
+            logging.getLogger("cadbatchassistant.gui.gui_shared").exception(
+                "启动后台任务失败"
+            )
             self._reset_run_state()
             self._emit(f"启动失败：{ex}")

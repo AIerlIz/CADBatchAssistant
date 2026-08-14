@@ -213,10 +213,11 @@ class IsoFillApp(
         ):
             return None
         meta = load_template_meta(template)
-        if not warn_require(
-            meta is not None,
-            f"模板「{tpl_name}」未配置，请删除后重新上传",
-        ):
+        if meta is None:
+            messagebox.showerror(
+                "填表助手",
+                f"模板「{tpl_name}」未配置，请删除后重新上传",
+            )
             return None
         if not warn_require(
             isinstance(meta.get("placeholders"), list) and meta["placeholders"],

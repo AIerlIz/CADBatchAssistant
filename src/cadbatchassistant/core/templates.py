@@ -70,8 +70,8 @@ def remove_template(category: str, name: str) -> None:
     d = templates_dir(category)
     removed = False
     # meta：优先 <name>.json；source 与文件名脱钩时按枚举名（source）扫目录匹配
-    meta = d / (name + ".json")
-    if not meta.is_file():
+    meta: Path | None = d / (name + ".json")
+    if meta is not None and not meta.is_file():
         meta = next(
             (f for f in d.glob("*.json") if f.is_file() and _meta_source(f) == name),
             None,

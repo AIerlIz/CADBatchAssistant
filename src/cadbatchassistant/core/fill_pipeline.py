@@ -175,7 +175,7 @@ def run_pipeline(
 
         # 伴生 meta 优先（GUI 上传只存占位符 JSON，模板库无原文件）；
         # meta 缺失时（CLI / 命令行直接传模板路径）才要求模板文件存在并现场解析
-        meta = load_template_meta(template)
+        meta = load_template_meta(template) if template else None
         if meta is not None:
             placeholders = meta.get("placeholders")
             if not isinstance(placeholders, list) or not placeholders:

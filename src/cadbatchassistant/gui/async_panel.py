@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import queue
 import threading
 import tkinter as tk
@@ -65,7 +66,11 @@ class AsyncPanel:
         success = False
         try:
             success = bool(self._work(*args))
-        except Exception as ex:  # noqa: BLE001 - 意外异常统一按失败处理
+        except Exception as ex:
+            # 堆栈落日志文件（GUI 只显示一行，完整现场供排查）
+            logging.getLogger("cadbatchassistant.gui.async_panel").exception(
+                "后台任务处理中断"
+            )
             self._emit(f"处理中断：{ex}")
         finally:
             self.msg_queue.put(("__DONE__", success, seq))

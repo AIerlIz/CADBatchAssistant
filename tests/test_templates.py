@@ -69,7 +69,9 @@ def test_list_templates_meta_and_legacy_dedup(monkeypatch, tmp_path: Path) -> No
     assert templates.list_templates("fill") == ["a.dwg"]
 
 
-def test_list_templates_bad_meta_falls_back_to_name(monkeypatch, tmp_path: Path) -> None:
+def test_list_templates_bad_meta_falls_back_to_name(
+    monkeypatch, tmp_path: Path
+) -> None:
     """meta JSON 损坏/缺 source 时回退用文件名（去 .json）作模板名。"""
     d = tmp_path / "templates" / "fill"
     d.mkdir(parents=True)

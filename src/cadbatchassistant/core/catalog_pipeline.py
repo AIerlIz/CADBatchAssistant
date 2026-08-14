@@ -119,7 +119,8 @@ def run_pipeline(
 
     # 1. 校验输入
     template = Path(str(template_dwg))
-    need_template_file = template_anchors is None  # 已提供锚点（GUI meta）时无需模板文件
+    # 已提供锚点（GUI meta）时无需模板文件
+    need_template_file = template_anchors is None
     if need_template_file and not template.is_file():
         result.error = f"图纸模板 DWG 不存在: {template}"
         return result

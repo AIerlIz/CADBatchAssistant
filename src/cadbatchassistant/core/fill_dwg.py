@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """按 specs.json + 数据表.xlsx 填充 修改前 DXF 的标题栏值格。
 
 流程（对每张图）：
@@ -20,8 +19,11 @@ import json
 import os
 import sys
 
-from cadbatchassistant.core.text_replace import read_doc
+from ezdxf import const
+
 from cadbatchassistant.core.fill_parse_xlsx import load_xlsx
+from cadbatchassistant.core.parallel import TaskFailed, map_files
+from cadbatchassistant.core.text_replace import read_doc
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SPECS = os.path.join(HERE, "specs.json")
@@ -46,36 +48,64 @@ def _entity_text(e) -> str:
         if e.dxftype() == "MTEXT":
             return e.plain_text()
         return str(getattr(e.dxf, "text", "") or "")
-    except Exception:  # noqa: BLE001 - 个别实体结构异常时按空文本处理
-        try:
-            return str(getattr(e.dxf, "text", "") or "")
-        except Exception:  # noqa: BLE001 - 兜底空文本
-            return ""
+    except Exception:  # noqa: BLE001 - 兜底空文本
+        return ""
 
 
-def find_texts(msp, layer: str, x: float, y: float, tol: float = 0.01):
-    """在 (layer, x, y) 容差内查找 TEXT/MTEXT 实体。"""
-    for e in msp:
-        if e.dxftype() not in ("TEXT", "MTEXT"):
-            continue
-        if e.dxf.layer != layer:
-            continue
+# 重建占位符实体时排除的文档结构属性（非格式，由 ezdxf 生成）
+_DESC_SKIP_KEYS = frozenset(("text", "handle", "owner"))
+
+
+def entity_to_desc(e) -> dict:
+    """占位符实体 → 可 pickle 的轻量描述（供多进程并行任务使用）。
+
+    原实现把 ezdxf 实体对象直接放进任务 item：pickle 时连同其 doc 引用
+    序列化整份模板文档（每张图一份文档副本，内存/传输放大）。
+    dxfattribs() 是纯数据（坐标/字高/图层/样式/颜色等），不含文档引用；
+    源图层/样式定义一并快照，供目标文档缺失时补齐（避免悬空引用）。
+    """
+    layer = getattr(e.dxf, "layer", "") or ""
+    style = getattr(e.dxf, "style", "") or ""
+    layer_attribs: dict | None = None
+    style_attribs: dict | None = None
+    doc = getattr(e, "doc", None)
+    if doc is not None:
+        if layer and layer in doc.layers:
+            layer_attribs = dict(doc.layers.get(layer).dxfattribs())
+        if style and style in doc.styles:
+            style_attribs = dict(doc.styles.get(style).dxfattribs())
+    return {
+        "dxftype": e.dxftype(),
+        "attribs": dict(e.dxfattribs()),
+        "layer_attribs": layer_attribs,
+        "style_attribs": style_attribs,
+    }
+
+
+def _find_texts_in(ents, x: float, y: float, tol: float = 0.01):
+    """在单图层实体列表（已过滤 TEXT/MTEXT）中按坐标容差查找。"""
+    for e in ents:
         ins = e.dxf.insert
         if abs(ins[0] - x) < tol and abs(ins[1] - y) < tol:
             yield e
-
-
 
 
 def fill_one(before_dxf: str, out_dxf: str, spec: dict, row: dict) -> list[str]:
     doc = read_doc(before_dxf)
     msp = doc.modelspace()
     log: list[str] = []
+    # 一次遍历收集 TEXT/MTEXT 并按图层分组：避免每个字段都全遍历 modelspace
+    # （字段多 + 实体多时从 O(字段×实体) 降为 O(实体 + 字段×单层实体)）
+    by_layer: dict[str, list] = {}
+    for e in msp:
+        if e.dxftype() in ("TEXT", "MTEXT"):
+            by_layer.setdefault(e.dxf.layer, []).append(e)
     # 注意：不删除处理图纸压力格的 'barg' 单位占位——
     # 值原样填入（不含单位），'barg' 作为图纸预置单位与值共存显示。
 
     # 按规格填值
     for layer, fields in spec.items():
+        layer_ents = by_layer.get(layer, [])
         for field, fspec in fields.items():
             val = row.get(field, "")
             if val.strip():
@@ -86,7 +116,7 @@ def fill_one(before_dxf: str, out_dxf: str, spec: dict, row: dict) -> list[str]:
 
             if text:
                 # 排除空文本与压力格单位 'barg'（均不算已占位内容，允许写入值）
-                existing = [e for e in find_texts(msp, layer, x, y)
+                existing = [e for e in _find_texts_in(layer_ents, x, y)
                             if _entity_text(e).strip() not in ("", "barg")]
                 if existing:
                     same = any(
@@ -102,29 +132,44 @@ def fill_one(before_dxf: str, out_dxf: str, spec: dict, row: dict) -> list[str]:
 
             ent = fspec.get("entity")
             if ent is not None:
-                # 克隆占位符实体，只替换文字：格式（图层/字高/字体/对齐/
-                # 旋转/颜色等）与模板占位符完全一致
-                new = ent.copy()
-                msp.add_entity(new)
+                # 统一为轻量实体描述：内存实体对象（串行/直接调用）先转换，
+                # 描述 dict（并行任务）直接使用。描述不携带文档引用 →
+                # 任务 item 可 pickle，且不随每张图序列化整份模板文档。
+                desc = ent if isinstance(ent, dict) else entity_to_desc(ent)
+                # 重建占位符实体（保留模板全部 dxfattribs 格式），只替换文字
+                attribs = {k: v for k, v in desc["attribs"].items()
+                           if k not in _DESC_SKIP_KEYS}
+                if desc["dxftype"] == "MTEXT":
+                    new = msp.add_mtext("", dxfattribs=attribs)
+                else:
+                    new = msp.add_text("", dxfattribs=attribs)
                 # 校验目标文档存在同名图层/样式，缺失则补齐（避免悬空引用）
-                layer = new.dxf.layer
+                layer = new.dxf.layer or ""
                 if layer and layer not in doc.layers:
-                    src_layer = ent.doc.layers.get(layer) if ent.doc else None
-                    if src_layer is not None:
-                        doc.layers.add(layer, dxfattribs=dict(
-                            (k, v) for k, v in src_layer.dxfattribs().items()
-                            if k in ("color", "linetype", "lineweight")))
+                    src_layer = desc.get("layer_attribs")
+                    if src_layer:
+                        # LayerTable.add 的 color/linetype/lineweight 是关键字
+                        # 参数，dxfattribs 里的同名键会被默认值覆盖 → 必须
+                        # 经关键字传入，补齐图层才能保留模板的显示属性
+                        doc.layers.add(
+                            layer,
+                            color=src_layer.get("color", const.BYLAYER),
+                            linetype=src_layer.get("linetype", "Continuous"),
+                            lineweight=src_layer.get(
+                                "lineweight", const.LINEWEIGHT_BYLAYER),
+                            dxfattribs={k: v for k, v in src_layer.items()
+                                        if k in ("true_color", "plot")})
                     else:
                         doc.layers.add(layer)
-                style = getattr(new.dxf, "style", None)
+                style = getattr(new.dxf, "style", "") or ""
                 if style and style not in doc.styles:
-                    src_style = ent.doc.styles.get(style) if ent.doc else None
-                    if src_style is not None:
-                        doc.styles.add(style, dxfattribs={
-                            k: v for k, v in src_style.dxfattribs().items()
-                            if k in ("font", "height", "width", "oblique")})
-                    else:
-                        doc.styles.add(style)
+                    src_style = desc.get("style_attribs") or {}
+                    # ezdxf 的 styles.add 要求 font 为关键字参数（不能经
+                    # dxfattribs 传入，否则缺 font 抛 TypeError）
+                    doc.styles.add(style, font=src_style.get("font") or "txt",
+                                   dxfattribs={
+                                       k: v for k, v in src_style.items()
+                                       if k in ("height", "width", "oblique")})
                 new.dxf.text = text
                 note = "（xlsx 值为空，置空）" if not text else "（替换占位符）"
                 log.append(f"填写 {field} = {text!r} {note} [{layer}]")
@@ -148,6 +193,15 @@ def fill_one(before_dxf: str, out_dxf: str, spec: dict, row: dict) -> list[str]:
     return log
 
 
+def _fill_one_task(item: tuple) -> tuple:
+    """并行 worker：解包任务参数执行 fill_one，返回 (stem, log)。
+
+    item = (stem, before_dxf, out_dxf, spec, row)。顶层函数（Windows spawn 可 pickle）。
+    """
+    stem, before, out, spec, row = item
+    return stem, fill_one(before, out, spec, row)
+
+
 def fill_all(before_dxf_dir: str, out_dxf_dir: str, xlsx: str,
              specs: dict, emit=print, progress=None,
              match_col: str | None = None,
@@ -155,10 +209,12 @@ def fill_all(before_dxf_dir: str, out_dxf_dir: str, xlsx: str,
              cancel=None) -> tuple[list[str], list[str]]:
     """批量填充：对 specs 中每张图执行 fill_one。
 
-    单张图失败不中断，记录后继续处理其余图纸。
-    cancel   : 可选 threading.Event；置位时在当前图处理完后停止
-               （未开始的图不再处理，调用方需自行处理剩余图纸）。
-    progress : 可选回调 progress(done_index, total)，每处理一张图（成败均）调用一次。
+    文件相互独立（readfile → 填值 → saveas），经 map_files 多进程并行处理
+    （文件数少时自动回退串行）；单张图失败不中断，记录后继续处理其余图纸。
+    cancel   : 可选 threading.Event；置位时停止（当前处理中的图完成后停止，
+               未开始的图不再处理）。
+    progress : 可选回调 progress(index, total)，每处理一张图（成败均）调用一次，
+               index 为图纸在全部图纸中的顺序号（含被跳过者），与串行实现一致。
     match_col: 数据表中图纸名列（None 默认第一列）。
     sheet    : 数据表中工作表名（None 默认第一个）。
     返回 (failed, skipped)：failed 为处理失败的图纸名；
@@ -169,30 +225,63 @@ def fill_all(before_dxf_dir: str, out_dxf_dir: str, xlsx: str,
     stems = sorted(specs)
     failed: list[str] = []
     skipped: list[str] = []
-    for i, stem in enumerate(stems, 1):
-        if cancel is not None and cancel.is_set():
-            emit("[WARN] 收到取消请求，停止填表")
-            break
-        try:
-            if stem not in data:
-                emit(f"[WARN] {stem} 不在 xlsx 中，跳过")
-                skipped.append(stem)
-                continue
-            before = os.path.join(before_dxf_dir, stem + ".dxf")
-            out = os.path.join(out_dxf_dir, stem + ".dxf")
-            if not os.path.isfile(before):
-                emit(f"[WARN] 缺少 before DXF: {before}")
-                skipped.append(stem)
-                continue
-            emit(f"===== {stem}")
-            for line in fill_one(before, out, specs[stem], data[stem]):
-                emit("  " + line)
-        except Exception as ex:  # noqa: BLE001 - 单图失败不中断整体
-            emit(f"[ERROR] {stem} 处理失败：{ex}")
-            failed.append(stem)
-        finally:
+    # 预筛：不在数据表 / 缺 before DXF → skipped（不参与并行处理）
+    tasks: list[tuple] = []
+    order: dict[str, int] = {}
+    # 进度按提交序单调推进：并行完成序与提交序不同，直接按完成序回调
+    # 会让进度条来回跳动；这里标记完成位 + 游标推进，保证 progress 的
+    # index 严格递增，且被跳过（skipped）的图纸同样计入（与串行一致）。
+    done_flags = [False] * (len(stems) + 1)  # 1-based 提交位
+    cursor = 1
+
+    def _advance_progress() -> None:
+        nonlocal cursor
+        while cursor <= len(stems) and done_flags[cursor]:
             if progress:
-                progress(i, len(stems))
+                progress(cursor, len(stems))
+            cursor += 1
+
+    for i, stem in enumerate(stems, 1):
+        order[stem] = i
+        if stem not in data:
+            emit(f"[WARN] {stem} 不在 xlsx 中，跳过")
+            skipped.append(stem)
+            done_flags[i] = True
+            _advance_progress()
+            continue
+        before = os.path.join(before_dxf_dir, stem + ".dxf")
+        out = os.path.join(out_dxf_dir, stem + ".dxf")
+        if not os.path.isfile(before):
+            emit(f"[WARN] 缺少 before DXF: {before}")
+            skipped.append(stem)
+            done_flags[i] = True
+            _advance_progress()
+            continue
+        tasks.append((stem, before, out, specs[stem], data[stem]))
+
+    cancelled_reported = {"v": False}
+
+    def _is_cancelled() -> bool:
+        c = cancel is not None and cancel.is_set()
+        if c and not cancelled_reported["v"]:
+            cancelled_reported["v"] = True
+            emit("[WARN] 收到取消请求，停止填表")
+        return c
+
+    def _on_done(result, _index, item) -> None:
+        stem = item[0]
+        if isinstance(result, TaskFailed):
+            emit(f"[ERROR] {stem} 处理失败：{result.error}")
+            failed.append(stem)
+        else:
+            emit(f"===== {stem}")
+            for line in result[1]:
+                emit("  " + line)
+        done_flags[order[stem]] = True
+        _advance_progress()
+
+    map_files(_fill_one_task, tasks, is_cancelled=_is_cancelled,
+              on_done=_on_done)
     ok = len(stems) - len(failed) - len(skipped)
     emit(f"      完成 {ok}/{len(stems)} 张，"
          + (f"失败 {len(failed)} 张：{', '.join(failed)}；" if failed else "")

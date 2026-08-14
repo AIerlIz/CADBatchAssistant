@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """一键流程：xlsx + 图纸（DWG/DXF）→ 从模板推断规格 → 填表 → 输出。
 
 - 支持目录输入（before_dir 内全部图纸）或文件列表输入（run_pipeline_files）。
@@ -16,7 +15,11 @@ import shutil
 import tempfile
 
 from cadbatchassistant.core import dwg_converter as dc
-from cadbatchassistant.core.fill_dwg import fill_all
+from cadbatchassistant.core.dwg_workflow import (
+    stage_dxf_batch,
+    write_back_dxf_batch,
+)
+from cadbatchassistant.core.fill_dwg import entity_to_desc, fill_all
 from cadbatchassistant.core.input_files import stage_inputs
 
 
@@ -108,7 +111,7 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
         raise ValueError(f"以下图纸在目录中找不到文件：{', '.join(missing)}")
     need_oda = bool(dwg_names)
 
-    oda_exe = dc.resolve_oda(oda)
+    oda_exe = dc.get_converter().resolve(oda)
     err = dc.require_oda_for_dwg(need_oda, str(oda_exe) if oda_exe else "")
     if err:
         raise FileNotFoundError(err)
@@ -132,15 +135,13 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
                     except OSError as ex:
                         emit(f"[WARN] 清理旧输出失败（跳过，可能被占用或只读）: {p} ({ex})")
 
-        # [1/4] DWG → DXF；DXF 直接复制
+        # [1/4] DWG → DXF；DXF 直接复制（统一成 DXF 批，供后续处理）
         _check_cancel(cancel)
         emit("[1/4] 准备 DXF（DWG 经 ODA 转换，DXF 直接复制） ...")
-        if dwg_names:
-            dc.convert_dwg_batch_to_dxf(oda_exe, before_dir, before_dxf,
-                                        [n + ".DWG" for n in dwg_names], out_version)
-        for n in dxf_names:
-            shutil.copy2(os.path.join(before_dir, n + ".dxf"),
-                         os.path.join(before_dxf, n + ".dxf"))
+        stage_dxf_batch(
+            dc.get_converter(), oda_exe, before_dir, before_dxf,
+            [n + ".DWG" for n in dwg_names], [n + ".dxf" for n in dxf_names],
+            out_version)
         _report(progress, 25)
 
         # [2/4] 图纸模板占位扫描规格 → 广播到全部图纸
@@ -149,7 +150,7 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
         emit("[2/4] 扫描图纸模板占位文字 ...")
         if not template or not os.path.isfile(str(template)):
             raise ValueError("缺少图纸模板文件（值格填 [字段名] 占位的 .dwg/.dxf）")
-        t_dxf = dc.convert_template_to_dxf(template, tmp, oda_exe, out_version)
+        t_dxf = dc.get_converter().template_to_dxf(template, tmp, oda_exe, out_version)
         from cadbatchassistant.core.fill_learn_spec import scan_placeholders
 
         one_spec = scan_placeholders(t_dxf, xlsx, sheet)
@@ -164,9 +165,15 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
             return {f: {k: v for k, v in fs.items() if k != "entity"}
                     for f, fs in fields.items()}
 
-        # 浅拷贝广播（共享占位符实体引用，只读）；JSON 输出剥离 entity
-        specs = {n: {layer: dict(fields) for layer, fields in one_spec.items()}
-                 for n in names}
+        # 浅拷贝广播；entity 转为轻量描述（可 pickle、不含文档引用，
+        # 并行任务不会随每张图序列化整份模板文档）；JSON 输出剥离 entity
+        def _desc_entity(fields: dict) -> dict:
+            return {f: ({**fs, "entity": entity_to_desc(fs["entity"])}
+                        if fs.get("entity") is not None else dict(fs))
+                    for f, fs in fields.items()}
+
+        specs = {n: {layer: _desc_entity(fields)
+                     for layer, fields in one_spec.items()} for n in names}
         json_specs = {n: {layer: _strip_entity(fields)
                           for layer, fields in one_spec.items()} for n in names}
         with open(specs_path, "w", encoding="utf-8") as fh:
@@ -190,18 +197,12 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
         # [4/4] 输出：DWG 输入转回 DWG；DXF 输入直接复制
         # 失败的图跳过；skipped（无产物：不在数据表/缺 before DXF）同样不算成功，
         # 否则输出阶段会因产物缺失报错（DXF）或挂起等待转换（DWG 900s 超时）。
-        ok_names = [n for n in names if n not in failed and n not in skipped]
         _check_cancel(cancel)
         emit(f"[4/4] 输出 → {out_dir} ...")
-        ok_dwg = [n for n in dwg_names if n in ok_names]
-        if ok_dwg:
-            dc.convert_dxf_batch_to_dwg(oda_exe, filled_dxf, out_dir,
-                                        [n + ".dxf" for n in ok_dwg], out_version)
-        for n in dxf_names:
-            if n not in ok_names:
-                continue
-            shutil.copy2(os.path.join(filled_dxf, n + ".dxf"),
-                         os.path.join(out_dir, n + ".dxf"))
+        write_back_dxf_batch(
+            dc.get_converter(), oda_exe, filled_dxf, out_dir,
+            [n + ".DWG" for n in dwg_names], [n + ".dxf" for n in dxf_names],
+            out_version, skip=set(failed) | set(skipped))
         _report(progress, 100)
 
         return {

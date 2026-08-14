@@ -145,9 +145,8 @@ def upload_template_file(category: str, src: str | None = None,
     未传 src 时弹出文件选择框；文件非法 / 用户取消 / 覆盖被拒时返回 None
     （提示弹窗在此统一处理）。
     """
-    from tkinter import filedialog, messagebox
-
     import shutil
+    from tkinter import filedialog, messagebox
 
     if src is None:
         src = filedialog.askopenfilename(
@@ -185,7 +184,7 @@ def delete_template_file(category: str, name: str) -> bool:
         return False
     try:
         (templates_dir(category) / name).unlink()
-    except OSError as ex:  # noqa: BLE001
+    except OSError as ex:
         messagebox.showerror("删除失败", str(ex))
         return False
     return True
@@ -217,7 +216,7 @@ def dedup_paths(paths) -> list:
     return out
 
 
-def apply_vista_theme(style: "tk.ttk.Style | None" = None) -> None:
+def apply_vista_theme(style: tk.ttk.Style | None = None) -> None:
     """尝试使用 vista 主题；不可用时静默回退默认主题。"""
     if style is None:
         style = ttk.Style()
@@ -282,7 +281,7 @@ def browse_oda(var_oda, var_info) -> None:
 
 def build_oda_row(parent, label: str = "ODA File Converter:",
                   browse_text: str = "浏览",
-                  initial: str = "") -> tuple["tk.StringVar", "tk.StringVar"]:
+                  initial: str = "") -> tuple[tk.StringVar, tk.StringVar]:
     """在 parent 的 row=0 构建 ODA 路径选择行，返回 (var_oda, var_info)。
 
     布局：Label | Entry(伸展) | 浏览按钮 | 状态提示；浏览与 _check_oda

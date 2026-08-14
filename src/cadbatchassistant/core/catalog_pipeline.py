@@ -8,27 +8,23 @@ from __future__ import annotations
 
 import shutil
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from cadbatchassistant.core import catalog_excel_writer
+from cadbatchassistant.core import dwg_converter as dc
 from cadbatchassistant.core.catalog_builder import (
     FileEntry,
     build_file_catalog,
 )
 from cadbatchassistant.core.catalog_reader import extract_by_anchors
 from cadbatchassistant.core.catalog_template_reader import (
+    Anchor,
     collect_fields,
     parse_template,
 )
-from cadbatchassistant.core.dwg_converter import (
-    ODAError,
-    convert_dwg_batch_to_dxf,
-    convert_template_to_dxf,
-    require_oda_for_dwg,
-    resolve_oda,
-)
 from cadbatchassistant.core.input_files import check_duplicate_names
+from cadbatchassistant.core.parallel import TaskFailed, map_files
 
 # 回调：log(msg)，progress(0-100 整数)
 LogFn = Callable[[str], None]
@@ -60,8 +56,9 @@ class PipelineResult:
         self.fields: list[str] = []
 
 
-def parse_template_fields(template_dwg: str | Path, oda: str = "") -> list[str]:
-    """解析图纸模板，返回按出现顺序去重后的字段名列表。
+def parse_template_anchors(template_dwg: str | Path,
+                           oda: str = "") -> list[Anchor]:
+    """解析图纸模板，返回锚点列表（含字段名与取值区域）。
 
     模板为 DWG 时先复制到临时目录并转 DXF（oda 为空时自动探测
     ODAFileConverter）；无占位符/转换失败时抛异常，由调用方决定处理
@@ -70,9 +67,24 @@ def parse_template_fields(template_dwg: str | Path, oda: str = "") -> list[str]:
     template = Path(str(template_dwg))
     with tempfile.TemporaryDirectory(prefix="cad_fields_") as td:
         tmp = Path(td)
-        t_dxf = convert_template_to_dxf(template, tmp, oda)
-        anchors = parse_template(t_dxf)
-    return collect_fields(anchors)
+        t_dxf = dc.get_converter().template_to_dxf(template, tmp, oda)
+        return parse_template(t_dxf)
+
+
+def parse_template_fields(template_dwg: str | Path, oda: str = "") -> list[str]:
+    """解析图纸模板，返回按出现顺序去重后的字段名列表。"""
+    return collect_fields(parse_template_anchors(template_dwg, oda))
+
+
+def _extract_task(item: tuple) -> dict:
+    """并行 worker：解包 (dxf_path, anchors, point_tolerance, fig_fields) 取值。
+
+    顶层函数（Windows spawn 可 pickle）；单文件异常由 map_files 包装为
+    TaskFailed，调用方统一容错。
+    """
+    f, anchors, point_tol, fig_fields = item
+    return extract_by_anchors(
+        f, anchors, point_tolerance=point_tol, fig_fields=fig_fields)
 
 
 def run_pipeline(
@@ -87,6 +99,7 @@ def run_pipeline(
     log: LogFn = lambda m: None,
     progress: ProgressFn = lambda p: None,
     is_cancelled: Callable[[], bool] = lambda: False,
+    template_anchors: list | None = None,
 ) -> PipelineResult:
     """执行完整流程（模板标记取值）。失败时返回 ok=False 的结果。
 
@@ -96,6 +109,9 @@ def run_pipeline(
     sheet_name : 指定表格模板使用的 sheet 名（可空；为空时自动定位
                  匹配字段数最多的 sheet）
     dwg_files : 要处理的图纸 DWG/DXF 文件列表
+    template_anchors : 已解析的模板锚点（parse_template_anchors 的结果）。
+                       提供时跳过模板转换与解析（GUI 预检已解析过，省一次
+                       模板 DXF 转换）；None 时在本流程内解析。
     """
     result = PipelineResult()
     rules = rules or {}
@@ -123,10 +139,11 @@ def run_pipeline(
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     # 2. ODA 校验（有 DWG 时需要）
-    oda = resolve_oda(oda)
+    converter = dc.get_converter()
+    oda = converter.resolve(oda)
     has_dwg = template.suffix.lower() == ".dwg" or any(
         p.suffix.lower() == ".dwg" for p in files)
-    err = require_oda_for_dwg(has_dwg, oda)
+    err = converter.require_for_dwg(has_dwg, oda)
     if err:
         result.error = err
         return result
@@ -152,19 +169,25 @@ def run_pipeline(
         dxf_out = tmp_dir / "_dxf_out"
         dxf_out.mkdir(parents=True, exist_ok=True)
 
-        # 4. 解析模板锚点（模板若为 DWG 先转 DXF）
+        # 4. 解析模板锚点（模板若为 DWG 先转 DXF）；已传入 template_anchors 时复用
         progress(10)
-        try:
-            template_dxf = convert_template_to_dxf(
-                template, tmp_dir, oda, subdir="_dxf_out")
-        except ODAError as ex:
-            result.error = f"模板 DWG 转换失败: {ex}"
-            return result
-        try:
-            anchors = parse_template(template_dxf)
-        except Exception as ex:  # noqa: BLE001
-            result.error = f"解析模板失败: {ex}"
-            return result
+        if template_anchors is not None:
+            anchors = list(template_anchors)
+            if not anchors:
+                result.error = "模板锚点为空"
+                return result
+        else:
+            try:
+                template_dxf = converter.template_to_dxf(
+                    template, tmp_dir, oda, subdir="_dxf_out")
+            except dc.ODAError as ex:
+                result.error = f"模板 DWG 转换失败: {ex}"
+                return result
+            try:
+                anchors = parse_template(template_dxf)
+            except Exception as ex:  # noqa: BLE001
+                result.error = f"解析模板失败: {ex}"
+                return result
         result.fields = collect_fields(anchors)
         fields = result.fields
         log(f"模板解析完成：锚点 {len(anchors)} 个，字段：{'、'.join(fields)}")
@@ -175,8 +198,8 @@ def run_pipeline(
             progress(20)
             log(f"开始转换 {len(dwg_names)} 个 DWG → DXF ...")
             try:
-                convert_dwg_batch_to_dxf(oda, tmp_dir, dxf_out, dwg_names)
-            except ODAError as ex:
+                converter.dwg_to_dxf(oda, tmp_dir, dxf_out, dwg_names)
+            except dc.ODAError as ex:
                 result.error = f"DWG 转换失败: {ex}"
                 return result
         # 图纸产物：DWG 转换到 dxf_out，DXF 源文件直接复制在 tmp_dir
@@ -208,22 +231,39 @@ def run_pipeline(
             f for f in fields
             if figure_field and (f == figure_field
                                  or all(ch in f for ch in figure_field)))
-        entries: list[FileEntry] = []
         total = len(dxf_files)
-        for idx, f in enumerate(dxf_files):  # 保持用户选择的文件顺序
+        tasks = [(f, anchors, point_tol, fig_fields) for f in dxf_files]
+        results: list[dict | None] = [None] * total
+        cancelled = {"v": False}
+
+        def _is_cancelled() -> bool:
             if is_cancelled():
-                result.error = "已取消"
-                return result
-            progress(20 + int(60 * idx / total))
-            log(f"  处理 [{idx + 1}/{total}] {f.name}")
-            try:
-                values = extract_by_anchors(
-                    f, anchors,
-                    point_tolerance=point_tol, fig_fields=fig_fields)
-            except Exception as ex:  # noqa: BLE001 - 单文件容错
-                log(f"     取值失败：{ex}")
-                values = {}
-            entries.append(FileEntry(filename=f.stem, values=values))
+                cancelled["v"] = True
+            return cancelled["v"]
+
+        done_count = {"v": 0}
+
+        def _on_done(result, idx, item) -> None:
+            f = item[0]
+            # 并行完成序与提交序不同：进度/日志按「完成序号」编号并单调推进
+            # （results 仍按提交序 idx 落位，entries 顺序不受影响）
+            done_count["v"] += 1
+            progress(20 + int(60 * done_count["v"] / total))
+            log(f"  处理 [{done_count['v']}/{total}] {f.name}")
+            if isinstance(result, TaskFailed):
+                log(f"     取值失败：{result.error}")
+                results[idx] = {}
+            else:
+                results[idx] = result
+
+        map_files(_extract_task, tasks, is_cancelled=_is_cancelled,
+                  on_done=_on_done)
+        if cancelled["v"]:
+            result.error = "已取消"
+            return result
+        # 保持用户选择的文件顺序构建 entries（map_files 结果按提交顺序返回）
+        entries = [FileEntry(filename=dxf_files[i].stem, values=results[i])
+                   for i in range(total) if results[i] is not None]
 
         # 7. 构建目录并输出
         progress(80)

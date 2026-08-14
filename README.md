@@ -94,7 +94,10 @@ src/cadbatchassistant/
   common.py                # 共享组件：配置、软件目录/模板库函数、控件、AsyncPanel
   core/
     text_replace.py        # 改字：DXF 文字查找替换
-    dwg_converter.py       # ODA 集成（三功能共用）
+    dwg_converter.py       # 转换引擎抽象：Converter 接口 + ODA 实现（三功能共用）
+    dwg_workflow.py        # DWG 批处理工作流（统一成 DXF 批 / 处理后写回）
+    parallel.py            # 并行执行器（串行/进程/线程可切换）
+    input_files.py         # 输入文件公共工具（重名检测 + 复制暂存）
     fill_pipeline.py       # 填表：一键流程
     fill_learn_spec.py     # 填表：模板占位扫描
     fill_dwg.py            # 填表：按规格填充
@@ -106,6 +109,7 @@ src/cadbatchassistant/
     catalog_excel_writer.py     # 目录：Excel 输出
     updater.py             # 在线更新
   gui/
+    gui_shared.py          # 三个面板共享组件（FilesPanel/TemplateLibrary/PanelLayout/RunStart Mixin）
     gui_text.py            # 改字助手面板
     gui_fill.py            # 填表助手面板
     gui_catalog.py         # 目录助手面板

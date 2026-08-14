@@ -205,6 +205,17 @@ def finish_popup(success: bool) -> None:
         messagebox.showwarning("完成", "处理中断，详见日志。")
 
 
+def warn_require(condition: bool, message: str, title: str = "提示") -> bool:
+    """校验辅助：条件不满足时弹警告并返回 False；满足返回 True。
+
+    把各面板 _start 里反复出现的「if not xxx: messagebox.showwarning(...);
+    return」样板收敛为一行：if not warn_require(xxx, "文案"): return None。
+    """
+    if not condition:
+        messagebox.showwarning(title, message)
+    return bool(condition)
+
+
 class PanelLayoutMixin:
     """三个功能面板的公共 UI 骨架（待处理/输出/运行/日志区 + 数据源区行）。
 
@@ -358,3 +369,52 @@ class PanelLayoutMixin:
         """完成收尾：恢复按钮并弹窗汇总（目录助手覆盖为自己的统计弹窗）。"""
         super()._on_finish(success)
         finish_popup(success)
+
+
+class RunStartMixin:
+    """「开始处理」统一起动骨架：校验(_prepare_run) → begin_run → 启动 worker。
+
+    子类实现：
+    - _prepare_run() -> tuple | None：校验输入并收集 worker 参数（tuple）；
+      校验失败弹窗提示并返回 None（不启动）。
+    - _run_maximum() -> int | None：进度条上限（改字按文件数，填表/目录
+      为 0-100 百分比，默认 None）。
+    - 可选覆盖 _after_begin_run(args)：begin_run 之后、启动 worker 之前的
+      钩子（如输出 sheet 定位日志）。
+
+    _start 由本类统一提供，消除三个面板重复的「running 检查 / begin_run /
+    启动 worker / 启动异常复位」样板。约定：本类位于 AsyncPanel 之前的 MRO
+    （继承顺序 ... PanelLayoutMixin, RunStartMixin, AsyncPanel）。
+    """
+
+    def _run_maximum(self) -> int | None:
+        return None
+
+    def _reset_run_state(self) -> None:
+        """复位运行态：running 置 False、恢复开始按钮、禁用停止按钮。
+
+        供启动阶段兜底使用（worker 启动本身异常时）；_on_finish 也有
+        等价逻辑（AsyncPanel），此处为 begin_run 之后、_start_worker 之前
+        的异常路径服务。
+        """
+        self.running = False
+        self.btn_start.config(state="normal")
+        self.btn_stop.config(state="disabled")
+
+    def _after_begin_run(self, args: tuple) -> None:
+        """begin_run 之后、启动 worker 之前的钩子（默认空）。"""
+
+    def _start(self) -> None:
+        """统一起动入口：校验通过才 begin_run 并启动后台 worker。"""
+        if self.running:
+            return
+        args = self._prepare_run()
+        if args is None:
+            return  # 校验失败/取消，已弹窗提示
+        begin_run(self, maximum=self._run_maximum())
+        try:
+            self._after_begin_run(args)
+            self._start_worker(args)
+        except Exception as ex:  # noqa: BLE001 - 启动异常兜底复位，避免面板卡死
+            self._reset_run_state()
+            self._emit(f"启动失败：{ex}")

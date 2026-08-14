@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ODA File Converter 集成（dwg_converter）测试。"""
 
 from __future__ import annotations
@@ -10,7 +9,11 @@ from pathlib import Path
 import pytest
 
 import cadbatchassistant.core.dwg_converter as dc
-from cadbatchassistant.core.dwg_converter import ODAError, convert_batch, require_oda_for_dwg
+from cadbatchassistant.core.dwg_converter import (
+    ODAError,
+    convert_batch,
+    require_oda_for_dwg,
+)
 
 
 class RequireOdaForDwgTest(unittest.TestCase):

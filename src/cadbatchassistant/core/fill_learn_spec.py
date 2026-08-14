@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """图纸模板占位扫描：从模板 DXF 扫描占位文字（[列名]）与数据表表头匹配。
 
 - 占位符文字 = 数据表该列的表头（如列名 'NPD (inch)' → 值格填 [NPD (inch)]）。
@@ -12,8 +11,9 @@ from __future__ import annotations
 import json
 import sys
 
-from cadbatchassistant.core.text_replace import decode_text, read_doc
 from cadbatchassistant.core.fill_parse_xlsx import get_headers
+from cadbatchassistant.core.text_replace import decode_text, read_doc
+
 
 def scan_placeholders(dxf_path: str, xlsx_path: str | None = None,
                       sheet: str | None = None) -> dict:

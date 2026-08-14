@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """数据表解析（parse_xlsx）测试：匹配列（match_col）选择逻辑。"""
 
 from __future__ import annotations
@@ -104,7 +103,7 @@ class LoadXlsxMatchColTest(unittest.TestCase):
 
 
 class ListSheetsTest(unittest.TestCase):
-    """list_sheets / 按 sheet 读取 / sheet 不存在报错。"""
+    """按 sheet 读取 / sheet 不存在报错。"""
 
     def setUp(self):
         self._tmp = Path(tempfile.mkdtemp(prefix="px_sheet_"))
@@ -113,14 +112,6 @@ class ListSheetsTest(unittest.TestCase):
         for f in self._tmp.iterdir():
             f.unlink(missing_ok=True)
         self._tmp.rmdir()
-
-    def test_list_sheets(self):
-        p = self._tmp / "multi.xlsx"
-        _make_xlsx_multi(p, {
-            "数据表": (["图号", "名称"], [["A-1", "图1"]]),
-            "说明": (["说明"], [["xxx"]]),
-        })
-        self.assertEqual(fill_parse_xlsx.list_sheets(p), ["数据表", "说明"])
 
     def test_load_named_sheet(self):
         p = self._tmp / "multi.xlsx"
@@ -189,15 +180,14 @@ class LoadSheetMetaTest(unittest.TestCase):
         self.assertEqual(headers["数据表"], ["图号"])
         self.assertEqual(headers["空表"], [])
 
-    def test_consistent_with_list_sheets_and_get_headers(self):
-        """与旧接口（list_sheets / get_headers）结果一致，行为等价。"""
+    def test_consistent_with_get_headers(self):
+        """load_sheet_meta 的表头与 get_headers（按 sheet）结果一致。"""
         p = self._tmp / "multi.xlsx"
         _make_xlsx_multi(p, {
             "数据表": (["图号", "名称"], [["A-1", "图1"]]),
             "其他": (["X"], [["1"]]),
         })
         names, headers = fill_parse_xlsx.load_sheet_meta(p)
-        self.assertEqual(names, fill_parse_xlsx.list_sheets(p))
         for name in names:
             self.assertEqual(headers[name], fill_parse_xlsx.get_headers(p, sheet=name))
 

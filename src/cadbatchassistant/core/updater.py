@@ -16,7 +16,6 @@ import hashlib
 import http.client
 import json
 import os
-import socket
 import subprocess
 import sys
 import threading
@@ -24,7 +23,6 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-
 
 # GitHub 仓库与更新包信息（与 .github/workflows/build.yml 发布的资产一致）
 GITHUB_REPO = "AIerlIz/CADBatchAssistant"
@@ -49,8 +47,7 @@ def is_frozen() -> bool:
 def parse_version(tag: str) -> tuple[int, int, int] | None:
     """把 tag（如 v1.2.3 / 1.2.3）解析为 (major, minor, patch)；解析失败返回 None。"""
     text = tag.strip()
-    if text.startswith("v"):
-        text = text[1:]
+    text = text.removeprefix("v")
     parts = text.split(".")
     if len(parts) < 3:
         return None
@@ -108,8 +105,7 @@ def _request_json(url: str, timeout: int = API_TIMEOUT) -> dict:
         raise
     except urllib.error.HTTPError as e:
         raise UpdateError(f"服务器返回 {e.code}（{e.reason}）") from e
-    except (urllib.error.URLError, socket.timeout, OSError,
-            http.client.HTTPException) as e:
+    except (TimeoutError, urllib.error.URLError, OSError, http.client.HTTPException) as e:
         raise UpdateError(f"无法连接 GitHub：{e}") from e
     try:
         data = json.loads(body)
@@ -222,8 +218,7 @@ def _fetch_sha256(sha256_url: str, mirror: str | None,
             if len(body) > MAX_RESPONSE_BYTES:
                 raise UpdateError("校验和响应过大，已中止读取")
             return _parse_sha256(body.decode("utf-8", errors="replace"))
-        except (urllib.error.HTTPError, urllib.error.URLError, socket.timeout,
-                OSError, http.client.HTTPException, UpdateError) as e:
+        except (TimeoutError, urllib.error.HTTPError, urllib.error.URLError, OSError, http.client.HTTPException, UpdateError) as e:
             last_err = e
     raise UpdateError(f"获取校验和失败：{last_err}") from last_err
 
@@ -271,8 +266,7 @@ def _download_once(dest: Path, url: str, source: str,
     except UpdateError:
         _cleanup(dest)  # 用户取消：清理半成品后原样传播，不重试
         raise
-    except (urllib.error.URLError, socket.timeout, OSError,
-            http.client.HTTPException) as e:
+    except (TimeoutError, urllib.error.URLError, OSError, http.client.HTTPException) as e:
         _cleanup(dest)
         raise UpdateError(f"{source}下载失败：{e}") from e
 

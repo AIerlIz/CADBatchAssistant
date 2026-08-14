@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """读取数据表（.xlsx / .xls），输出 {图纸文件名(不含扩展名): {列名: 值}}。
 
 - 第一行作为表头，后续每行对应一张图纸，第一列为 CAD 文件名。
@@ -45,27 +44,11 @@ def _make_cols(header: list) -> list[str]:
     return cols
 
 
-def list_sheets(path: str | Path) -> list[str]:
-    """返回数据表全部工作表名（供 GUI 下拉选择）。"""
-    p = str(path)
-    if p.lower().endswith(".xls") and not p.lower().endswith(".xlsx"):
-        import xlrd
-
-        book = xlrd.open_workbook(p)
-        return list(book.sheet_names())
-    import openpyxl
-
-    wb = openpyxl.load_workbook(p, read_only=True)
-    names = list(wb.sheetnames)
-    wb.close()
-    return names
-
-
 def load_sheet_meta(path: str | Path) -> tuple[list[str], dict[str, list[str]]]:
     """一次打开数据表，返回 (工作表名列表, {工作表名: 首行表头列表})。
 
-    供 GUI 下拉刷新使用：替代 list_sheets + get_headers 的两次全量加载，
-    大表只解析一次。空工作表（无首行）表头记为 []。
+    供 GUI 下拉刷新使用：一次解析即得工作表名与各表首行表头，
+    避免多次全量加载（大表只解析一次）。空工作表（无首行）表头记为 []。
     """
     p = str(path)
     if p.lower().endswith(".xls") and not p.lower().endswith(".xlsx"):

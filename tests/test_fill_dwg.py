@@ -217,5 +217,156 @@ class FillAllSkippedTest(unittest.TestCase):
         self.assertTrue((self.out_dir / "A1.dxf").is_file())
 
 
+class FillEntityDescTest(unittest.TestCase):
+    """fill_one 通过 entity 轻量描述重建占位符（S1/P1）。
+
+    并行任务的 spec 不含实体对象而含 entity_to_desc 描述：重建后格式
+    （图层/样式/旋转/颜色）与模板一致；目标文档缺失图层/样式时补齐
+    （styles.add 的 font 经关键字参数传入，不抛 TypeError——P1）。
+    """
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="fill_desc_"))
+        self.before = self.tmp / "before.dxf"
+        doc = ezdxf.new("R2013")
+        doc.saveas(self.before)
+
+    def tearDown(self) -> None:
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _template_desc(self) -> dict:
+        from cadbatchassistant.core.fill_dwg import entity_to_desc
+
+        doc = ezdxf.new("R2013")
+        # 注意：color/lineweight 必须经关键字参数（dxfattribs 会被默认值覆盖）
+        doc.layers.add("GT_1", color=1, linetype="CONTINUOUS", lineweight=25)
+        doc.styles.add("BigFont", font="simhei.ttf", dxfattribs={"height": 2.5})
+        t = doc.modelspace().add_text(
+            "[图号]", dxfattribs={"layer": "GT_1", "insert": (10, 20, 0),
+                                  "height": 3.5, "style": "BigFont",
+                                  "rotation": 15, "color": 3})
+        return entity_to_desc(t)
+
+    def test_desc_rebuilds_entity_and_backfills_layer_style(self) -> None:
+        from cadbatchassistant.core.fill_dwg import fill_one
+
+        desc = self._template_desc()
+        spec = {"GT_1": {"图号": {**_fspec(10.0, 20.0), "entity": desc}}}
+        out = self.tmp / "out.dxf"
+        # 目标文档无 GT_1 图层/BigFont 样式：应补齐且不抛 TypeError
+        fill_one(str(self.before), str(out), spec, {"图号": "D-001"})
+
+        doc = ezdxf.readfile(str(out))
+        texts = [e for e in doc.modelspace() if e.dxftype() == "TEXT"]
+        self.assertEqual(len(texts), 1)
+        e = texts[0]
+        # 文本写入 + 模板格式保留
+        self.assertEqual(e.dxf.text, "D-001")
+        self.assertEqual(e.dxf.layer, "GT_1")
+        self.assertEqual(e.dxf.style, "BigFont")
+        self.assertEqual(e.dxf.rotation, 15)
+        self.assertEqual(e.dxf.color, 3)
+        # 图层/样式补齐（P1：font 经关键字参数，样式定义完整）
+        self.assertIn("GT_1", doc.layers)
+        self.assertEqual(doc.layers.get("GT_1").dxf.color, 1)
+        self.assertIn("BigFont", doc.styles)
+        self.assertEqual(doc.styles.get("BigFont").dxf.font, "simhei.ttf")
+
+    def test_desc_is_picklable_and_small(self) -> None:
+        """描述可 pickle 且体积小（不含整份模板文档对象图）。"""
+        import pickle
+
+        desc = self._template_desc()
+        blob = pickle.dumps(desc)
+        self.assertLess(len(blob), 4096)  # 之前序列化整份文档约 25KB+
+        desc2 = pickle.loads(blob)
+        self.assertEqual(desc2["dxftype"], "TEXT")
+        self.assertEqual(desc2["attribs"]["layer"], "GT_1")
+        self.assertEqual(desc2["style_attribs"]["font"], "simhei.ttf")
+
+    def test_mtext_desc_rebuilds_mtext(self) -> None:
+        from cadbatchassistant.core.fill_dwg import entity_to_desc, fill_one
+
+        doc = ezdxf.new("R2013")
+        mt = doc.modelspace().add_mtext(
+            "[图号]", dxfattribs={"layer": "0", "insert": (1, 2),
+                                  "char_height": 3.0})
+        desc = entity_to_desc(mt)
+        spec = {"0": {"图号": {**_fspec(1.0, 2.0), "entity": desc}}}
+        out = self.tmp / "out_mt.dxf"
+        fill_one(str(self.before), str(out), spec, {"图号": "D-002"})
+
+        doc2 = ezdxf.readfile(str(out))
+        mts = [e for e in doc2.modelspace() if e.dxftype() == "MTEXT"]
+        self.assertEqual(len(mts), 1)
+        self.assertEqual(mts[0].plain_text(), "D-002")
+        self.assertEqual(mts[0].dxf.char_height, 3.0)
+
+
+class FillAllProgressMonotonicTest(unittest.TestCase):
+    """S2：progress 回调按提交序单调推进，且包含被跳过（skipped）/失败的图纸。
+
+    并行完成序与提交序不同，直接按完成序回调会让进度条来回跳动；且
+    skipped 的图纸不再触发回调导致进度"卡住"。修复后每张图（含 skipped）
+    都恰好回调一次，index 严格递增。
+    """
+
+    def setUp(self) -> None:
+        import openpyxl
+
+        self.tmp = Path(tempfile.mkdtemp(prefix="fill_progress_"))
+        self.before_dir = self.tmp / "before"
+        self.out_dir = self.tmp / "filled"
+        self.before_dir.mkdir()
+        self.out_dir.mkdir()
+        # A1/C1 有 before DXF；B1 不在数据表 → skipped
+        for name in ("A1", "C1"):
+            doc = ezdxf.new("R2013")
+            doc.saveas(self.before_dir / f"{name}.dxf")
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(["图纸", "图号"])
+        ws.append(["A1", "D-001"])
+        ws.append(["C1", "D-003"])
+        self.xlsx = self.tmp / "data.xlsx"
+        wb.save(self.xlsx)
+        wb.close()
+
+    def tearDown(self) -> None:
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _specs(self, *names: str) -> dict:
+        return {n: {"0": {"图号": _fspec(10.0, 20.0)}} for n in names}
+
+    def test_progress_monotonic_including_skipped(self) -> None:
+        from cadbatchassistant.core.fill_dwg import fill_all
+
+        calls: list[tuple[int, int]] = []
+        failed, skipped = fill_all(
+            str(self.before_dir), str(self.out_dir), str(self.xlsx),
+            self._specs("A1", "B1", "C1"), emit=lambda m: None,
+            progress=lambda i, t: calls.append((i, t)))
+        self.assertEqual(failed, [])
+        self.assertEqual(skipped, ["B1"])
+        # 3 张全部计入，index 单调：1,2,3（B1 在位置 2，不被漏掉）
+        self.assertEqual(calls, [(1, 3), (2, 3), (3, 3)])
+
+    def test_progress_monotonic_with_failure(self) -> None:
+        from cadbatchassistant.core.fill_dwg import fill_all
+
+        # A1 的 before DXF 损坏 → 处理失败；B1 skipped；C1 成功
+        (self.before_dir / "A1.dxf").write_text("损坏", encoding="utf-8")
+        calls: list[tuple[int, int]] = []
+        failed, skipped = fill_all(
+            str(self.before_dir), str(self.out_dir), str(self.xlsx),
+            self._specs("A1", "B1", "C1"), emit=lambda m: None,
+            progress=lambda i, t: calls.append((i, t)))
+        self.assertEqual(failed, ["A1"])
+        self.assertEqual(skipped, ["B1"])
+        self.assertEqual(calls, [(1, 3), (2, 3), (3, 3)])
+
+
 if __name__ == "__main__":
     unittest.main()

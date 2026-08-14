@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """gui_text.CadTextApp._start 的异常复位测试（H5）。
 
 复制输入文件失败（如 DWG 被 AutoCAD 占用）时，面板必须复位运行态
@@ -38,9 +37,9 @@ class TextStartCopyFailureTest(unittest.TestCase):
         self.app.msg_queue = mock.Mock()
 
     def _patch_work_chain(self):
-        # _rules / begin_run / 复制 / _start_worker 均 mock
+        # _rules / 复制 / _start_worker 均 mock（begin_run 由 RunStartMixin._start
+        # 调用，位于 gui_shared；本测试断言其不执行——复制失败不进入运行态）
         chain = [
-            mock.patch.object(gt, "begin_run"),
             mock.patch.object(gt.tempfile, "mkdtemp", return_value=r"D:\tmp\work_in"),
             mock.patch.object(gt.shutil, "copy2", side_effect=PermissionError("占用")),
             mock.patch.object(gt.shutil, "rmtree"),
@@ -52,14 +51,19 @@ class TextStartCopyFailureTest(unittest.TestCase):
         self.addCleanup(lambda: [p.stop() for p in chain])
 
     def test_copy_failure_resets_running_state(self) -> None:
-        """复制失败：running 复位 False、btn_start 恢复、worker 不启动。"""
+        """复制失败：面板不进入运行态（running=False、worker 不启动、临时目录清理）。
+
+        复制输入文件在 begin_run 之前完成（_prepare_run 阶段），失败即不启动，
+        按钮无需复位（从未被禁用），不存在卡死运行态的可能。
+        """
         self._patch_work_chain()
         with mock.patch.object(gt.messagebox, "showwarning"):
             self.app._start()
         self.assertFalse(self.app.running)
-        self.app.btn_start.config.assert_called_with(state="normal")
-        self.app.btn_stop.config.assert_called_with(state="disabled")
+        self.app.btn_start.config.assert_not_called()  # 从未禁用，无需恢复
+        self.app.btn_stop.config.assert_not_called()
         self.app._start_worker.assert_not_called()
+        # 未进入运行态：begin_run（gui_shared）不被调用——由按钮从未禁用隐含
         # 临时目录被清理
         gt.shutil.rmtree.assert_called_once_with(r"D:\tmp\work_in", ignore_errors=True)
 

@@ -16,6 +16,7 @@ selftest_log.txt，用于定位打包环境下偶发的解析问题。
 from __future__ import annotations
 
 import argparse
+import multiprocessing
 import os
 import shutil
 import sys
@@ -182,7 +183,9 @@ def _auto_check_update(root: tk.Tk) -> None:
 def _prompt_update(root: tk.Tk, latest: dict, mirror: str) -> None:
     """主线程弹窗：有新版本时三选（立即更新 / 忽略此版本 / 取消）。"""
     from cadbatchassistant.gui.updater_dialog import (
-        ask_update_choice, start_update_download)
+        ask_update_choice,
+        start_update_download,
+    )
 
     choice = ask_update_choice(root, latest["tag"])
     if choice == "update":
@@ -192,4 +195,8 @@ def _prompt_update(root: tk.Tk, latest: dict, mirror: str) -> None:
 
 
 if __name__ == "__main__":
+    # PyInstaller 打包后，multiprocessing 子进程以 --multiprocessing-fork
+    # 参数重启 exe；必须调用 freeze_support() 才能正常启动并行 worker
+    # （否则子进程会重复进入主流程导致并行处理失效/异常）。
+    multiprocessing.freeze_support()
     raise SystemExit(main())

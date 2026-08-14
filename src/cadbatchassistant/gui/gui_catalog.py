@@ -28,21 +28,24 @@ from cadbatchassistant.common import (
 from cadbatchassistant.core.catalog_excel_writer import detect_sheet_candidates
 from cadbatchassistant.core.catalog_pipeline import (
     PipelineResult,
-    parse_template_fields,
+    parse_template_anchors,
     run_pipeline,
 )
+from cadbatchassistant.core.catalog_template_reader import collect_fields
 from cadbatchassistant.gui.gui_shared import (
     FilesPanelMixin,
     PanelLayoutMixin,
+    RunStartMixin,
     TemplateLibraryMixin,
-    begin_run,
+    finish_popup,
     load_panel_config,
     save_panel_config,
+    warn_require,
 )
 
 
 class CatalogPanel(FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin,
-                   AsyncPanel):
+                   RunStartMixin, AsyncPanel):
     """目录生成面板（模板标记取值）；文件列表/模板库复用共享组件。"""
 
     TEMPLATE_CATEGORY = "catalog"
@@ -117,39 +120,42 @@ class CatalogPanel(FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin,
             self.var_out.set(last_out)
 
     # ---------------- 运行 ----------------
-    def _start(self) -> None:
-        if self.running:
-            return
+    def _prepare_run(self) -> tuple | None:
+        """校验输入 + 预检（模板解析/sheet 定位）并收集 worker 参数。
+
+        表格模板 sheet 预检在主线程完成：解析模板锚点（字段名 + 取值区域）
+        并反推 sheet，无匹配提前弹错；多个 sheet 并列最高时让用户选择。
+        锚点随后传入 pipeline 复用，省一次模板 DXF 转换。
+        返回 (template, xlsx, files, out, oda, version, rules, sheet_name,
+        anchors)；校验/预检失败返回 None（已弹窗）。
+        """
         tpl_name = self.var_template.get().strip()
         template = str(templates_dir("catalog") / tpl_name) if tpl_name else ""
         xlsx = self.var_xlsx.get().strip()
         files = list(self.scanned_files)
         out = self.var_out.get().strip()
 
-        if not tpl_name or not os.path.isfile(template):
-            messagebox.showwarning("提示", "请从图纸模板下拉框选择模板（可先「上传」）")
-            return
-        if not xlsx or not os.path.isfile(xlsx):
-            messagebox.showwarning("提示", "请选择有效的表格模板")
-            return
-        if not files:
-            messagebox.showwarning("提示", "请选择要处理的 DWG/DXF 文件")
-            return
+        if not warn_require(bool(tpl_name) and os.path.isfile(template),
+                            "请从图纸模板下拉框选择模板（可先「上传」）"):
+            return None
+        if not warn_require(bool(xlsx) and os.path.isfile(xlsx),
+                            "请选择有效的表格模板"):
+            return None
+        if not warn_require(bool(files), "请选择要处理的 DWG/DXF 文件"):
+            return None
         if not out:
             self._default_output()
             out = self.var_out.get().strip()
-        if not out:
-            messagebox.showwarning("提示", "请设置输出目录")
-            return
+        if not warn_require(bool(out), "请设置输出目录"):
+            return None
 
-        # 表格模板 sheet 预检（主线程）：解析模板字段名并反推 sheet，
-        # 无匹配提前弹错；多个 sheet 并列最高时让用户选择。
         oda = get_oda()
         try:
-            fields = parse_template_fields(template, oda)
+            anchors = parse_template_anchors(template, oda)
         except Exception as ex:  # noqa: BLE001 - 模板解析失败提前提示
             messagebox.showerror("图纸目录助手", f"模板解析失败：{ex}")
-            return
+            return None
+        fields = collect_fields(anchors)
         sheet_name: str | None = None
         try:
             wb = load_workbook(xlsx)
@@ -157,25 +163,26 @@ class CatalogPanel(FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin,
             wb.close()
         except Exception as ex:  # noqa: BLE001 - 表格模板读取失败提前提示
             messagebox.showerror("图纸目录助手", f"读取表格模板失败：{ex}")
-            return
+            return None
         if not cands:
             messagebox.showerror(
                 "图纸目录助手",
                 "表格模板中未找到与字段匹配的表头（sheet 与表头行）（字段："
                 + "、".join(fields)
                 + "）。表头列名应包含与图纸模板 [字段名] 占位符一致的字段名。")
-            return
+            return None
         tied = [c for c in cands if c[0] == cands[0][0]]
         if len(tied) > 1:
             sheet_name = self._ask_sheet(tied, fields)
             if sheet_name is None:
-                return
-        begin_run(self)
+                return None
+        return (template, xlsx, files, out, oda, get_out_version(),
+                load_catalog_rules(), sheet_name, anchors)
+
+    def _after_begin_run(self, args: tuple) -> None:
+        """begin_run 之后输出 sheet 定位日志（worker 参数 args[7] 为 sheet 名）。"""
+        sheet_name = args[7]
         self._emit(f"表格模板 sheet：{sheet_name or '自动定位'}")
-        self._start_worker((
-            template, xlsx, files, out,
-            oda, get_out_version(), load_catalog_rules(), sheet_name,
-        ))
 
     def _ask_sheet(self, candidates, fields: list[str]) -> str | None:
         """多个 sheet 并列最高时弹窗选择，返回所选 sheet 名；取消/关闭返回 None。"""
@@ -219,12 +226,13 @@ class CatalogPanel(FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin,
         return pick["name"]
 
     def _work(self, template, xlsx, files, out, oda, version, rules,
-              sheet_name) -> bool:
+              sheet_name, anchors=None) -> bool:
         res = run_pipeline(
             template, xlsx, files, out, oda, version, rules,
             sheet_name=sheet_name,
             log=self._emit, progress=lambda p: self._emit(None, int(p)),
             is_cancelled=self._is_cancelled,
+            template_anchors=anchors,
         )
         self._last_result = res
         if res.error:
@@ -232,9 +240,14 @@ class CatalogPanel(FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin,
         return res.ok
 
     def _on_finish(self, success: bool) -> None:
-        super()._on_finish(success)
+        # 只恢复按钮状态（跳过 PanelLayoutMixin 默认的 finish_popup 弹窗，
+        # 本面板用自己的统计弹窗，避免处理完弹两次提示）。
+        # 弹窗标题与改字/填表助手统一为「完成」（成功 showinfo / 失败
+        # showwarning），正文保留目录统计信息。
+        AsyncPanel._on_finish(self, success)
         res = self._last_result
         if res is None:
+            finish_popup(success)
             return
         if success and res.out_path:
             msg = (f"目录生成完成：{res.out_path}\n\n"
@@ -244,6 +257,6 @@ class CatalogPanel(FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin,
                    f"字段：{' / '.join(res.fields)}\n")
             if res.failed_files:
                 msg += f"\n转换失败：{len(res.failed_files)} 个\n" + "\n".join(res.failed_files[:10])
-            messagebox.showinfo("图纸目录助手", msg)
+            messagebox.showinfo("完成", msg)
         elif not success:
-            messagebox.showerror("图纸目录助手", f"处理失败：\n{res.error or '未知错误'}")
+            messagebox.showwarning("完成", f"处理失败：\n{res.error or '未知错误'}")

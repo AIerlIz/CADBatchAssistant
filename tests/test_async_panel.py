@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """AsyncPanel 任务代次机制测试（H4：停止后重启竞态防护）。
 
 不实例化真实 tkinter：mock 掉 apply_vista_theme / ttk.Style / Tk 交互，
@@ -9,7 +8,6 @@
 
 from __future__ import annotations
 
-import queue
 import unittest
 from unittest import mock
 

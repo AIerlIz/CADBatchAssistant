@@ -22,13 +22,14 @@ from cadbatchassistant.core.fill_pipeline import run_pipeline_files
 from cadbatchassistant.gui.gui_shared import (
     FilesPanelMixin,
     PanelLayoutMixin,
+    RunStartMixin,
     TemplateLibraryMixin,
-    begin_run,
+    warn_require,
 )
 
 
 class IsoFillApp(FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin,
-                 AsyncPanel):
+                 RunStartMixin, AsyncPanel):
     """「填表助手」面板：文件列表/模板库/拖放/输出目录复用共享组件。"""
 
     TEMPLATE_CATEGORY = "fill"
@@ -152,9 +153,8 @@ class IsoFillApp(FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin,
             self.var_match_col.set("")
 
     # ---------------- 运行 ----------------
-    def _start(self) -> None:
-        if self.running:
-            return
+    def _prepare_run(self) -> tuple | None:
+        """校验输入并收集 worker 参数；校验失败弹窗提示并返回 None。"""
         xlsx = self.var_xlsx.get().strip()
         tpl_name = self.var_template.get().strip()
         template = str(templates_dir("fill") / tpl_name) if tpl_name else ""
@@ -165,28 +165,25 @@ class IsoFillApp(FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin,
         oda = get_oda()
         out_version = get_out_version()
 
-        if not xlsx or not os.path.isfile(xlsx):
-            messagebox.showwarning("提示", "请选择有效的数据表格文件")
-            return
-        if not tpl_name or not os.path.isfile(template):
-            messagebox.showwarning("提示", "请从图纸模板下拉框选择模板（可先「上传」）")
-            return
-        if not files:
-            messagebox.showwarning("提示", "请选择要处理的 DWG/DXF 文件")
-            return
-        if not out:
-            messagebox.showwarning("提示", "请设置输出目录")
-            return
+        if not warn_require(bool(xlsx) and os.path.isfile(xlsx),
+                            "请选择有效的数据表格文件"):
+            return None
+        if not warn_require(bool(tpl_name) and os.path.isfile(template),
+                            "请从图纸模板下拉框选择模板（可先「上传」）"):
+            return None
+        if not warn_require(bool(files), "请选择要处理的 DWG/DXF 文件"):
+            return None
+        if not warn_require(bool(out), "请设置输出目录"):
+            return None
         has_dwg = (any(f.lower().endswith(".dwg") for f in files)
                    or template.lower().endswith(".dwg"))
         err = require_oda_for_dwg(has_dwg, oda)
         if err:
             messagebox.showerror("缺少 ODA File Converter", err)
-            return
+            return None
 
-        begin_run(self)
-        self._start_worker((xlsx, template, files, out, oda,
-                            out_version, self._cancel_event, match_col, sheet))
+        return (xlsx, template, files, out, oda,
+                out_version, self._cancel_event, match_col, sheet)
 
     def _work(self, xlsx: str, template: str, files: list[str], out: str,
               oda: str, version: str, cancel, match_col: str | None,

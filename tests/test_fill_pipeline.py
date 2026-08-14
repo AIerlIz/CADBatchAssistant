@@ -233,5 +233,115 @@ class FillPipelineWriteBackSkipTest(unittest.TestCase):
         self.assertEqual(summary["ok"], 1)
 
 
+class FillPipelineMetaPriorityTest(unittest.TestCase):
+    """模板库只存 meta JSON（原文件不存在）时，run_pipeline 直接读 meta 运行。
+
+    回归：meta 优先分支不得再要求模板文件存在，也不得调用 template_to_dxf。
+    """
+
+    def setUp(self) -> None:
+        import ezdxf
+        import openpyxl
+
+        from cadbatchassistant.core.template_meta import save_template_meta
+
+        self.tmp = Path(tempfile.mkdtemp(prefix="fill_pipe_meta_"))
+        self.before_dir = self.tmp / "input"
+        self.out_dir = self.tmp / "output"
+        self.before_dir.mkdir()
+        self.out_dir.mkdir()
+        for name in ("A1",):
+            doc = ezdxf.new("R2013")
+            doc.saveas(self.before_dir / f"{name}.dxf")
+        # 模板虚拟路径：文件不存在（模板库只存占位符 JSON）
+        self.template = self.tmp / "templates" / "fill" / "tpl.dxf"
+        self.template.parent.mkdir(parents=True)
+        save_template_meta(
+            self.template,
+            {
+                "placeholders": [
+                    {
+                        "text": "图号", "layer": "0",
+                        "x": 10.0, "y": 20.0, "height": 3.0, "style": "",
+                        "halign": 0, "valign": 0, "ref_text": "",
+                        "entity_desc": {
+                            "dxftype": "TEXT",
+                            "attribs": {
+                                "layer": "0",
+                                "insert": (10.0, 20.0, 0.0),
+                                "height": 3.0,
+                                "style": "",
+                                "halign": 0,
+                                "valign": 0,
+                            },
+                            "layer_attribs": None,
+                            "style_attribs": None,
+                        },
+                    }
+                ]
+            },
+        )
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(["图纸", "图号"])
+        ws.append(["A1", "D-001"])
+        self.xlsx = self.tmp / "data.xlsx"
+        wb.save(self.xlsx)
+        wb.close()
+
+    def tearDown(self) -> None:
+        import shutil
+
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_run_with_meta_and_no_template_file(self) -> None:
+        """meta 存在 + 模板文件不存在：正常运行，不调用 template_to_dxf。"""
+        from unittest import mock
+
+        from cadbatchassistant.core import dwg_converter as dc
+        from cadbatchassistant.core import fill_pipeline
+
+        self.assertFalse(self.template.is_file())  # 模板库只有 meta JSON
+        conv = mock.Mock()
+        conv.resolve.return_value = ""
+        with (
+            mock.patch.object(dc, "get_converter", return_value=conv),
+            mock.patch.object(dc, "require_oda_for_dwg", return_value=None),
+        ):
+            summary = fill_pipeline.run_pipeline(
+                str(self.xlsx),
+                str(self.before_dir),
+                str(self.out_dir),
+                template=str(self.template),
+            )
+        self.assertTrue((self.out_dir / "A1.dxf").is_file())
+        self.assertEqual(summary["ok"], 1)
+        conv.template_to_dxf.assert_not_called()
+
+    def test_run_meta_empty_placeholders_raises(self) -> None:
+        """meta 的 placeholders 为空（手改 JSON）→ 报配置损坏，而非静默输出原图。"""
+        from unittest import mock
+
+        from cadbatchassistant.core import dwg_converter as dc
+        from cadbatchassistant.core import fill_pipeline
+        from cadbatchassistant.core.template_meta import save_template_meta
+
+        save_template_meta(self.template, {"placeholders": []})
+        conv = mock.Mock()
+        conv.resolve.return_value = ""
+        with (
+            mock.patch.object(dc, "get_converter", return_value=conv),
+            mock.patch.object(dc, "require_oda_for_dwg", return_value=None),
+            self.assertRaises(ValueError) as ctx,
+        ):
+            fill_pipeline.run_pipeline(
+                str(self.xlsx),
+                str(self.before_dir),
+                str(self.out_dir),
+                template=str(self.template),
+            )
+        self.assertIn("占位配置损坏或为空", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

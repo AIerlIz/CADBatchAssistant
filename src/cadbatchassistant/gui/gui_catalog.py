@@ -132,19 +132,19 @@ class CatalogPanel(
             self.var_out.set(last_out)
 
     # ---------------- 模板库钩子 ----------------
-    def _after_upload(self, name: str) -> None:
-        """上传后提取占位符并写入伴生 meta；解析失败抛异常由基类回滚。
+    def _after_upload(self, name: str, src: str) -> None:
+        """上传后从源文件提取占位符并写入模板库 meta；解析失败抛异常由基类回滚。
 
         解析依赖 ODA（模板为 DWG 时先转 DXF）；模板无 [字段名] 占位符时
-        parse_template_anchors 抛 ValueError → 一并拒绝上传。
+        parse_template_anchors 抛 ValueError → 一并拒绝上传。原文件不入库，
+        模板库只保留解析出的占位符 JSON。
         """
-        template = template_path(self.TEMPLATE_CATEGORY, name)
-        anchors = parse_template_anchors(template, get_oda())
+        anchors = parse_template_anchors(src, get_oda())
         payload = {
             "fields": collect_fields(anchors),
             "anchors": [anchor_to_dict(a) for a in anchors],
         }
-        save_template_meta(template, payload)
+        save_template_meta(template_path(self.TEMPLATE_CATEGORY, name), payload)
 
     def _after_delete(self, name: str) -> None:
         """删除模板时同步删除伴生 meta（不存在时静默）。"""
@@ -167,7 +167,7 @@ class CatalogPanel(
         out = self.var_out.get().strip()
 
         if not warn_require(
-            bool(tpl_name) and os.path.isfile(template),
+            bool(tpl_name),
             "请从图纸模板下拉框选择模板（可先「上传」）",
         ):
             return None

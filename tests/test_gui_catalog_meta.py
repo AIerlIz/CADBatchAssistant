@@ -54,16 +54,16 @@ def _seed_template(tmp_path, name="tpl.dwg"):
 
 
 def test_upload_generates_meta(monkeypatch, tmp_path):
-    """上传成功 → 提取占位符并写入伴生 meta，模板被选中。"""
+    """上传成功 → 从源文件提取占位符并写入模板库 meta，模板被选中。"""
     root = _make_root()
     try:
         panel, gc, gs = _make_panel(root, monkeypatch, tmp_path)
-        _seed_template(tmp_path)
         anchors = [Anchor(field="图号", is_area=False, min_x=1.0, min_y=2.0,
                           max_x=3.0, max_y=4.0, point_x=2.0, point_y=3.0)]
         with (
             mock.patch.object(
-                gs, "upload_template_file", return_value="tpl.dwg"
+                gs, "upload_template_file",
+                return_value=("tpl.dwg", "ignored.dwg"),
             ),
             mock.patch.object(
                 gc, "parse_template_anchors", return_value=anchors
@@ -71,8 +71,11 @@ def test_upload_generates_meta(monkeypatch, tmp_path):
         ):
             panel._upload_template("ignored.dwg")
             assert parse_mock.call_count == 1
-        tpl = tmp_path / "templates" / "catalog" / "tpl.dwg"
-        load_meta = json.loads(meta_path_for(tpl).read_text(encoding="utf-8"))
+            assert parse_mock.call_args[0][0] == "ignored.dwg"  # 从源文件解析
+        meta_p = tmp_path / "templates" / "catalog" / "tpl.dwg.json"
+        assert meta_p.is_file()  # 只存 meta，不复制原文件
+        assert not (tmp_path / "templates" / "catalog" / "tpl.dwg").exists()
+        load_meta = json.loads(meta_p.read_text(encoding="utf-8"))
         assert load_meta["fields"] == ["图号"]
         assert load_meta["anchors"][0]["field"] == "图号"
         assert panel.var_template.get() == "tpl.dwg"
@@ -81,7 +84,7 @@ def test_upload_generates_meta(monkeypatch, tmp_path):
 
 
 def test_upload_parse_failure_rolls_back(monkeypatch, tmp_path):
-    """解析失败（如无占位符）→ 回滚删除已入库模板与 meta，弹错、不选中。"""
+    """解析失败（如无占位符）→ 回滚删除已入库 meta，弹错、不选中。"""
     root = _make_root()
     try:
         panel, gc, gs = _make_panel(root, monkeypatch, tmp_path)
@@ -90,7 +93,8 @@ def test_upload_parse_failure_rolls_back(monkeypatch, tmp_path):
         meta_p.write_text("{}", encoding="utf-8")  # 模拟钩子已写入 meta
         with (
             mock.patch.object(
-                gs, "upload_template_file", return_value="tpl.dwg"
+                gs, "upload_template_file",
+                return_value=("tpl.dwg", "ignored.dwg"),
             ),
             mock.patch.object(
                 gc, "parse_template_anchors",
@@ -99,8 +103,8 @@ def test_upload_parse_failure_rolls_back(monkeypatch, tmp_path):
             mock.patch.object(gs.messagebox, "showerror") as err,
         ):
             panel._upload_template("ignored.dwg")
-        assert not tpl.exists()  # 回滚：模板文件已删除
-        assert not meta_p.exists()  # meta 同步删除
+        assert not meta_p.exists()  # 回滚：meta 已删除
+        assert tpl.exists()  # 遗留原文件不受影响（回滚只清理 meta）
         err.assert_called_once()
         assert panel.var_template.get() != "tpl.dwg"
     finally:
@@ -126,11 +130,14 @@ def test_delete_removes_meta(monkeypatch, tmp_path):
 
 
 def test_prepare_run_reads_meta_without_parsing(monkeypatch, tmp_path):
-    """预检：meta 有效时直接使用其锚点/字段，不再现场解析模板。"""
+    """预检：meta 有效时直接使用其锚点/字段，不再现场解析模板。
+
+    模板库只存 meta JSON（无原文件）即可通过预检。
+    """
     root = _make_root()
     try:
         panel, gc, _ = _make_panel(root, monkeypatch, tmp_path)
-        tpl = _seed_template(tmp_path)
+        tpl = tmp_path / "templates" / "catalog" / "tpl.dwg"
         save_template_meta(tpl, {
             "fields": ["图号"],
             "anchors": [{

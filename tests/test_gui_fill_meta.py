@@ -15,6 +15,7 @@ import ezdxf
 import pytest
 
 from cadbatchassistant.core.template_meta import meta_path_for, save_template_meta
+from cadbatchassistant.core.templates import template_path
 
 
 def _make_root():
@@ -56,22 +57,31 @@ def _seed_template(tmp_path, name="tpl.dxf", with_placeholder=True):
 
 
 def test_upload_generates_meta(monkeypatch, tmp_path):
-    """上传成功 → 扫描全部占位符写入伴生 meta，模板被选中。"""
+    """上传成功 → 从源文件扫描全部占位符写入模板库 meta，模板被选中。"""
     root = _make_root()
     try:
         panel, gf, gs = _make_panel(root, monkeypatch, tmp_path)
-        tpl = _seed_template(tmp_path)
+        src = tmp_path / "src.dxf"  # 源文件在模板库之外
+        doc = ezdxf.new("R2004")
+        doc.modelspace().add_text(
+            "[图号]", dxfattribs={"insert": (10, 10), "height": 3.0}
+        )
+        doc.saveas(src)
         conv = mock.Mock()
         conv.resolve.return_value = ""
-        conv.template_to_dxf.return_value = str(tpl)  # DXF 模板直接扫描
+        conv.template_to_dxf.return_value = str(src)  # DXF 模板直接扫描
         with (
             mock.patch.object(
-                gs, "upload_template_file", return_value="tpl.dxf"
+                gs, "upload_template_file",
+                return_value=("tpl.dxf", str(src)),
             ),
             mock.patch.object(gf.dc, "get_converter", return_value=conv),
         ):
             panel._upload_template("ignored.dxf")
-        meta = json.loads(meta_path_for(tpl).read_text(encoding="utf-8"))
+        meta_p = tmp_path / "templates" / "fill" / "tpl.dxf.json"
+        assert meta_p.is_file()  # 只存 meta，不复制原文件
+        assert not (tmp_path / "templates" / "fill" / "tpl.dxf").exists()
+        meta = json.loads(meta_p.read_text(encoding="utf-8"))
         assert meta["placeholders"][0]["text"] == "图号"
         assert meta["placeholders"][0]["entity_desc"]["dxftype"] == "TEXT"
         assert panel.var_template.get() == "tpl.dxf"
@@ -80,7 +90,7 @@ def test_upload_generates_meta(monkeypatch, tmp_path):
 
 
 def test_upload_no_placeholder_rejected(monkeypatch, tmp_path):
-    """模板无 [列名] 占位符 → 拒绝上传（回滚删除 + 弹错 + 不选中）。"""
+    """模板无 [列名] 占位符 → 拒绝上传（回滚删除 meta + 弹错 + 不选中）。"""
     root = _make_root()
     try:
         panel, gf, gs = _make_panel(root, monkeypatch, tmp_path)
@@ -90,16 +100,87 @@ def test_upload_no_placeholder_rejected(monkeypatch, tmp_path):
         conv.template_to_dxf.return_value = str(tpl)
         with (
             mock.patch.object(
-                gs, "upload_template_file", return_value="tpl.dxf"
+                gs, "upload_template_file",
+                return_value=("tpl.dxf", "ignored.dxf"),
             ),
             mock.patch.object(gf.dc, "get_converter", return_value=conv),
             mock.patch.object(gs.messagebox, "showerror") as err,
         ):
             panel._upload_template("ignored.dxf")
-        assert not tpl.exists()  # 回滚：模板文件已删除
-        assert not meta_path_for(tpl).exists()
+        assert not meta_path_for(tpl).exists()  # 回滚：未留下 meta
+        assert tpl.exists()  # 遗留原文件不受影响
         err.assert_called_once()
         assert panel.var_template.get() != "tpl.dxf"
+    finally:
+        root.destroy()
+
+
+def test_prepare_run_accepts_meta_without_template_file(monkeypatch, tmp_path):
+    """模板库只存 meta（无原文件）时，选中模板即可通过预检开始处理。
+
+    回归：上一轮改为「上传只存占位符 JSON」后，_prepare_run 仍用
+    os.path.isfile 检查库内原文件 → 恒失败误报「请从图纸模板下拉框选择模板」。
+    """
+    root = _make_root()
+    try:
+        panel, gf, gs = _make_panel(root, monkeypatch, tmp_path)
+        src = tmp_path / "src.dxf"  # 库外源文件（模拟已上传）
+        doc = ezdxf.new("R2004")
+        doc.modelspace().add_text(
+            "[图号]", dxfattribs={"insert": (10, 10), "height": 3.0}
+        )
+        doc.saveas(src)
+        save_template_meta(
+            template_path("fill", "tpl.dxf"),
+            {"placeholders": [{"text": "图号"}]},
+        )
+        assert not (tmp_path / "templates" / "fill" / "tpl.dxf").exists()  # 无原文件
+        xlsx = tmp_path / "tpl.xlsx"
+        xlsx.write_text("x", encoding="utf-8")
+        panel.var_template.set("tpl.dxf")
+        panel.var_xlsx.set(str(xlsx))
+        panel.var_sheet.set("")
+        panel.var_match_col.set("")
+        panel.scanned_files = [str(tmp_path / "a.dxf")]
+        panel.var_out.set(str(tmp_path / "out"))
+        with (
+            mock.patch.object(gf, "get_oda", return_value=""),
+            mock.patch.object(gf, "get_out_version", return_value="ACAD2013"),
+        ):
+            args = panel._prepare_run()
+        assert args is not None  # 预检通过，不再误报「请选择模板」
+        assert args[1].endswith("tpl.dxf")  # 模板虚拟路径传入 pipeline
+    finally:
+        root.destroy()
+
+
+def test_prepare_run_bad_placeholder_structure_rejected(monkeypatch, tmp_path):
+    """手改 meta：占位符缺键 → 预检报「配置损坏」并返回 None（不进入后台）。"""
+    root = _make_root()
+    try:
+        panel, gf, gs = _make_panel(root, monkeypatch, tmp_path)
+        src = tmp_path / "src.dxf"
+        doc = ezdxf.new("R2004")
+        doc.modelspace().add_text(
+            "[图号]", dxfattribs={"insert": (10, 10), "height": 3.0}
+        )
+        doc.saveas(src)
+        save_template_meta(
+            template_path("fill", "tpl.dxf"),
+            {"placeholders": [{"text": "图号"}]},  # 缺 layer/x/y 等键
+        )
+        xlsx = tmp_path / "tpl.xlsx"
+        xlsx.write_text("x", encoding="utf-8")
+        panel.var_template.set("tpl.dxf")
+        panel.var_xlsx.set(str(xlsx))
+        panel.var_sheet.set("")
+        panel.var_match_col.set("")
+        panel.scanned_files = [str(tmp_path / "a.dxf")]
+        panel.var_out.set(str(tmp_path / "out"))
+        with mock.patch.object(gs.messagebox, "showerror") as err:
+            assert panel._prepare_run() is None
+        err.assert_called_once()
+        assert "配置损坏" in err.call_args[0][1]
     finally:
         root.destroy()
 

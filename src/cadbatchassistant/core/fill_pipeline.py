@@ -166,8 +166,6 @@ def run_pipeline(
         specs_path = os.path.join(tmp, "specs.json")
         _check_cancel(cancel)
         emit("[2/4] 读取模板占位配置 ...")
-        if not template or not os.path.isfile(str(template)):
-            raise ValueError("缺少图纸模板文件（值格填 [字段名] 占位的 .dwg/.dxf）")
         from cadbatchassistant.core.fill_learn_spec import (
             scan_all_placeholders,
             value_rule_for,
@@ -175,12 +173,16 @@ def run_pipeline(
         from cadbatchassistant.core.fill_parse_xlsx import get_headers
         from cadbatchassistant.core.template_meta import load_template_meta
 
+        # 伴生 meta 优先（GUI 上传只存占位符 JSON，模板库无原文件）；
+        # meta 缺失时（CLI / 命令行直接传模板路径）才要求模板文件存在并现场解析
         meta = load_template_meta(template)
         if meta is not None:
             placeholders = meta.get("placeholders")
-            if not isinstance(placeholders, list):
-                raise ValueError("模板占位配置损坏，请删除模板后重新上传")
+            if not isinstance(placeholders, list) or not placeholders:
+                raise ValueError("模板占位配置损坏或为空，请删除模板后重新上传")
         else:
+            if not template or not os.path.isfile(str(template)):
+                raise ValueError("缺少图纸模板文件（值格填 [字段名] 占位的 .dwg/.dxf）")
             # CLI / 命令行等直接传模板路径：现场转换并扫描（历史行为兜底）
             t_dxf = dc.get_converter().template_to_dxf(
                 template, tmp, oda_exe, out_version

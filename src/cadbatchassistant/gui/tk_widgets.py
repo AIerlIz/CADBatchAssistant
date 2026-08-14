@@ -16,7 +16,6 @@ from typing import Literal
 from cadbatchassistant.core.dwg_converter import find_oda_converter
 from cadbatchassistant.core.templates import (
     CAD_SUFFIXES,
-    copy_template,
     remove_template,
     templates_dir,
 )
@@ -32,11 +31,16 @@ def check_oda(
     var_oda  : 路径输入框的 StringVar
     var_info : 状态提示的 StringVar
     hint     : 未检测到时的提示文案（两面板文案不同）
-    探测到但输入框已有值（用户手动指定/已保存配置）时不覆盖，仅刷新提示。
+    软件启动（设置页构建）与点击「检测」时自动执行：
+    - 未配置（空）或配置路径已失效 → 自动填入探测结果并自动保存
+    - 已配置且有效 → 保留用户路径，仅刷新状态提示
+    - 探测不到 → 保留当前值，仅显示未检测提示
     """
     found = find_oda_converter()
+    # 用户粘贴的路径可能带引号（Windows 常见），先去引号再判断有效性
+    current = var_oda.get().strip().strip('"\'')
     if found:
-        if not var_oda.get().strip():
+        if not current or not os.path.isfile(current):
             var_oda.set(str(found))
         var_info.set("✓ 已检测到")
     else:
@@ -85,12 +89,13 @@ def build_oda_row(
 
 
 def upload_template_file(
-    category: str, src: str | None = None, title: str = "上传图纸模板（复制到模板库）"
-) -> str | None:
-    """把 dwg/dxf 复制进模板库（category 子目录），返回模板文件名。
+    category: str, src: str | None = None, title: str = "上传图纸模板（解析占位符存入模板库）"
+) -> tuple[str, str] | None:
+    """选择 dwg/dxf 模板，返回 (模板文件名, 源文件完整路径)。
 
-    未传 src 时弹出文件选择框；文件非法 / 用户取消 / 覆盖被拒时返回 None
-    （提示弹窗在此统一处理）。纯文件复制委托 core.templates.copy_template。
+    不把原文件复制进模板库——模板库只保存解析出的占位符配置 JSON，
+    由调用方从返回的源路径解析占位符写入 meta。文件非法 / 用户取消 /
+    覆盖被拒时返回 None（提示弹窗在此统一处理）。
     """
     from tkinter import filedialog, messagebox
 
@@ -109,14 +114,15 @@ def upload_template_file(
     if not (src.lower().endswith(CAD_SUFFIXES) and os.path.isfile(src)):
         messagebox.showwarning("提示", "仅支持上传 .dwg/.dxf 文件")
         return None
-    d = templates_dir(category)
-    d.mkdir(parents=True, exist_ok=True)
     name = os.path.basename(src)
-    target = d / name
-    if (target.exists() and os.path.normcase(str(target)) != os.path.normcase(src)
-            and not messagebox.askyesno("覆盖", f"模板库已存在 {name}，是否覆盖？")):
+    d = templates_dir(category)
+    target = d / (name + ".json")
+    legacy = d / name  # 兼容旧库：同名遗留原文件也提示覆盖
+    if ((target.exists() or legacy.exists())
+            and not messagebox.askyesno(
+                "覆盖", f"模板库已存在 {name}，是否覆盖？")):
         return None
-    return copy_template(category, src)
+    return name, src
 
 
 def delete_template_file(category: str, name: str) -> bool:

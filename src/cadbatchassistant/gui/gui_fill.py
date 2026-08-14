@@ -20,6 +20,7 @@ from cadbatchassistant.core.filetypes import XLSX_SUFFIXES
 from cadbatchassistant.core.fill_learn_spec import scan_all_placeholders
 from cadbatchassistant.core.fill_pipeline import run_pipeline_files
 from cadbatchassistant.core.template_meta import (
+    load_template_meta,
     remove_template_meta,
     save_template_meta,
 )
@@ -54,22 +55,24 @@ class IsoFillApp(
         self._refresh_templates()
 
     # ---------------- 模板库钩子 ----------------
-    def _after_upload(self, name: str) -> None:
-        """上传后扫描全部 [列名] 占位符写入伴生 meta。
+    def _after_upload(self, name: str, src: str) -> None:
+        """上传后从源文件扫描全部 [列名] 占位符写入模板库 meta。
 
         模板为 DWG 时需 ODA 转 DXF（缺失时 template_to_dxf 抛 ODAError）；
         无任何 [列名] 占位符的模板无法用于填表 → 抛 ValueError。
-        两者都会使基类回滚删除已入库模板并弹错（拒绝上传）。
+        两者都会使基类回滚删除已入库 meta 并弹错（拒绝上传）。
+        原文件不入库，模板库只保留解析出的占位符 JSON。
         """
-        template = template_path(self.TEMPLATE_CATEGORY, name)
         converter = dc.get_converter()
         oda = converter.resolve(get_oda())
         with tempfile.TemporaryDirectory(prefix="cad_fill_meta_") as td:
-            t_dxf = converter.template_to_dxf(template, Path(td), oda)
+            t_dxf = converter.template_to_dxf(Path(src), Path(td), oda)
             placeholders = scan_all_placeholders(t_dxf)
         if not placeholders:
             raise ValueError("模板中未找到 [列名] 占位符，无法用于填表")
-        save_template_meta(template, {"placeholders": placeholders})
+        save_template_meta(
+            template_path(self.TEMPLATE_CATEGORY, name), {"placeholders": placeholders}
+        )
 
     def _after_delete(self, name: str) -> None:
         """删除模板时同步删除伴生 meta（不存在时静默）。"""
@@ -205,17 +208,51 @@ class IsoFillApp(
         ):
             return None
         if not warn_require(
-            bool(tpl_name) and os.path.isfile(template),
+            bool(tpl_name),
             "请从图纸模板下拉框选择模板（可先「上传」）",
         ):
+            return None
+        meta = load_template_meta(template)
+        if not warn_require(
+            meta is not None,
+            f"模板「{tpl_name}」未配置，请删除后重新上传",
+        ):
+            return None
+        if not warn_require(
+            isinstance(meta.get("placeholders"), list) and meta["placeholders"],
+            f"模板「{tpl_name}」未配置任何 [列名] 占位符，请删除后重新上传",
+        ):
+            return None
+        # 逐项校验占位符结构（手改 JSON 缺键会在 fill_pipeline 抛 KeyError，
+        # 后台线程只报「处理中断」；此处提前定位到具体条目并友好报错）
+        bad = next(
+            (
+                i
+                for i, ph in enumerate(meta["placeholders"])
+                if not isinstance(ph, dict)
+                or not all(
+                    k in ph
+                    for k in (
+                        "text", "layer", "x", "y", "height", "style",
+                        "halign", "valign", "ref_text", "entity_desc",
+                    )
+                )
+            ),
+            None,
+        )
+        if bad is not None:
+            messagebox.showerror(
+                "填表助手",
+                f"模板「{tpl_name}」配置损坏"
+                f"（第 {bad + 1} 个占位符缺字段），请删除后重新上传",
+            )
             return None
         if not warn_require(bool(files), "请选择要处理的 DWG/DXF 文件"):
             return None
         if not warn_require(bool(out), "请设置输出目录"):
             return None
-        has_dwg = any(
-            f.lower().endswith(".dwg") for f in files
-        ) or template.lower().endswith(".dwg")
+        # 模板只读 meta（不再转换模板），仅处理图纸为 DWG 时才需要 ODA
+        has_dwg = any(f.lower().endswith(".dwg") for f in files)
         err = require_oda_for_dwg(has_dwg, oda)
         if err:
             messagebox.showerror("缺少 ODA File Converter", err)

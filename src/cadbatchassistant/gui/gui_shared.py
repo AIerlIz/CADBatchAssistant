@@ -21,7 +21,6 @@ from cadbatchassistant.core.filetypes import CAD_SUFFIXES
 from cadbatchassistant.core.template_meta import remove_template_meta
 from cadbatchassistant.core.templates import (
     list_templates,
-    remove_template,
     template_path,
 )
 from cadbatchassistant.gui.tk_util import dedup_paths, parse_dnd_data
@@ -168,20 +167,20 @@ class TemplateLibraryMixin:
             self.var_template.set("")
 
     def _upload_template(self, path: str | None = None) -> None:
-        """把 dwg/dxf 复制进图纸模板库并选中。
+        """解析 dwg/dxf 模板占位符写入模板库（只存 meta JSON，不复制原文件）。
 
-        复制成功后调用 _after_upload(name) 钩子（子类可在此提取占位符
-        存伴生 meta）；钩子抛异常时回滚删除已入库文件（含可能写入的
-        meta）并弹错，不选中不刷新——模板库不允许存在无法使用的条目。
+        解析成功后调用 _after_upload(name, src) 钩子（子类从源文件提取
+        占位符写入 meta）；钩子抛异常时回滚删除已入库条目并弹错，
+        不选中不刷新——模板库不允许存在无法使用的条目。
         """
-        name = upload_template_file(
+        picked = upload_template_file(
             self.TEMPLATE_CATEGORY, path, title=self.TEMPLATE_UPLOAD_TITLE
         )
-        if name:
+        if picked:
+            name, src = picked
             try:
-                self._after_upload(name)
+                self._after_upload(name, src)
             except Exception as ex:  # noqa: BLE001 - 占位符提取失败：回滚上传并弹错
-                remove_template(self.TEMPLATE_CATEGORY, name)
                 remove_template_meta(template_path(self.TEMPLATE_CATEGORY, name))
                 messagebox.showerror(
                     "模板处理失败", f"模板「{name}」无法使用：{ex}"
@@ -198,10 +197,11 @@ class TemplateLibraryMixin:
             self._refresh_templates()
             save_panel_config({self.TEMPLATE_CONFIG_KEY: self.var_template.get()})
 
-    def _after_upload(self, name: str) -> None:
-        """上传成功后的钩子：子类可在此提取占位符写入伴生 meta。
+    def _after_upload(self, name: str, src: str) -> None:
+        """上传成功后的钩子：子类从源文件 src 提取占位符写入模板库 meta。
 
-        抛异常时基类回滚删除已入库模板并弹错（拒绝上传）。
+        name 为模板文件名（源文件 basename，不入库）；抛异常时基类
+        回滚删除已入库 meta 并弹错（拒绝上传）。
         """
         return None
 

@@ -32,6 +32,7 @@ def save_template_meta(template_path: str | Path, payload: dict) -> Path:
     p = Path(str(template_path))
     data = {"version": META_VERSION, "source": p.name, **payload}
     out = meta_path_for(p)
+    out.parent.mkdir(parents=True, exist_ok=True)  # 模板库目录可能尚不存在
     out.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     return out
 

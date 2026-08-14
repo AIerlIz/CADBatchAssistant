@@ -119,7 +119,8 @@ def run_pipeline(
 
     # 1. 校验输入
     template = Path(str(template_dwg))
-    if not template.is_file():
+    need_template_file = template_anchors is None  # 已提供锚点（GUI meta）时无需模板文件
+    if need_template_file and not template.is_file():
         result.error = f"图纸模板 DWG 不存在: {template}"
         return result
     xlsx = Path(str(xlsx_template)) if str(xlsx_template).strip() else None
@@ -142,7 +143,7 @@ def run_pipeline(
     # 2. ODA 校验（有 DWG 时需要）
     converter = dc.get_converter()
     oda = converter.resolve(oda)
-    has_dwg = template.suffix.lower() == ".dwg" or any(
+    has_dwg = (need_template_file and template.suffix.lower() == ".dwg") or any(
         p.suffix.lower() == ".dwg" for p in files
     )
     err = converter.require_for_dwg(has_dwg, oda)
@@ -152,7 +153,8 @@ def run_pipeline(
 
     # 3. 统一复制到临时目录并转换 DXF（跨目录图纸 + 模板）
     #    先检测重名：同名文件（含大小写不敏感）会互相覆盖/漏处理，直接报错终止
-    all_inputs = [template, *files]
+    #    模板文件仅在需要现场解析（template_anchors 为 None）时参与复制
+    all_inputs = ([template, *files] if need_template_file else list(files))
     try:
         check_duplicate_names(all_inputs)
     except ValueError as ex:

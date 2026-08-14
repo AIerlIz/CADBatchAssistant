@@ -5,6 +5,54 @@ from __future__ import annotations
 from cadbatchassistant.core.catalog_pipeline import _point_tolerance
 
 
+def test_run_with_meta_anchors_without_template_file(monkeypatch, tmp_path):
+    """模板库只存 meta 时不要求原文件：template_anchors 提供且模板文件不存在也能运行。
+
+    上传新语义下模板库只有占位符 JSON、无原文件；pipeline 不得再因
+    「模板 DWG 不存在」报错（原文件仅在 template_anchors 为 None 时才需要）。
+    """
+    from unittest import mock
+
+    import cadbatchassistant.core.catalog_pipeline as cp
+    from cadbatchassistant.core.catalog_template_reader import Anchor
+
+    template = tmp_path / "missing.dxf"  # 文件不存在（模板库只存 meta）
+    assert not template.exists()
+    xlsx = tmp_path / "tpl.xlsx"
+    xlsx.write_text("x", encoding="utf-8")
+    files = []
+    for n in ("A1", "A2"):
+        p = tmp_path / f"{n}.dxf"
+        p.write_text("x", encoding="utf-8")
+        files.append(p)
+    out = tmp_path / "out.xlsx"
+
+    def fake_map_files(worker, items, **kwargs):
+        return [{"图号": "D-1"}] * len(items)
+
+    conv = mock.Mock()
+    conv.resolve.return_value = ""
+    conv.require_for_dwg.return_value = None
+    anchors = [Anchor(field="图号", is_area=False, point_x=1.0, point_y=2.0)]
+    with (
+        mock.patch.object(cp.dc, "get_converter", return_value=conv),
+        mock.patch.object(cp, "map_files", side_effect=fake_map_files),
+        mock.patch.object(cp.catalog_excel_writer, "write_catalog_from_template"),
+    ):
+        result = cp.run_pipeline(
+            template,
+            xlsx,
+            files,
+            out,
+            log=lambda m: None,
+            progress=lambda p: None,
+            template_anchors=anchors,
+        )
+
+    assert result.ok
+    assert not result.error
+
+
 def test_point_tolerance_default():
     """未配置时回退默认 5.0。"""
     assert _point_tolerance(None) == 5.0

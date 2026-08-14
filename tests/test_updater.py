@@ -90,15 +90,18 @@ class CheckLatestTest(unittest.TestCase):
     def test_success(self):
         data = {
             "tag_name": "v1.1.0",
-            "assets": [{
-                "name": updater.ASSET_NAME,
-                "browser_download_url": "https://github.com/AIerlIz/CADBatchAssistant/"
-                                        "releases/download/v1.1.0/CADBatchAssistant.exe",
-                "size": 123,
-            }],
+            "assets": [
+                {
+                    "name": updater.ASSET_NAME,
+                    "browser_download_url": "https://github.com/AIerlIz/CADBatchAssistant/"
+                    "releases/download/v1.1.0/CADBatchAssistant.exe",
+                    "size": 123,
+                }
+            ],
         }
-        with mock.patch.object(updater.urllib.request, "urlopen",
-                               return_value=_json_response(data)):
+        with mock.patch.object(
+            updater.urllib.request, "urlopen", return_value=_json_response(data)
+        ):
             result = updater.check_latest()
         self.assertTrue(result["ok"])
         self.assertEqual(result["tag"], "v1.1.0")
@@ -107,26 +110,32 @@ class CheckLatestTest(unittest.TestCase):
         self.assertTrue(result["url"].endswith("CADBatchAssistant.exe"))
 
     def test_no_matching_asset(self):
-        data = {"tag_name": "v1.1.0",
-                "assets": [{"name": "other.exe",
-                            "browser_download_url": "https://x/other.exe"}]}
-        with mock.patch.object(updater.urllib.request, "urlopen",
-                               return_value=_json_response(data)):
+        data = {
+            "tag_name": "v1.1.0",
+            "assets": [
+                {"name": "other.exe", "browser_download_url": "https://x/other.exe"}
+            ],
+        }
+        with mock.patch.object(
+            updater.urllib.request, "urlopen", return_value=_json_response(data)
+        ):
             result = updater.check_latest()
         self.assertFalse(result["ok"])
         self.assertIn("安装包", result["error"])
 
     def test_unparseable_tag(self):
-        with mock.patch.object(updater.urllib.request, "urlopen",
-                               return_value=_json_response({"tag_name": "beta"})):
+        with mock.patch.object(
+            updater.urllib.request,
+            "urlopen",
+            return_value=_json_response({"tag_name": "beta"}),
+        ):
             result = updater.check_latest()
         self.assertFalse(result["ok"])
         self.assertIn("版本号", result["error"])
 
     def test_http_error(self):
         err = updater.urllib.error.HTTPError("u", 404, "Not Found", None, None)
-        with mock.patch.object(updater.urllib.request, "urlopen",
-                               side_effect=err):
+        with mock.patch.object(updater.urllib.request, "urlopen", side_effect=err):
             result = updater.check_latest()
         self.assertFalse(result["ok"])
         self.assertIn("404", result["error"])
@@ -136,25 +145,28 @@ class CheckLatestTest(unittest.TestCase):
         resp.read.return_value = b"not json"
         resp.__enter__.return_value = resp
         resp.__exit__.return_value = False
-        with mock.patch.object(updater.urllib.request, "urlopen",
-                               return_value=resp):
+        with mock.patch.object(updater.urllib.request, "urlopen", return_value=resp):
             result = updater.check_latest()
         self.assertFalse(result["ok"])
         self.assertIn("解析失败", result["error"])
 
     def test_assets_not_list(self):
         # 异常数据（assets 非 list）不抛异常，按无资产处理
-        with mock.patch.object(updater.urllib.request, "urlopen",
-                               return_value=_json_response(
-                                   {"tag_name": "v1.1.0", "assets": "oops"})):
+        with mock.patch.object(
+            updater.urllib.request,
+            "urlopen",
+            return_value=_json_response({"tag_name": "v1.1.0", "assets": "oops"}),
+        ):
             result = updater.check_latest()
         self.assertFalse(result["ok"])
         self.assertIn("安装包", result["error"])
 
     def test_network_error(self):
         with mock.patch.object(
-                updater.urllib.request, "urlopen",
-                side_effect=updater.urllib.error.URLError("timeout")):
+            updater.urllib.request,
+            "urlopen",
+            side_effect=updater.urllib.error.URLError("timeout"),
+        ):
             result = updater.check_latest()
         self.assertFalse(result["ok"])
         self.assertIn("无法连接", result["error"])
@@ -165,38 +177,52 @@ class CheckLatestTest(unittest.TestCase):
         oversized.read.return_value = b"x" * (updater.MAX_RESPONSE_BYTES + 1)
         oversized.__enter__.return_value = oversized
         oversized.__exit__.return_value = False
-        with mock.patch.object(updater.urllib.request, "urlopen",
-                               return_value=oversized):
+        with mock.patch.object(
+            updater.urllib.request, "urlopen", return_value=oversized
+        ):
             result = updater.check_latest()
         self.assertFalse(result["ok"])
         self.assertIn("响应过大", result["error"])
 
     def test_sha256_asset_url_returned(self):
         """M9：Release 含 .sha256 资产时返回其下载 URL；缺省时返回 None。"""
-        exe_url = "https://github.com/AIerlIz/CADBatchAssistant/releases/" \
-                  "download/v1.1.0/CADBatchAssistant.exe"
+        exe_url = (
+            "https://github.com/AIerlIz/CADBatchAssistant/releases/"
+            "download/v1.1.0/CADBatchAssistant.exe"
+        )
         sha_url = exe_url + ".sha256"
         data = {
             "tag_name": "v1.1.0",
             "assets": [
-                {"name": updater.ASSET_NAME,
-                 "browser_download_url": exe_url, "size": 123},
-                {"name": updater.SHA256_ASSET_NAME,
-                 "browser_download_url": sha_url},
+                {
+                    "name": updater.ASSET_NAME,
+                    "browser_download_url": exe_url,
+                    "size": 123,
+                },
+                {"name": updater.SHA256_ASSET_NAME, "browser_download_url": sha_url},
             ],
         }
-        with mock.patch.object(updater.urllib.request, "urlopen",
-                               return_value=_json_response(data)):
+        with mock.patch.object(
+            updater.urllib.request, "urlopen", return_value=_json_response(data)
+        ):
             result = updater.check_latest()
         self.assertTrue(result["ok"])
         self.assertEqual(result["sha256_url"], sha_url)
 
         # 无 .sha256 资产（旧 Release）→ sha256_url 为 None（回退 size+MZ 校验）
-        data_no_sha = {"tag_name": "v1.0.0", "assets": [
-            {"name": updater.ASSET_NAME,
-             "browser_download_url": exe_url, "size": 123}]}
-        with mock.patch.object(updater.urllib.request, "urlopen",
-                               return_value=_json_response(data_no_sha)):
+        data_no_sha = {
+            "tag_name": "v1.0.0",
+            "assets": [
+                {
+                    "name": updater.ASSET_NAME,
+                    "browser_download_url": exe_url,
+                    "size": 123,
+                }
+            ],
+        }
+        with mock.patch.object(
+            updater.urllib.request, "urlopen", return_value=_json_response(data_no_sha)
+        ):
             result = updater.check_latest()
         self.assertTrue(result["ok"])
         self.assertIsNone(result["sha256_url"])
@@ -218,12 +244,17 @@ class DownloadAssetTest(unittest.TestCase):
         dest = self._dest("out.exe")
         seen = []
         # 内容以 MZ 开头以通过 PE 头校验（expect_exe 默认开启）
-        with mock.patch.object(updater.urllib.request, "urlopen",
-                               return_value=_download_resp(
-                                   [b"MZ", b"abc", b"def", b""], total=8)):
+        with mock.patch.object(
+            updater.urllib.request,
+            "urlopen",
+            return_value=_download_resp([b"MZ", b"abc", b"def", b""], total=8),
+        ):
             result = updater.download_asset(
-                "https://x/y.exe", dest, size=8,
-                progress_cb=lambda d, t: seen.append((d, t)))
+                "https://x/y.exe",
+                dest,
+                size=8,
+                progress_cb=lambda d, t: seen.append((d, t)),
+            )
         self.assertEqual(result, str(dest))
         self.assertEqual(dest.read_bytes(), b"MZabcdef")
         self.assertEqual(seen[-1], (8, 8))
@@ -232,44 +263,50 @@ class DownloadAssetTest(unittest.TestCase):
     def test_mirror_prefix_applied(self):
         dest = self._dest("mirror.exe")
         with mock.patch.object(
-                updater.urllib.request, "urlopen",
-                return_value=_download_resp([b"MZ", b"", b""])) as m:
+            updater.urllib.request,
+            "urlopen",
+            return_value=_download_resp([b"MZ", b"", b""]),
+        ) as m:
             updater.download_asset(
-                "https://github.com/a/b.exe", dest,
-                mirror="https://ghproxy.com/")
+                "https://github.com/a/b.exe", dest, mirror="https://ghproxy.com/"
+            )
         self.assertEqual(
             m.call_args.args[0].full_url,
-            "https://ghproxy.com/https://github.com/a/b.exe")
+            "https://ghproxy.com/https://github.com/a/b.exe",
+        )
         self.assertEqual(dest.read_bytes(), b"MZ")
 
     def test_size_mismatch_raises_and_cleans(self):
         dest = self._dest("short.exe")
-        with mock.patch.object(updater.urllib.request, "urlopen",
-                               return_value=_download_resp([b"ab", b""])):
-            with self.assertRaises(updater.UpdateError):
-                updater.download_asset("https://x/y.exe", dest, size=99,
-                                       retries=1, retry_delay=0)
+        with mock.patch.object(
+            updater.urllib.request, "urlopen", return_value=_download_resp([b"ab", b""])
+        ), self.assertRaises(updater.UpdateError):
+            updater.download_asset(
+                "https://x/y.exe", dest, size=99, retries=1, retry_delay=0
+            )
         self.assertFalse(dest.exists())
 
     def test_mirror_blank_keeps_url(self):
         dest = self._dest("no_mirror.exe")
         with mock.patch.object(
-                updater.urllib.request, "urlopen",
-                return_value=_download_resp([b"MZ", b"", b""])) as m:
-            updater.download_asset("https://github.com/a/b.exe", dest,
-                                   mirror="  ")
-        self.assertEqual(m.call_args.args[0].full_url,
-                         "https://github.com/a/b.exe")
+            updater.urllib.request,
+            "urlopen",
+            return_value=_download_resp([b"MZ", b"", b""]),
+        ) as m:
+            updater.download_asset("https://github.com/a/b.exe", dest, mirror="  ")
+        self.assertEqual(m.call_args.args[0].full_url, "https://github.com/a/b.exe")
 
     def test_incomplete_read_raises_and_cleans(self):
         # 连接在 Content-Length 满足前 EOF（IncompleteRead）→ UpdateError 且清理
         dest = self._dest("incomplete.exe")
         err = updater.http.client.IncompleteRead(b"", 100)
-        with mock.patch.object(updater.urllib.request, "urlopen",
-                               side_effect=err):
-            with self.assertRaises(updater.UpdateError) as cm:
-                updater.download_asset("https://x/y.exe", dest,
-                                       retries=2, retry_delay=0)
+        with (
+            mock.patch.object(updater.urllib.request, "urlopen", side_effect=err),
+            self.assertRaises(updater.UpdateError) as cm,
+        ):
+            updater.download_asset(
+                "https://x/y.exe", dest, retries=2, retry_delay=0
+            )
         self.assertIn("已自动尝试", str(cm.exception))
         self.assertFalse(dest.exists())
 
@@ -278,10 +315,12 @@ class DownloadAssetTest(unittest.TestCase):
         dest = self._dest("retry.exe")
         short = _download_resp([b"MZ", b"", b""], total=2)
         full = _download_resp([b"MZ", b"x" * 10, b""], total=12)
-        with mock.patch.object(updater.urllib.request, "urlopen",
-                               side_effect=[short, short, full]) as m:
+        with mock.patch.object(
+            updater.urllib.request, "urlopen", side_effect=[short, short, full]
+        ) as m:
             result = updater.download_asset(
-                "https://x/y.exe", dest, size=12, retries=3, retry_delay=0)
+                "https://x/y.exe", dest, size=12, retries=3, retry_delay=0
+            )
         self.assertEqual(result, str(dest))
         self.assertEqual(dest.read_bytes(), b"MZ" + b"x" * 10)
         self.assertEqual(m.call_count, 3)
@@ -290,12 +329,13 @@ class DownloadAssetTest(unittest.TestCase):
         # 重试耗尽：消息含已尝试次数，且不留半成品
         dest = self._dest("exhausted.exe")
         short = _download_resp([b"MZ", b"", b""], total=2)
-        with mock.patch.object(updater.urllib.request, "urlopen",
-                               return_value=short):
-            with self.assertRaises(updater.UpdateError) as cm:
-                updater.download_asset(
-                    "https://x/y.exe", dest, size=12, retries=2,
-                    retry_delay=0)
+        with (
+            mock.patch.object(updater.urllib.request, "urlopen", return_value=short),
+            self.assertRaises(updater.UpdateError) as cm,
+        ):
+            updater.download_asset(
+                "https://x/y.exe", dest, size=12, retries=2, retry_delay=0
+            )
         self.assertIn("已自动尝试", str(cm.exception))
         self.assertIn("2 次", str(cm.exception))
         self.assertFalse(dest.exists())
@@ -304,13 +344,14 @@ class DownloadAssetTest(unittest.TestCase):
         # 镜像/服务器返回 200 错误页（HTML 非 MZ）→ 报「不是安装包」
         dest = self._dest("page.exe")
         html = b"<html><body>Request Entity Too Large</body></html>"
-        with mock.patch.object(updater.urllib.request, "urlopen",
-                               return_value=_download_resp(
-                                   [html, b""], total=len(html))):
-            with self.assertRaises(updater.UpdateError) as cm:
-                updater.download_asset(
-                    "https://x/y.exe", dest, size=len(html),
-                    retries=1, retry_delay=0)
+        with mock.patch.object(
+            updater.urllib.request,
+            "urlopen",
+            return_value=_download_resp([html, b""], total=len(html)),
+        ), self.assertRaises(updater.UpdateError) as cm:
+            updater.download_asset(
+                "https://x/y.exe", dest, size=len(html), retries=1, retry_delay=0
+            )
         self.assertIn("不是安装包", str(cm.exception))
         self.assertFalse(dest.exists())
 
@@ -324,18 +365,26 @@ class DownloadAssetTest(unittest.TestCase):
                 raise updater.urllib.error.URLError("mirror down")
             return resp
 
-        with mock.patch.object(updater.urllib.request, "urlopen",
-                               side_effect=fake_urlopen) as m:
+        with mock.patch.object(
+            updater.urllib.request, "urlopen", side_effect=fake_urlopen
+        ) as m:
             result = updater.download_asset(
-                "https://github.com/a/b.exe", dest,
-                mirror="https://ghproxy.com/", retries=1, retry_delay=0)
+                "https://github.com/a/b.exe",
+                dest,
+                mirror="https://ghproxy.com/",
+                retries=1,
+                retry_delay=0,
+            )
         self.assertEqual(result, str(dest))
         self.assertEqual(dest.read_bytes(), b"MZbody")
         urls = [c.args[0].full_url for c in m.call_args_list]
-        self.assertEqual(urls, [
-            "https://ghproxy.com/https://github.com/a/b.exe",
-            "https://github.com/a/b.exe",
-        ])
+        self.assertEqual(
+            urls,
+            [
+                "https://ghproxy.com/https://github.com/a/b.exe",
+                "https://github.com/a/b.exe",
+            ],
+        )
 
     def test_cancel_not_retried(self):
         # 用户取消（progress_cb 抛 UpdateError("已取消")）→ 不重试、原样传播
@@ -345,13 +394,18 @@ class DownloadAssetTest(unittest.TestCase):
             raise updater.UpdateError("已取消")
 
         with mock.patch.object(
-                updater.urllib.request, "urlopen",
-                return_value=_download_resp([b"MZ", b"x", b""],
-                                            total=3)) as m:
-            with self.assertRaises(updater.UpdateError) as cm:
-                updater.download_asset(
-                    "https://x/y.exe", dest, size=3, retries=3,
-                    retry_delay=0, progress_cb=cb)
+            updater.urllib.request,
+            "urlopen",
+            return_value=_download_resp([b"MZ", b"x", b""], total=3),
+        ) as m, self.assertRaises(updater.UpdateError) as cm:
+            updater.download_asset(
+                "https://x/y.exe",
+                dest,
+                size=3,
+                retries=3,
+                retry_delay=0,
+                progress_cb=cb,
+            )
         self.assertEqual(str(cm.exception), "已取消")
         self.assertEqual(m.call_count, 1)
         self.assertFalse(dest.exists())  # 取消后不留半成品
@@ -365,12 +419,12 @@ class DownloadAssetTest(unittest.TestCase):
             evt.set()  # 第一次失败后即置取消标志
             raise updater.urllib.error.URLError("boom")
 
-        with mock.patch.object(updater.urllib.request, "urlopen",
-                               side_effect=fake_urlopen) as m:
-            with self.assertRaises(updater.UpdateError) as cm:
-                updater.download_asset(
-                    "https://x/y.exe", dest, retries=3, retry_delay=100,
-                    abort_event=evt)
+        with mock.patch.object(
+            updater.urllib.request, "urlopen", side_effect=fake_urlopen
+        ) as m, self.assertRaises(updater.UpdateError) as cm:
+            updater.download_asset(
+                "https://x/y.exe", dest, retries=3, retry_delay=100, abort_event=evt
+            )
         self.assertEqual(str(cm.exception), "已取消")
         self.assertEqual(m.call_count, 1)
         self.assertFalse(dest.exists())
@@ -379,12 +433,11 @@ class DownloadAssetTest(unittest.TestCase):
         # retries<=0 时至少尝试 1 次，避免消息出现「已自动尝试 0 次」
         dest = self._dest("clamp.exe")
         with mock.patch.object(
-                updater.urllib.request, "urlopen",
-                return_value=_download_resp([b"ab", b""])) as m:
-            with self.assertRaises(updater.UpdateError) as cm:
-                updater.download_asset(
-                    "https://x/y.exe", dest, size=99, retries=0,
-                    retry_delay=0)
+            updater.urllib.request, "urlopen", return_value=_download_resp([b"ab", b""])
+        ) as m, self.assertRaises(updater.UpdateError) as cm:
+            updater.download_asset(
+                "https://x/y.exe", dest, size=99, retries=0, retry_delay=0
+            )
         self.assertIn("已自动尝试 1 次", str(cm.exception))
         self.assertEqual(m.call_count, 1)
 
@@ -425,11 +478,12 @@ class Sha256VerificationTest(unittest.TestCase):
                 return self._sha_resp(f"{real_hash}  CADBatchAssistant.exe".encode())
             return _download_resp([content, b""], total=len(content))
 
-        with mock.patch.object(updater.urllib.request, "urlopen",
-                               side_effect=fake_urlopen):
+        with mock.patch.object(
+            updater.urllib.request, "urlopen", side_effect=fake_urlopen
+        ):
             result = updater.download_asset(
-                self.exe_url, dest, retries=1, retry_delay=0,
-                sha256_url=self.sha_url)
+                self.exe_url, dest, retries=1, retry_delay=0, sha256_url=self.sha_url
+            )
         self.assertEqual(result, str(dest))
         self.assertEqual(dest.read_bytes(), content)
 
@@ -444,12 +498,16 @@ class Sha256VerificationTest(unittest.TestCase):
                 return self._sha_resp(f"{other_hash}  a.exe".encode())
             return _download_resp([content, b""], total=len(content))
 
-        with mock.patch.object(updater.urllib.request, "urlopen",
-                               side_effect=fake_urlopen):
-            with self.assertRaises(updater.UpdateError) as cm:
-                updater.download_asset(
-                    self.exe_url, dest, retries=1, retry_delay=0,
-                    sha256_url=self.sha_url)
+        with mock.patch.object(
+            updater.urllib.request, "urlopen", side_effect=fake_urlopen
+        ), self.assertRaises(updater.UpdateError) as cm:
+            updater.download_asset(
+                self.exe_url,
+                dest,
+                retries=1,
+                retry_delay=0,
+                sha256_url=self.sha_url,
+            )
         self.assertIn("SHA-256 不匹配", str(cm.exception))
         self.assertFalse(dest.exists())
 
@@ -464,11 +522,17 @@ class Sha256VerificationTest(unittest.TestCase):
     def test_plain_http_mirror_rejected(self):
         """M9：明文 http:// 镜像被拒绝，不发起任何下载。"""
         dest = self._dest("http.exe")
-        with mock.patch.object(updater.urllib.request, "urlopen") as m:
-            with self.assertRaises(updater.UpdateError) as cm:
-                updater.download_asset(
-                    self.exe_url, dest, mirror="http://mirror.example.com/",
-                    retries=1, retry_delay=0)
+        with (
+            mock.patch.object(updater.urllib.request, "urlopen") as m,
+            self.assertRaises(updater.UpdateError) as cm,
+        ):
+            updater.download_asset(
+                self.exe_url,
+                dest,
+                mirror="http://mirror.example.com/",
+                retries=1,
+                retry_delay=0,
+            )
         self.assertIn("仅支持 HTTPS", str(cm.exception))
         m.assert_not_called()
 
@@ -485,11 +549,17 @@ class Sha256VerificationTest(unittest.TestCase):
                 return self._sha_resp(real_hash.encode())
             return _download_resp([content, b""], total=len(content))
 
-        with mock.patch.object(updater.urllib.request, "urlopen",
-                               side_effect=fake_urlopen) as m:
+        with mock.patch.object(
+            updater.urllib.request, "urlopen", side_effect=fake_urlopen
+        ) as m:
             updater.download_asset(
-                self.exe_url, dest, mirror="https://ghproxy.com/",
-                retries=1, retry_delay=0, sha256_url=self.sha_url)
+                self.exe_url,
+                dest,
+                mirror="https://ghproxy.com/",
+                retries=1,
+                retry_delay=0,
+                sha256_url=self.sha_url,
+            )
         urls = [c.args[0].full_url for c in m.call_args_list]
         self.assertEqual(urls[0], f"https://ghproxy.com/{self.sha_url}")
         self.assertEqual(urls[1], f"https://ghproxy.com/{self.exe_url}")
@@ -509,11 +579,17 @@ class Sha256VerificationTest(unittest.TestCase):
                 return self._sha_resp(f"{real_hash}  a.exe".encode())
             return _download_resp([content, b""], total=len(content))
 
-        with mock.patch.object(updater.urllib.request, "urlopen",
-                               side_effect=fake_urlopen) as m:
+        with mock.patch.object(
+            updater.urllib.request, "urlopen", side_effect=fake_urlopen
+        ) as m:
             result = updater.download_asset(
-                self.exe_url, dest, mirror="https://ghproxy.com/",
-                retries=1, retry_delay=0, sha256_url=self.sha_url)
+                self.exe_url,
+                dest,
+                mirror="https://ghproxy.com/",
+                retries=1,
+                retry_delay=0,
+                sha256_url=self.sha_url,
+            )
         self.assertEqual(result, str(dest))
         self.assertEqual(dest.read_bytes(), content)
         urls = [c.args[0].full_url for c in m.call_args_list]
@@ -532,9 +608,11 @@ class Sha256VerificationTest(unittest.TestCase):
 class BuildReplaceCommandTest(unittest.TestCase):
     def test_script_embedded_utf16(self):
         cmd = updater.build_replace_command(
-            r"C:\tmp\new.exe", r"C:\Program Files\CADBatchAssistant.exe")
-        self.assertTrue(cmd.startswith(
-            "powershell -NoProfile -NonInteractive -EncodedCommand "))
+            r"C:\tmp\new.exe", r"C:\Program Files\CADBatchAssistant.exe"
+        )
+        self.assertTrue(
+            cmd.startswith("powershell -NoProfile -NonInteractive -EncodedCommand ")
+        )
         encoded = cmd.rsplit(" ", 1)[-1]
         script = base64.b64decode(encoded).decode("utf-16-le")
         self.assertIn("Copy-Item -LiteralPath", script)
@@ -544,7 +622,8 @@ class BuildReplaceCommandTest(unittest.TestCase):
 
     def test_quote_in_path_escaped(self):
         cmd = updater.build_replace_command(
-            r"C:\tmp\a'b.exe", r"C:\Program Files\a'b\app.exe")
+            r"C:\tmp\a'b.exe", r"C:\Program Files\a'b\app.exe"
+        )
         script = base64.b64decode(cmd.rsplit(" ", 1)[-1]).decode("utf-16-le")
         self.assertIn(r"$src = 'C:\tmp\a''b.exe'", script)
         # Copy-Item 与 Start-Process 两处重启路径均转义，无裸单引号
@@ -559,7 +638,8 @@ class BuildReplaceCommandTest(unittest.TestCase):
     def test_wait_for_exit_polling_and_retry_in_script(self):
         """M6：脚本含轮询等待退出（60s 上限）+ Copy-Item 重试 + 失败日志。"""
         cmd = updater.build_replace_command(
-            r"C:\tmp\new.exe", r"C:\app\CADBatchAssistant.exe")
+            r"C:\tmp\new.exe", r"C:\app\CADBatchAssistant.exe"
+        )
         script = base64.b64decode(cmd.rsplit(" ", 1)[-1]).decode("utf-16-le")
         # 轮询等待：文件句柄占用探测 + 60s 截止
         self.assertIn("[System.IO.File]::Open", script)
@@ -585,8 +665,8 @@ class BuildReplaceCommandTest(unittest.TestCase):
         """启动即崩防护：提供 expected_sha256 时，脚本复制后校验再重启。"""
         h = "c" * 64
         cmd = updater.build_replace_command(
-            r"C:\tmp\new.exe", r"C:\app\app.exe",
-            expected_sha256=h)
+            r"C:\tmp\new.exe", r"C:\app\app.exe", expected_sha256=h
+        )
         script = base64.b64decode(cmd.rsplit(" ", 1)[-1]).decode("utf-16-le")
         # 校验块：Get-FileHash SHA256 与期望比对，失败写日志并 exit 1（不重启）
         self.assertIn("Get-FileHash -LiteralPath $dst -Algorithm SHA256", script)
@@ -614,8 +694,7 @@ class RunReplaceTest(unittest.TestCase):
         """run_replace 把 expected_sha256 透传给替换命令。"""
         h = "d" * 64
         with mock.patch.object(updater.subprocess, "Popen") as m:
-            updater.run_replace(r"C:\a\new.exe", r"C:\a\app.exe",
-                                expected_sha256=h)
+            updater.run_replace(r"C:\a\new.exe", r"C:\a\app.exe", expected_sha256=h)
         cmd = m.call_args.args[0]
         script = base64.b64decode(cmd.rsplit(" ", 1)[-1]).decode("utf-16-le")
         self.assertIn(h, script)

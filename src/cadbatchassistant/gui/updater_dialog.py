@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import queue
 import tempfile
@@ -17,8 +18,8 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 
 from cadbatchassistant import __version__
-from cadbatchassistant.common import center_window
 from cadbatchassistant.core import updater
+from cadbatchassistant.gui.tk_util import center_window
 
 _DOWNLOAD_DIR = Path(tempfile.gettempdir()) / "CADBatchAssistant_update"
 _NEW_EXE = "CADBatchAssistant_new.exe"
@@ -49,12 +50,15 @@ def ask_update_choice(parent: tk.Widget, tag: str) -> str:
         result["choice"] = choice
         top.destroy()
 
-    ttk.Button(btns, text="立即更新",
-               command=lambda: _pick("update")).pack(side="left", padx=6)
-    ttk.Button(btns, text="忽略此版本",
-               command=lambda: _pick("ignore")).pack(side="left", padx=6)
-    ttk.Button(btns, text="取消",
-               command=lambda: _pick("cancel")).pack(side="left", padx=6)
+    ttk.Button(btns, text="立即更新", command=lambda: _pick("update")).pack(
+        side="left", padx=6
+    )
+    ttk.Button(btns, text="忽略此版本", command=lambda: _pick("ignore")).pack(
+        side="left", padx=6
+    )
+    ttk.Button(btns, text="取消", command=lambda: _pick("cancel")).pack(
+        side="left", padx=6
+    )
     top.protocol("WM_DELETE_WINDOW", lambda: _pick("cancel"))
     center_window(top, root)  # 相对主窗口居中
     top.wait_window()
@@ -93,7 +97,8 @@ class UpdateDialog:
         self._detail = tk.StringVar(value="")
         ttk.Label(frame, textvariable=self._detail).pack(anchor="w")
         ttk.Button(frame, text="取消", command=self._on_cancel).pack(
-            anchor="e", pady=(8, 0))
+            anchor="e", pady=(8, 0)
+        )
 
         self._top.protocol("WM_DELETE_WINDOW", self._on_cancel)
         center_window(self._top, self._root)  # 相对主窗口居中
@@ -115,10 +120,14 @@ class UpdateDialog:
 
         try:
             updater.download_asset(
-                self._latest["url"], dest, self._mirror, progress,
+                self._latest["url"],
+                dest,
+                self._mirror,
+                progress,
                 size=self._latest.get("size"),
                 abort_event=self._cancel,
-                sha256_url=self._latest.get("sha256_url"))
+                sha256_url=self._latest.get("sha256_url"),
+            )
             self._queue.put(("done", str(dest)))
         except updater.UpdateError as e:
             self._queue.put(("error", str(e)))
@@ -154,24 +163,18 @@ class UpdateDialog:
                     return
         except queue.Empty:
             pass
-        try:
+        with contextlib.suppress(tk.TclError):  # 窗口已销毁（取消/关闭）
             self._top.after(100, self._poll)
-        except tk.TclError:
-            pass  # 窗口已销毁（取消/关闭）
 
     # ---------------- 结束分支 ----------------
     def _on_cancel(self) -> None:
         """用户取消：置标志停止下载，关闭对话框并清理临时文件。"""
         self._cancel.set()
         self._closed = True
-        try:
+        with contextlib.suppress(tk.TclError):
             self._top.destroy()
-        except tk.TclError:
-            pass
-        try:
+        with contextlib.suppress(OSError):
             (_DOWNLOAD_DIR / _NEW_EXE).unlink(missing_ok=True)
-        except OSError:
-            pass
 
     @staticmethod
     def _sha256_of(dest: str) -> str:
@@ -197,20 +200,17 @@ class UpdateDialog:
         # Python DLL），校验失败保留旧 exe 并写日志。
         sha256 = self._sha256_of(dest)
         # 启动 PowerShell 替换进程（等待本进程退出 → 覆盖 exe → 校验 → 重启）
-        updater.run_replace(dest, updater.current_exe_path(), restart=True,
-                            expected_sha256=sha256)
+        updater.run_replace(
+            dest, updater.current_exe_path(), restart=True, expected_sha256=sha256
+        )
         self._top.destroy()
         # 先让各面板停止后台线程，再销毁主窗口（与 main.py 的关闭钩子一致）
         handler = getattr(self._root, "on_close", None)
         if callable(handler):
-            try:
+            with contextlib.suppress(Exception):  # 清理钩子失败不阻断更新
                 handler()
-            except Exception:  # noqa: BLE001 - 清理钩子失败不阻断更新
-                pass
-        try:
+        with contextlib.suppress(tk.TclError):
             self._root.destroy()
-        except tk.TclError:
-            pass
 
     def _finish_error(self, msg: str) -> None:
         """下载失败：提示原因并询问是否重试；重试复用本对话框，否则关闭。
@@ -221,7 +221,9 @@ class UpdateDialog:
         self._progress.config(mode="determinate", maximum=100, value=0)
         self._detail.set("")
         if messagebox.askyesno(
-            "更新失败", f"{msg}\n\n是否重试下载？", parent=self._root,
+            "更新失败",
+            f"{msg}\n\n是否重试下载？",
+            parent=self._root,
         ):
             self._status.set(f"正在重试下载 {self._latest['tag']} ...")
             self._cancel.clear()

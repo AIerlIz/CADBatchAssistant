@@ -11,14 +11,13 @@ import tkinter as tk
 from tkinter import ttk
 
 from cadbatchassistant import __version__
-from cadbatchassistant.common import (
+from cadbatchassistant.core import updater
+from cadbatchassistant.core.app_config import (
     OUT_VERSION_CHOICES,
-    build_oda_row,
-    check_oda,
     load_app_config,
     save_app_config,
 )
-from cadbatchassistant.core import updater
+from cadbatchassistant.gui.tk_widgets import build_oda_row, check_oda
 
 
 class SettingsPanel:
@@ -26,73 +25,82 @@ class SettingsPanel:
 
     def __init__(self, parent: tk.Widget) -> None:
         self._parent = parent
-        self.var_oda: tk.StringVar | None = None
-        self.var_oda_info: tk.StringVar | None = None
-        self.var_version: tk.StringVar | None = None
-        self.var_update_info: tk.StringVar | None = None
-        self.var_update_mirror: tk.StringVar | None = None
-        self.var_ignore_info: tk.StringVar | None = None
-        self.btn_check: ttk.Button | None = None
-        self.btn_clear_ignore: ttk.Button | None = None
+        # 控件字段由 _build_ui 创建（在 _load 前），此处仅声明类型避免 Optional 噪音
+        self.var_oda: tk.StringVar
+        self.var_oda_info: tk.StringVar
+        self.var_version: tk.StringVar
+        self.var_update_info: tk.StringVar
+        self.var_update_mirror: tk.StringVar
+        self.var_ignore_info: tk.StringVar
+        self.btn_check: ttk.Button
+        self.btn_clear_ignore: ttk.Button
         self._ignored_tag: str | None = None
         self._build_ui()
         self._load()
 
     # ---------------- UI ----------------
     def _build_ui(self) -> None:
-        pad = {"padx": 8, "pady": 4}
         main = ttk.Frame(self._parent, padding=8)
         main.pack(fill="both", expand=True)
 
         cfg_frame = ttk.LabelFrame(main, text="全局设置", padding=8)
-        cfg_frame.pack(fill="x", **pad)
+        cfg_frame.pack(fill="x", padx=8, pady=4)
 
         self.var_oda, self.var_oda_info = build_oda_row(cfg_frame)
 
         ttk.Label(cfg_frame, text="DWG 输出版本:").grid(
-            row=1, column=0, sticky="w", pady=(6, 0))
+            row=1, column=0, sticky="w", pady=(6, 0)
+        )
         self.var_version = tk.StringVar()
         version_cb = ttk.Combobox(
-            cfg_frame, textvariable=self.var_version,
-            values=OUT_VERSION_CHOICES, state="readonly", width=14,
+            cfg_frame,
+            textvariable=self.var_version,
+            values=OUT_VERSION_CHOICES,
+            state="readonly",
+            width=14,
         )
         version_cb.grid(row=1, column=1, sticky="w", padx=4, pady=(6, 0))
         cfg_frame.columnconfigure(1, weight=1)
 
         # ---- 软件更新 ----
         upd_frame = ttk.LabelFrame(main, text="软件更新", padding=8)
-        upd_frame.pack(fill="x", **pad)
+        upd_frame.pack(fill="x", padx=8, pady=4)
 
         ttk.Label(upd_frame, text=f"当前版本: v{__version__}").grid(
-            row=0, column=0, sticky="w")
+            row=0, column=0, sticky="w"
+        )
         # 「检查更新」「清除忽略」放在同一 Frame 内紧挨，避免 column 扩展把按钮推开
         btn_row = ttk.Frame(upd_frame)
         btn_row.grid(row=0, column=1, sticky="w", padx=4)
-        self.btn_check = ttk.Button(btn_row, text="检查更新",
-                                    command=self._check_update)
+        self.btn_check = ttk.Button(
+            btn_row, text="检查更新", command=self._check_update
+        )
         self.btn_check.pack(side="left")
         self.btn_clear_ignore = ttk.Button(
-            btn_row, text="清除忽略", command=self._clear_ignore,
-            state="disabled")
+            btn_row, text="清除忽略", command=self._clear_ignore, state="disabled"
+        )
         self.btn_clear_ignore.pack(side="left", padx=(4, 0))
         self.var_update_info = tk.StringVar()
         # 更新状态提示（检查结果/失败原因/已忽略等），必须有显示控件才可见
-        ttk.Label(upd_frame, textvariable=self.var_update_info,
-                  foreground="#555").grid(row=0, column=2, sticky="w", padx=8)
+        ttk.Label(upd_frame, textvariable=self.var_update_info, foreground="#555").grid(
+            row=0, column=2, sticky="w", padx=8
+        )
 
         ttk.Label(upd_frame, text="下载镜像(可选):").grid(
-            row=1, column=0, sticky="w", pady=(6, 0))
+            row=1, column=0, sticky="w", pady=(6, 0)
+        )
         self.var_update_mirror = tk.StringVar()
         mirror_entry = ttk.Entry(upd_frame, textvariable=self.var_update_mirror)
-        mirror_entry.grid(row=1, column=1, columnspan=2,
-                          sticky="ew", padx=4, pady=(6, 0))
+        mirror_entry.grid(
+            row=1, column=1, columnspan=2, sticky="ew", padx=4, pady=(6, 0)
+        )
         upd_frame.columnconfigure(1, weight=1)
 
         self.var_ignore_info = tk.StringVar()
         # 「已忽略版本」提示行（与清除按钮同列下方），必须有显示控件才可见
-        ttk.Label(upd_frame, textvariable=self.var_ignore_info,
-                  foreground="#a00").grid(row=2, column=0, columnspan=3,
-                                          sticky="w", padx=4)
+        ttk.Label(upd_frame, textvariable=self.var_ignore_info, foreground="#a00").grid(
+            row=2, column=0, columnspan=3, sticky="w", padx=4
+        )
 
     # ---------------- 配置 ----------------
     def _load(self) -> None:
@@ -111,11 +119,13 @@ class SettingsPanel:
 
     def _on_change(self, _event=None) -> None:
         """自动保存到全局配置（合并写入，保留 update_ignore 等其他配置项）。"""
-        save_app_config({
-            "oda": self.var_oda.get().strip(),
-            "version": self.var_version.get(),
-            "update_mirror": self.var_update_mirror.get().strip(),
-        })
+        save_app_config(
+            {
+                "oda": self.var_oda.get().strip(),
+                "version": self.var_version.get(),
+                "update_mirror": self.var_update_mirror.get().strip(),
+            }
+        )
 
     # ---------------- 软件更新 ----------------
     def _check_update(self) -> None:
@@ -166,7 +176,8 @@ class SettingsPanel:
         from cadbatchassistant.gui.updater_dialog import start_update_download
 
         start_update_download(
-            self._parent, latest, self.var_update_mirror.get().strip())
+            self._parent, latest, self.var_update_mirror.get().strip()
+        )
 
     # ---------------- 忽略版本 ----------------
     def _refresh_ignore_ui(self) -> None:

@@ -24,27 +24,30 @@ class OutputSameAsInputProtectionTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         import shutil
+
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_run_pipeline_same_dir_rejected(self) -> None:
         """out_dir == before_dir 时抛 ValueError，且源文件原样保留。"""
         with self.assertRaises(ValueError) as ctx:
             fill_pipeline.run_pipeline(
-                str(self.xlsx), str(self.before_dir), str(self.before_dir),
-                template=str(self.src_dxf))
+                str(self.xlsx),
+                str(self.before_dir),
+                str(self.before_dir),
+                template=str(self.src_dxf),
+            )
         self.assertIn("不能与输入图纸目录相同", str(ctx.exception))
         # 源文件未被删除/覆盖
-        self.assertEqual(
-            self.src_dxf.read_text(encoding="utf-8"), "MOCK-DXF-ORIGINAL")
+        self.assertEqual(self.src_dxf.read_text(encoding="utf-8"), "MOCK-DXF-ORIGINAL")
 
     def test_run_pipeline_files_same_source_dir_rejected(self) -> None:
         """run_pipeline_files：输出目录 == 源文件所在目录时抛 ValueError。"""
         with self.assertRaises(ValueError) as ctx:
             fill_pipeline.run_pipeline_files(
-                str(self.xlsx), [str(self.src_dxf)], str(self.before_dir))
+                str(self.xlsx), [str(self.src_dxf)], str(self.before_dir)
+            )
         self.assertIn("不能与输入图纸所在目录相同", str(ctx.exception))
-        self.assertEqual(
-            self.src_dxf.read_text(encoding="utf-8"), "MOCK-DXF-ORIGINAL")
+        self.assertEqual(self.src_dxf.read_text(encoding="utf-8"), "MOCK-DXF-ORIGINAL")
 
     def test_run_pipeline_different_dir_not_rejected(self) -> None:
         """输出目录与输入目录不同时，不应触发重合保护。
@@ -60,11 +63,16 @@ class OutputSameAsInputProtectionTest(unittest.TestCase):
         conv = mock.Mock()
         conv.resolve.return_value = ""
         conv.template_to_dxf.side_effect = dc.ODAError("mock oda 失败")
-        with mock.patch.object(dc, "get_converter", return_value=conv), \
-                self.assertRaises(dc.ODAError):
+        with (
+            mock.patch.object(dc, "get_converter", return_value=conv),
+            self.assertRaises(dc.ODAError),
+        ):
             fill_pipeline.run_pipeline(
-                str(self.xlsx), str(self.before_dir), str(out),
-                template=str(self.src_dxf))
+                str(self.xlsx),
+                str(self.before_dir),
+                str(out),
+                template=str(self.src_dxf),
+            )
 
     def test_run_pipeline_files_duplicate_basename_rejected(self) -> None:
         """M2：跨目录同名文件（大小写不敏感）复制到临时目录会互相覆盖 → 拒绝。"""
@@ -74,8 +82,10 @@ class OutputSameAsInputProtectionTest(unittest.TestCase):
         dup.write_text("MOCK-DXF-2", encoding="utf-8")
         with self.assertRaises(ValueError) as ctx:
             fill_pipeline.run_pipeline_files(
-                str(self.xlsx), [str(self.src_dxf), str(dup)],
-                str(Path(self.tmp) / "output"))
+                str(self.xlsx),
+                [str(self.src_dxf), str(dup)],
+                str(Path(self.tmp) / "output"),
+            )
         self.assertIn("输入文件重名", str(ctx.exception))
 
     def test_run_pipeline_files_duplicate_case_insensitive_rejected(self) -> None:
@@ -86,8 +96,10 @@ class OutputSameAsInputProtectionTest(unittest.TestCase):
         dup.write_text("MOCK-DXF-2", encoding="utf-8")
         with self.assertRaises(ValueError) as ctx:
             fill_pipeline.run_pipeline_files(
-                str(self.xlsx), [str(self.src_dxf), str(dup)],
-                str(Path(self.tmp) / "output"))
+                str(self.xlsx),
+                [str(self.src_dxf), str(dup)],
+                str(Path(self.tmp) / "output"),
+            )
         self.assertIn("输入文件重名", str(ctx.exception))
 
     def test_dwg_priority_when_same_stem_dwg_and_dxf(self) -> None:
@@ -104,15 +116,25 @@ class OutputSameAsInputProtectionTest(unittest.TestCase):
         conv = mock.Mock()
         conv.resolve.return_value = ""
         conv.dwg_to_dxf.side_effect = dc.ODAError("mock oda 失败")
-        with mock.patch.object(
-            dc, "require_oda_for_dwg", return_value=None,
-        ), mock.patch.object(
-            dc, "get_converter", return_value=conv,
+        with (
+            mock.patch.object(
+                dc,
+                "require_oda_for_dwg",
+                return_value=None,
+            ),
+            mock.patch.object(
+                dc,
+                "get_converter",
+                return_value=conv,
+            ),
         ):
             with self.assertRaises(dc.ODAError):
                 fill_pipeline.run_pipeline(
-                    str(self.xlsx), str(self.before_dir),
-                    str(Path(self.tmp) / "output"), template=str(self.src_dxf))
+                    str(self.xlsx),
+                    str(self.before_dir),
+                    str(Path(self.tmp) / "output"),
+                    template=str(self.src_dxf),
+                )
             # 若被误判为 dxf，则不会调用 dwg_to_dxf（而只是 copy2 复制）
             conv.dwg_to_dxf.assert_called_once()
 
@@ -127,11 +149,16 @@ class OutputSameAsInputProtectionTest(unittest.TestCase):
         conv = mock.Mock()
         conv.resolve.return_value = ""
         conv.template_to_dxf.side_effect = dc.ODAError("mock oda 失败")
-        with mock.patch.object(dc, "get_converter", return_value=conv), \
-                self.assertRaises(dc.ODAError):
+        with (
+            mock.patch.object(dc, "get_converter", return_value=conv),
+            self.assertRaises(dc.ODAError),
+        ):
             fill_pipeline.run_pipeline(
-                str(self.xlsx), str(self.before_dir),
-                str(Path(self.tmp) / "output"), template=str(self.src_dxf))
+                str(self.xlsx),
+                str(self.before_dir),
+                str(Path(self.tmp) / "output"),
+                template=str(self.src_dxf),
+            )
         after = list(Path(tempfile.gettempdir()).glob("iso_fill_*"))
         # 异常路径后不残留自建临时目录
         self.assertEqual(after, before)
@@ -162,9 +189,9 @@ class FillPipelineWriteBackSkipTest(unittest.TestCase):
         # 模板 DXF：占位符 [图号] 与数据表表头匹配
         self.template = self.tmp / "template.dxf"
         doc = ezdxf.new("R2013")
-        doc.modelspace().add_text("[图号]",
-                                  dxfattribs={"insert": (10, 20, 0),
-                                              "height": 3.0})
+        doc.modelspace().add_text(
+            "[图号]", dxfattribs={"insert": (10, 20, 0), "height": 3.0}
+        )
         doc.saveas(self.template)
         # xlsx 只含 A1
         wb = openpyxl.Workbook()
@@ -177,6 +204,7 @@ class FillPipelineWriteBackSkipTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         import shutil
+
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_skipped_dxf_not_written_back(self) -> None:
@@ -188,11 +216,16 @@ class FillPipelineWriteBackSkipTest(unittest.TestCase):
         conv = mock.Mock()
         conv.resolve.return_value = ""
         conv.template_to_dxf.return_value = str(self.template)
-        with mock.patch.object(dc, "get_converter", return_value=conv), \
-                mock.patch.object(dc, "require_oda_for_dwg", return_value=None):
+        with (
+            mock.patch.object(dc, "get_converter", return_value=conv),
+            mock.patch.object(dc, "require_oda_for_dwg", return_value=None),
+        ):
             summary = fill_pipeline.run_pipeline(
-                str(self.xlsx), str(self.before_dir), str(self.out_dir),
-                template=str(self.template))
+                str(self.xlsx),
+                str(self.before_dir),
+                str(self.out_dir),
+                template=str(self.template),
+            )
         # A1 成功写回；B1（skipped）不得产出，也不得抛异常中断整批
         self.assertTrue((self.out_dir / "A1.dxf").is_file())
         self.assertFalse((self.out_dir / "B1.dxf").is_file())

@@ -16,16 +16,15 @@ from tkinter import filedialog, messagebox, ttk
 
 from tkinterdnd2 import DND_FILES
 
-from cadbatchassistant.common import (
+from cadbatchassistant.core.app_config import load_config, save_config
+from cadbatchassistant.core.filetypes import CAD_SUFFIXES
+from cadbatchassistant.core.templates import list_templates
+from cadbatchassistant.gui.tk_util import dedup_paths, parse_dnd_data
+from cadbatchassistant.gui.tk_widgets import (
     build_file_list,
     build_log_panel,
     build_output_row,
-    dedup_paths,
     delete_template_file,
-    list_templates,
-    load_config,
-    parse_dnd_data,
-    save_config,
     upload_template_file,
 )
 
@@ -50,25 +49,25 @@ class FilesPanelMixin:
     约定（由继承方在 _build_ui 中提供）：
     - self.scanned_files : list[str]（全路径，显示时取文件名）
     - self.file_list / self.var_scan_info : 文件列表与统计提示
-    - 输出目录 StringVar：self.var_out（缺省回退 self.var_output）
+    - 输出目录 StringVar：self.var_out
     """
 
-    scanned_files: list[str] = []
-    file_list: tk.Listbox | None = None
-    var_scan_info: tk.StringVar | None = None
-    var_out: tk.StringVar | None = None
-    var_output: tk.StringVar | None = None
-
-    def _out_var(self) -> tk.StringVar:
-        """输出目录 StringVar（var_out 优先，兼容 var_output 命名）。"""
-        return self.var_out if self.var_out is not None else self.var_output
+    scanned_files: list[str]
+    file_list: tk.Listbox
+    var_scan_info: tk.StringVar
+    var_out: tk.StringVar
 
     # ---------------- 输入：选择 / 追加 ----------------
     def _browse_input_files(self) -> None:
+        was_empty = not self.scanned_files  # 导入前待处理列表为空
         files = filedialog.askopenfilenames(
             title="选择要处理的 DWG/DXF 文件（可多次追加选择）",
-            filetypes=[("CAD 文件", "*.dwg *.dxf"), ("DWG 文件", "*.dwg"),
-                       ("DXF 文件", "*.dxf"), ("所有文件", "*.*")],
+            filetypes=[
+                ("CAD 文件", "*.dwg *.dxf"),
+                ("DWG 文件", "*.dwg"),
+                ("DXF 文件", "*.dxf"),
+                ("所有文件", "*.*"),
+            ],
         )
         if not files:
             return
@@ -77,13 +76,16 @@ class FilesPanelMixin:
                 self.scanned_files.append(f)
         self.scanned_files = dedup_paths(self.scanned_files)
         self._refresh_file_list()
-        if not self._out_var().get().strip():
+        if was_empty:
+            # 列表从空变非空：第一个导入文件所在目录/output 作为默认输出
+            # （即使输出目录已有值也更新，避免残留上次的目录）
             self._default_output()
 
     def _on_drop_files(self, event) -> None:
+        was_empty = not self.scanned_files  # 拖入前待处理列表为空
         added = False
         for p in parse_dnd_data(event.data):
-            if p.lower().endswith((".dwg", ".dxf")) and os.path.isfile(p):
+            if p.lower().endswith(CAD_SUFFIXES) and os.path.isfile(p):
                 self.scanned_files.append(p)
                 added = True
         if not added:
@@ -91,7 +93,7 @@ class FilesPanelMixin:
             return
         self.scanned_files = dedup_paths(self.scanned_files)
         self._refresh_file_list()
-        if not self._out_var().get().strip():
+        if was_empty:
             self._default_output()
 
     def _delete_selected_files(self) -> None:
@@ -114,7 +116,7 @@ class FilesPanelMixin:
     # ---------------- 输出目录 ----------------
     def _default_output(self) -> None:
         if self.scanned_files:
-            self._out_var().set(str(Path(self.scanned_files[0]).parent / "output"))
+            self.var_out.set(str(Path(self.scanned_files[0]).parent / "output"))
 
     def _browse_dir(self, var: tk.StringVar) -> None:
         d = filedialog.askdirectory(title="选择目录")
@@ -125,7 +127,7 @@ class FilesPanelMixin:
         paths = parse_dnd_data(event.data)
         d = next((p for p in paths if os.path.isdir(p)), None)
         if d is not None:
-            self._out_var().set(d)
+            self.var_out.set(d)
         elif paths:
             messagebox.showwarning("提示", "输出目录请拖入文件夹")
 
@@ -144,6 +146,10 @@ class TemplateLibraryMixin:
     TEMPLATE_CONFIG_KEY: str = ""
     TEMPLATE_UPLOAD_TITLE: str = "上传图纸模板"
 
+    # 依赖 PanelLayoutMixin._add_template_row 创建的控件（在 _build_ui 中赋值）
+    var_template: tk.StringVar
+    tpl_combo: ttk.Combobox
+
     def _refresh_templates(self) -> None:
         """刷新下拉框并恢复上次选择（面板 config 存模板文件名）。"""
         names = list_templates(self.TEMPLATE_CATEGORY)
@@ -159,7 +165,8 @@ class TemplateLibraryMixin:
     def _upload_template(self, path: str | None = None) -> None:
         """把 dwg/dxf 复制进图纸模板库并选中。"""
         name = upload_template_file(
-            self.TEMPLATE_CATEGORY, path, title=self.TEMPLATE_UPLOAD_TITLE)
+            self.TEMPLATE_CATEGORY, path, title=self.TEMPLATE_UPLOAD_TITLE
+        )
         if name:
             self._refresh_templates()
             self.var_template.set(name)
@@ -172,10 +179,18 @@ class TemplateLibraryMixin:
             save_panel_config({self.TEMPLATE_CONFIG_KEY: self.var_template.get()})
 
     def _on_drop_upload_template(self, event) -> None:
-        hit = next((p for p in parse_dnd_data(event.data)
-                    if p.lower().endswith((".dwg", ".dxf")) and os.path.isfile(p)), None)
+        hit = next(
+            (
+                p
+                for p in parse_dnd_data(event.data)
+                if p.lower().endswith(CAD_SUFFIXES) and os.path.isfile(p)
+            ),
+            None,
+        )
         if hit is None:
-            messagebox.showwarning("提示", "仅支持拖入 .dwg/.dxf 图纸模板（将上传到模板库）")
+            messagebox.showwarning(
+                "提示", "仅支持拖入 .dwg/.dxf 图纸模板（将上传到模板库）"
+            )
             return
         self._upload_template(hit)
 
@@ -228,11 +243,26 @@ class PanelLayoutMixin:
         self._add_log_section(...)            # 「日志」面板
 
     同时提供公共行为：_on_drop_single（拖放单文件到输入框）与默认
-    _on_finish（恢复按钮 + finish_popup 弹窗，目录助手覆盖为统计弹窗）。
-    约定：本类须位于 AsyncPanel 之前的 MRO（继承顺序
-    (FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin, AsyncPanel)），
-    使 _on_finish 的 super() 能命中 AsyncPanel._on_finish。
+    _finish_notify（finish_popup 弹窗，目录助手覆盖为统计弹窗）。
+    完成收尾由 AsyncPanel._on_finish 统一触发 _finish_notify 钩子，
+    不再依赖 super() 的 MRO 顺序约定。
     """
+
+    # 骨架方法创建的控件字段（FilesPanelMixin / TemplateLibraryMixin /
+    # AsyncPanel 亦引用）。类型与各 Mixin 声明保持一致，避免多基类同名
+    # 属性类型冲突（mypy incompatible definition）。
+    _main: ttk.Frame
+    _pad: dict
+    _file_menu: tk.Menu
+    file_list: tk.Listbox
+    var_scan_info: tk.StringVar
+    var_xlsx: tk.StringVar
+    var_template: tk.StringVar
+    tpl_combo: ttk.Combobox
+    btn_start: ttk.Button
+    btn_stop: ttk.Button
+    progress: ttk.Progressbar
+    log_text: tk.Text
 
     def _build_root(self) -> ttk.Frame:
         """创建面板根容器（padding + 布局字典），返回 main frame。"""
@@ -241,8 +271,9 @@ class PanelLayoutMixin:
         main.pack(fill="both", expand=True)
         return main
 
-    def _add_input_section(self, width: int | None = None,
-                           bind_delete: bool = False) -> None:
+    def _add_input_section(
+        self, width: int | None = None, bind_delete: bool = False
+    ) -> None:
         """「待处理」输入区：选择文件 + 统计提示 + 多选文件列表（拖放追加）。
 
         width 传给文件列表（None 用 build_file_list 默认）；
@@ -253,13 +284,18 @@ class PanelLayoutMixin:
         top = ttk.Frame(in_frame)
         top.pack(fill="x", pady=(0, 4))
         ttk.Button(top, text="选择文件", command=self._browse_input_files).pack(
-            side="left")
+            side="left"
+        )
         self.var_scan_info = tk.StringVar(value="尚未选择文件")
         ttk.Label(top, textvariable=self.var_scan_info).pack(side="left", padx=10)
 
         self.file_list, self._file_menu = build_file_list(
-            in_frame, height=6, on_delete=self._delete_selected_files,
-            fill="both", width=width)
+            in_frame,
+            height=6,
+            on_delete=self._delete_selected_files,
+            fill="both",
+            width=width,
+        )
         if bind_delete:
             self.file_list.bind("<Delete>", lambda _e: self._delete_selected_files())
         # 拖拽 DWG/DXF 到列表追加
@@ -271,11 +307,15 @@ class PanelLayoutMixin:
         out_frame = ttk.LabelFrame(self._main, text="输出", padding=8)
         out_frame.pack(fill="x", **self._pad)
         build_output_row(
-            out_frame, var,
+            out_frame,
+            var,
             on_browse=lambda: self._browse_dir(var),
             on_default=self._default_output,
-            entry_hook=lambda e: (e.drop_target_register(DND_FILES),
-                                  e.dnd_bind("<<Drop>>", self._on_drop_out_dir)))
+            entry_hook=lambda e: (
+                e.drop_target_register(DND_FILES),
+                e.dnd_bind("<<Drop>>", self._on_drop_out_dir),
+            ),
+        )
 
     def _add_run_section(self, maximum: int | None = None) -> None:
         """「运行」区：开始/停止按钮 + 进度条。
@@ -286,8 +326,9 @@ class PanelLayoutMixin:
         run_frame.pack(fill="x", **self._pad)
         self.btn_start = ttk.Button(run_frame, text="开始处理", command=self._start)
         self.btn_start.pack(side="left")
-        self.btn_stop = ttk.Button(run_frame, text="停止", command=self._stop,
-                                   state="disabled")
+        self.btn_stop = ttk.Button(
+            run_frame, text="停止", command=self._stop, state="disabled"
+        )
         self.btn_stop.pack(side="left", padx=6)
         kw: dict = {"mode": "determinate"}
         if maximum is not None:
@@ -301,8 +342,9 @@ class PanelLayoutMixin:
         log_frame.pack(fill="both", expand=True, **self._pad)
 
     # ---------------- 数据源区（填表 / 目录助手共用） ----------------
-    def _add_src_section(self, xlsx_label: str, exts: tuple,
-                         on_xlsx_hit=None, tpl_width: int = 16) -> ttk.LabelFrame:
+    def _add_src_section(
+        self, xlsx_label: str, exts: tuple, on_xlsx_hit=None, tpl_width: int = 16
+    ) -> ttk.LabelFrame:
         """「数据源」区：xlsx 行 + 图纸模板行；返回 frame 供追加专属行。
 
         xlsx_label 为 xlsx 输入行文案（如 "数据表格:" / "表格模板:"）；
@@ -316,8 +358,7 @@ class PanelLayoutMixin:
         self._add_template_row(src_frame, width=tpl_width)
         return src_frame
 
-    def _add_xlsx_row(self, parent, xlsx_label: str, exts: tuple,
-                      on_hit=None) -> None:
+    def _add_xlsx_row(self, parent, xlsx_label: str, exts: tuple, on_hit=None) -> None:
         """xlsx 输入行：Label + Entry(拖放) + 浏览按钮；命中时回调 on_hit(路径)。"""
         row = ttk.Frame(parent)
         row.pack(fill="x")
@@ -326,11 +367,13 @@ class PanelLayoutMixin:
         e = ttk.Entry(row, textvariable=self.var_xlsx)
         e.pack(side="left", fill="x", expand=True, padx=4)
         e.drop_target_register(DND_FILES)
-        e.dnd_bind("<<Drop>>",
-                   lambda ev: self._on_drop_single(ev, self.var_xlsx, exts,
-                                                   on_hit=on_hit))
+        e.dnd_bind(
+            "<<Drop>>",
+            lambda ev: self._on_drop_single(ev, self.var_xlsx, exts, on_hit=on_hit),
+        )
         ttk.Button(row, text="浏览", command=self._browse_xlsx).pack(
-            side="left", padx=4)
+            side="left", padx=4
+        )
 
     def _add_template_row(self, parent, width: int = 16) -> None:
         """图纸模板行：下拉（拖放上传）+ 上传/删除按钮。"""
@@ -338,19 +381,23 @@ class PanelLayoutMixin:
         row.pack(fill="x", pady=(6, 0))
         ttk.Label(row, text="图纸模板:").pack(side="left")
         self.var_template = tk.StringVar()
-        self.tpl_combo = ttk.Combobox(row, textvariable=self.var_template,
-                                      state="readonly", width=width)
+        self.tpl_combo = ttk.Combobox(
+            row, textvariable=self.var_template, state="readonly", width=width
+        )
         self.tpl_combo.pack(side="left", fill="x", expand=True, padx=4)
         self.tpl_combo.drop_target_register(DND_FILES)
         self.tpl_combo.dnd_bind("<<Drop>>", self._on_drop_upload_template)
         ttk.Button(row, text="上传", command=self._upload_template).pack(
-            side="left", padx=4)
+            side="left", padx=4
+        )
         ttk.Button(row, text="删除", command=self._delete_template).pack(
-            side="left", padx=4)
+            side="left", padx=4
+        )
 
     # ---------------- 公共行为 ----------------
-    def _on_drop_single(self, event, var: tk.StringVar, exts: tuple,
-                        on_hit=None) -> None:
+    def _on_drop_single(
+        self, event, var: tk.StringVar, exts: tuple, on_hit=None
+    ) -> None:
         """拖放单个文件到输入框；命中时设置 var 并调用可选 on_hit(路径)。
 
         供 xlsx/表格模板等输入行复用（命中后的附加处理如刷新下拉/记忆
@@ -365,9 +412,8 @@ class PanelLayoutMixin:
         elif paths:
             messagebox.showwarning("提示", f"仅支持 {', '.join(exts)} 文件")
 
-    def _on_finish(self, success: bool) -> None:
-        """完成收尾：恢复按钮并弹窗汇总（目录助手覆盖为自己的统计弹窗）。"""
-        super()._on_finish(success)
+    def _finish_notify(self, success: bool) -> None:
+        """完成提示钩子：默认弹窗汇总（目录助手覆盖为自己的统计弹窗）。"""
         finish_popup(success)
 
 
@@ -383,8 +429,8 @@ class RunStartMixin:
       钩子（如输出 sheet 定位日志）。
 
     _start 由本类统一提供，消除三个面板重复的「running 检查 / begin_run /
-    启动 worker / 启动异常复位」样板。约定：本类位于 AsyncPanel 之前的 MRO
-    （继承顺序 ... PanelLayoutMixin, RunStartMixin, AsyncPanel）。
+    启动 worker / 启动异常复位」样板。依赖 AsyncPanel 提供 _start_worker /
+    _emit / running / _cancel_event（由面板的 MRO 一并继承）。
     """
 
     def _run_maximum(self) -> int | None:

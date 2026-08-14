@@ -16,18 +16,15 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 
-from cadbatchassistant.common import (
-    AsyncPanel,
-    get_oda,
-    get_out_version,
-)
 from cadbatchassistant.core import dwg_converter as dc
+from cadbatchassistant.core.app_config import get_oda, get_out_version
 from cadbatchassistant.core.dwg_workflow import (
     stage_dxf_batch,
     write_back_dxf_batch,
 )
 from cadbatchassistant.core.parallel import TaskFailed, map_files
 from cadbatchassistant.core.text_replace import ReplaceRule, process_dxf_file
+from cadbatchassistant.gui.async_panel import AsyncPanel
 from cadbatchassistant.gui.gui_shared import (
     FilesPanelMixin,
     PanelLayoutMixin,
@@ -59,7 +56,7 @@ class EditableTreeview(ttk.Treeview):
         super().__init__(master, **kw)
         self._app = app
         self._editor: tk.Entry | None = None
-        self._edit_iid: str | None = None
+        self._edit_iid: str = ""
         self._edit_col: int = 0
 
         self.bind("<Double-1>", self._on_double)
@@ -177,13 +174,19 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
         self._add_input_section()
 
         # 2. 规则区（表格内直接增删改）
-        rule_frame = ttk.LabelFrame(self._main, text="替换规则（按顺序执行）", padding=8)
+        rule_frame = ttk.LabelFrame(
+            self._main, text="替换规则（按顺序执行）", padding=8
+        )
         rule_frame.pack(fill="x", **self._pad)
 
         rule_tree_frame = ttk.Frame(rule_frame)
         rule_tree_frame.pack(fill="x")
         self.rule_tree = EditableTreeview(
-            rule_tree_frame, self, columns=("find", "replace"), show="headings", height=5
+            rule_tree_frame,
+            self,
+            columns=("find", "replace"),
+            show="headings",
+            height=5,
         )
         self.rule_tree.heading("find", text="查找")
         self.rule_tree.heading("replace", text="替换为")
@@ -210,14 +213,14 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
             row=0, column=1, sticky="w", padx=8
         )
         self.var_dry = tk.BooleanVar(value=False)
-        ttk.Checkbutton(opt_frame, text="dry-run（只统计不写文件）", variable=self.var_dry).grid(
-            row=0, column=2, sticky="w", padx=8
-        )
+        ttk.Checkbutton(
+            opt_frame, text="dry-run（只统计不写文件）", variable=self.var_dry
+        ).grid(row=0, column=2, sticky="w", padx=8)
         opt_frame.columnconfigure(2, weight=1)
 
         # 4. 输出区
-        self.var_output = tk.StringVar()
-        self._add_output_section(self.var_output)
+        self.var_out = tk.StringVar()
+        self._add_output_section(self.var_out)
 
         # 5. 运行区
         self._add_run_section()
@@ -234,9 +237,12 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
 
     def _rules(self) -> list[ReplaceRule]:
         return [
-            ReplaceRule(find=find, replace=replace,
-                        case_sensitive=self.var_case.get(),
-                        regex=self.var_regex.get())
+            ReplaceRule(
+                find=find,
+                replace=replace,
+                case_sensitive=self.var_case.get(),
+                regex=self.var_regex.get(),
+            )
             for find, replace in self.rules_data
             if find
         ]
@@ -316,10 +322,10 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
             return None
         if not warn_require(bool(self.scanned_files), "请选择要处理的 DWG/DXF 文件"):
             return None
-        out = self.var_output.get().strip()
+        out = self.var_out.get().strip()
         if not out:
             self._default_output()
-            out = self.var_output.get().strip()
+            out = self.var_out.get().strip()
         if not warn_require(bool(out), "请设置输出目录"):
             return None
         oda = get_oda()
@@ -352,17 +358,31 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
             self._emit("处理未开始（输入文件复制失败），请检查文件是否被占用后重试。")
             return None
 
-        return (inp, out, rules, self.var_dry.get(),
-                oda, out_version, work_in, snapshot)
+        return (
+            inp,
+            out,
+            rules,
+            self.var_dry.get(),
+            oda,
+            out_version,
+            work_in,
+            snapshot,
+        )
 
     # ---------------- 批处理（后台线程） ----------------
-    def _work(self, inp: str, out: str, rules: list[ReplaceRule],
-              dry_run: bool, oda: str, out_version: str,
-              work_in: str | None = None,
-              files_snapshot: list[str] | None = None) -> bool:
+    def _work(
+        self,
+        inp: str,
+        out: str,
+        rules: list[ReplaceRule],
+        dry_run: bool,
+        oda: str,
+        out_version: str,
+        work_in: str | None = None,
+        files_snapshot: list[str] | None = None,
+    ) -> bool:
         try:
-            self._run_batch(inp, out, rules, dry_run, oda, out_version,
-                            files_snapshot)
+            self._run_batch(inp, out, rules, dry_run, oda, out_version, files_snapshot)
             success = not self._is_cancelled()  # 中途被停止时不算完成
             if success:
                 total = len(files_snapshot or self.scanned_files)
@@ -372,24 +392,31 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
             if work_in:
                 shutil.rmtree(work_in, ignore_errors=True)
 
-    def _run_batch(self, inp: str, out: str, rules: list[ReplaceRule],
-                   dry_run: bool, oda: str, out_version: str,
-                   files_snapshot: list[str] | None = None) -> None:
+    def _run_batch(
+        self,
+        inp: str,
+        out: str,
+        rules: list[ReplaceRule],
+        dry_run: bool,
+        oda: str,
+        out_version: str,
+        files_snapshot: list[str] | None = None,
+    ) -> None:
         out_dir = Path(out)
         if not dry_run:
             out_dir.mkdir(parents=True, exist_ok=True)
 
         # 后台线程只读快照，不读 self.scanned_files（主线程可能并发增删）
-        files = list(files_snapshot if files_snapshot is not None
-                     else self.scanned_files)
+        files = list(
+            files_snapshot if files_snapshot is not None else self.scanned_files
+        )
         dxf_files = [Path(p) for p in files if p.lower().endswith(".dxf")]
         dwg_files = [Path(p) for p in files if p.lower().endswith(".dwg")]
         done = 0
         total_ok, total_fail, total_replaced = 0, 0, 0
 
         # ---- DXF 直接处理（多进程并行） ----
-        dxf_tasks = [(src, out_dir / src.name, rules, dry_run)
-                     for src in dxf_files]
+        dxf_tasks = [(src, out_dir / src.name, rules, dry_run) for src in dxf_files]
 
         def _on_dxf_done(result, _idx, item) -> None:
             nonlocal done, total_ok, total_fail, total_replaced
@@ -402,12 +429,15 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
                 total_ok += 1
                 total_replaced += result.replaced_total
                 verb = "预览命中" if dry_run else "处理完成"
-                self._emit(f"[DXF] {src.name}: {verb}，替换 {result.replaced_total} 处 "
-                           f"({', '.join(f'{k}:{v}' for k, v in result.per_type.items())})")
+                self._emit(
+                    f"[DXF] {src.name}: {verb}，替换 {result.replaced_total} 处 "
+                    f"({', '.join(f'{k}:{v}' for k, v in result.per_type.items())})"
+                )
             self._progress(done, total_ok, total_fail, total_replaced)
 
-        map_files(_text_task, dxf_tasks, is_cancelled=self._is_cancelled,
-                  on_done=_on_dxf_done)
+        map_files(
+            _text_task, dxf_tasks, is_cancelled=self._is_cancelled, on_done=_on_dxf_done
+        )
         if self._is_cancelled():
             self._emit("已停止。")
             return
@@ -418,7 +448,10 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
                 for src in dwg_files:
                     done += 1
                     self._progress(done, total_ok, total_fail, total_replaced)
-                    self._emit(f"[DWG] {src.name}: dry-run 跳过（DWG 需 ODA 转换，dry-run 不执行）")
+                    self._emit(
+                        f"[DWG] {src.name}: dry-run 跳过"
+                        "（DWG 需 ODA 转换，dry-run 不执行）"
+                    )
                 total_fail += len(dwg_files)
                 return
             converter = dc.get_converter()
@@ -430,10 +463,10 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
                 mid2.mkdir()
                 dwg_names = [p.name for p in dwg_files]
                 self._emit(f"正在用 ODA 转换 {len(dwg_files)} 个 DWG → DXF ...")
-                stage_dxf_batch(converter, oda, inp, mid1, dwg_names, [],
-                                out_version)
-                dwg_tasks = [(f, mid2 / f.name, rules, False)
-                             for f in sorted(mid1.glob("*.dxf"))]
+                stage_dxf_batch(converter, oda, inp, mid1, dwg_names, [], out_version)
+                dwg_tasks = [
+                    (f, mid2 / f.name, rules, False) for f in sorted(mid1.glob("*.dxf"))
+                ]
 
                 def _on_dwg_done(result, _idx, item) -> None:
                     nonlocal done, total_ok, total_fail, total_replaced
@@ -445,12 +478,21 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
                     else:
                         total_ok += 1
                         total_replaced += result.replaced_total
-                        self._emit(f"[DWG] {f.stem}.dwg: 转换+替换完成，替换 {result.replaced_total} 处 "
-                                   f"({', '.join(f'{k}:{v}' for k, v in result.per_type.items())})")
+                        per_type = ", ".join(
+                            f"{k}:{v}" for k, v in result.per_type.items()
+                        )
+                        self._emit(
+                            f"[DWG] {f.stem}.dwg: 转换+替换完成，"
+                            f"替换 {result.replaced_total} 处 ({per_type})"
+                        )
                     self._progress(done, total_ok, total_fail, total_replaced)
 
-                map_files(_text_task, dwg_tasks, is_cancelled=self._is_cancelled,
-                          on_done=_on_dwg_done)
+                map_files(
+                    _text_task,
+                    dwg_tasks,
+                    is_cancelled=self._is_cancelled,
+                    on_done=_on_dwg_done,
+                )
                 if self._is_cancelled():
                     self._emit("已停止。")
                     return
@@ -461,12 +503,21 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
                     converted = {task[0].stem for task in dwg_tasks}
                     missing = {Path(n).stem for n in dwg_names} - converted
                     if missing:
-                        self._emit("[WARN] 以下 DWG 无转换产物，跳过写回："
-                                   + "、".join(sorted(missing)))
+                        self._emit(
+                            "[WARN] 以下 DWG 无转换产物，跳过写回："
+                            + "、".join(sorted(missing))
+                        )
                     self._emit("正在用 ODA 转换处理后的 DXF → DWG ...")
-                    write_back_dxf_batch(converter, oda, mid2, out_dir,
-                                         dwg_names, [], out_version,
-                                         skip=missing)
+                    write_back_dxf_batch(
+                        converter,
+                        oda,
+                        mid2,
+                        out_dir,
+                        dwg_names,
+                        [],
+                        out_version,
+                        skip=missing,
+                    )
             except dc.ODAError as ex:
                 total_fail += len(dwg_files)
                 self._emit(f"[ODA] 转换失败：{ex}")
@@ -476,12 +527,12 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
             finally:
                 shutil.rmtree(work, ignore_errors=True)
 
-        self._emit(f"---- 汇总：成功 {total_ok}，失败 {total_fail}，替换 {total_replaced} 处 ----")
+        self._emit(
+            f"---- 汇总：成功 {total_ok}，失败 {total_fail}，"
+            f"替换 {total_replaced} 处 ----"
+        )
         if dry_run:
             self._emit("（dry-run 模式：未写入任何文件）")
 
     def _progress(self, done: int, ok: int, fail: int, replaced: int) -> None:
         self._emit("", done)
-
-
-

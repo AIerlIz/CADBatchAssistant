@@ -11,6 +11,8 @@ from __future__ import annotations
 import datetime
 from pathlib import Path
 
+from cadbatchassistant.core.filetypes import CAD_SUFFIXES
+
 EXCEL_EPOCH = datetime.date(1899, 12, 30)
 
 
@@ -76,7 +78,9 @@ def load_sheet_meta(path: str | Path) -> tuple[list[str], dict[str, list[str]]]:
         wb.close()
 
 
-def _read_raw_rows(path: str, sheet: str | None = None) -> tuple[list[list], str]:
+def _read_raw_rows(
+    path: str | Path, sheet: str | None = None
+) -> tuple[list[list], str]:
     """读取指定工作表的原始行列表；返回 (rows, 后端类型 'xlsx'|'xls')。
 
     sheet 为工作表名，None 时取第一个（向后兼容）。
@@ -98,7 +102,8 @@ def _read_raw_rows_xlsx(path: str, sheet: str | None = None) -> list[list]:
             if sheet not in wb.sheetnames:
                 raise ValueError(
                     f"数据表中不存在工作表「{sheet}」，可用："
-                    + ("、".join(wb.sheetnames) if wb.sheetnames else "(无)"))
+                    + ("、".join(wb.sheetnames) if wb.sheetnames else "(无)")
+                )
             ws = wb[sheet]
         rows = [list(r) for r in ws.iter_rows(values_only=True)]
     finally:
@@ -119,7 +124,8 @@ def _read_raw_rows_xls(path: str, sheet: str | None = None) -> list[list]:
             names = book.sheet_names()
             raise ValueError(
                 f"数据表中不存在工作表「{sheet}」，可用："
-                + ("、".join(names) if names else "(无)")) from None
+                + ("、".join(names) if names else "(无)")
+            ) from None
     rows: list[list] = []
     for r in range(ws.nrows):
         row = []
@@ -144,8 +150,9 @@ def get_headers(path: str | Path, sheet: str | None = None) -> list[str]:
     return _make_cols(rows[0])
 
 
-def _build_records(raw_rows: list[list], path: str,
-                   match_col: str | None = None) -> dict[str, dict[str, str]]:
+def _build_records(
+    raw_rows: list[list], path: str, match_col: str | None = None
+) -> dict[str, dict[str, str]]:
     """由原始行列表构建 {图纸名: {列名: 值}}；首行为表头。
 
     match_col：指定哪一列作为图纸名（匹配键）；None 时默认第一列（向后兼容）。
@@ -162,14 +169,15 @@ def _build_records(raw_rows: list[list], path: str,
         except ValueError:
             raise ValueError(
                 f"数据表中不存在匹配列「{match_col}」，可用列："
-                + ("、".join(cols) if cols else "(空表头)")) from None
+                + ("、".join(cols) if cols else "(空表头)")
+            ) from None
 
     result: dict[str, dict[str, str]] = {}
     for row in raw_rows[1:]:
         if not any(c is not None for c in row):
             continue
         record: dict[str, str] = {}
-        for col, raw in zip(cols, row):
+        for col, raw in zip(cols, row, strict=False):
             if col == "":
                 continue
             if raw is None:
@@ -181,33 +189,37 @@ def _build_records(raw_rows: list[list], path: str,
                     record[col] = s
                     continue
             if isinstance(raw, float) and raw.is_integer():
-                record[col] = str(int(raw))  # xlrd 数字为 float，1.0 → '1'（与 openpyxl 一致）
+                record[col] = str(
+                    int(raw)
+                )  # xlrd 数字为 float，1.0 → '1'（与 openpyxl 一致）
             else:
                 record[col] = str(raw).strip()
 
         name = record.get(cols[key_idx], "")
         if not name:
             continue
-        stem = Path(name).stem if name.lower().endswith((".dwg", ".dxf")) else name
+        stem = Path(name).stem if name.lower().endswith(CAD_SUFFIXES) else name
         result[stem] = record
     return result
 
 
-def _load_xlsx(path: str, match_col: str | None = None,
-               sheet: str | None = None) -> dict[str, dict[str, str]]:
+def _load_xlsx(
+    path: str, match_col: str | None = None, sheet: str | None = None
+) -> dict[str, dict[str, str]]:
     """openpyxl 后端：.xlsx / .xlsm 等。"""
     return _build_records(_read_raw_rows_xlsx(path, sheet), path, match_col)
 
 
-def _load_xls(path: str, match_col: str | None = None,
-              sheet: str | None = None) -> dict[str, dict[str, str]]:
+def _load_xls(
+    path: str, match_col: str | None = None, sheet: str | None = None
+) -> dict[str, dict[str, str]]:
     """xlrd 后端：旧版 .xls（BIFF）。"""
     return _build_records(_read_raw_rows_xls(path, sheet), path, match_col)
 
 
-def load_xlsx(path: str | Path,
-              match_col: str | None = None,
-              sheet: str | None = None) -> dict[str, dict[str, str]]:
+def load_xlsx(
+    path: str | Path, match_col: str | None = None, sheet: str | None = None
+) -> dict[str, dict[str, str]]:
     """读取数据表（.xlsx/.xlsm 或 .xls），返回 {图纸名: {列名: 值}}。
 
     match_col：图纸名列（默认第一列，向后兼容）。

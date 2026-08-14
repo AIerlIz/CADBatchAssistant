@@ -23,6 +23,7 @@ from cadbatchassistant.core.catalog_template_reader import (
     collect_fields,
     parse_template,
 )
+from cadbatchassistant.core.filetypes import CAD_SUFFIXES, XLSX_SUFFIXES
 from cadbatchassistant.core.input_files import check_duplicate_names
 from cadbatchassistant.core.parallel import TaskFailed, map_files
 
@@ -56,8 +57,7 @@ class PipelineResult:
         self.fields: list[str] = []
 
 
-def parse_template_anchors(template_dwg: str | Path,
-                           oda: str = "") -> list[Anchor]:
+def parse_template_anchors(template_dwg: str | Path, oda: str = "") -> list[Anchor]:
     """解析图纸模板，返回锚点列表（含字段名与取值区域）。
 
     模板为 DWG 时先复制到临时目录并转 DXF（oda 为空时自动探测
@@ -84,7 +84,8 @@ def _extract_task(item: tuple) -> dict:
     """
     f, anchors, point_tol, fig_fields = item
     return extract_by_anchors(
-        f, anchors, point_tolerance=point_tol, fig_fields=fig_fields)
+        f, anchors, point_tolerance=point_tol, fig_fields=fig_fields
+    )
 
 
 def run_pipeline(
@@ -93,7 +94,7 @@ def run_pipeline(
     dwg_files: list[str | Path],
     out_path: str | Path,
     oda: str = "",
-    out_version: str = "ACAD2018",
+    out_version: str = dc.DEFAULT_OUT_VERSION,
     rules: dict | None = None,
     sheet_name: str | None = None,
     log: LogFn = lambda m: None,
@@ -126,14 +127,14 @@ def run_pipeline(
         result.error = "必须提供表格模板（输出目录样式）"
         return result
     files = [Path(str(p)) for p in dwg_files if str(p).strip()]
-    files = [p for p in files if p.suffix.lower() in (".dwg", ".dxf")]
+    files = [p for p in files if p.suffix.lower() in CAD_SUFFIXES]
     if not files:
         result.error = "请选择要处理的 DWG/DXF 图纸文件"
         return result
     result.total_files = len(files)
     out_path = Path(out_path)
     # 输出路径兼容两种语义：显式 .xlsx 文件名，或目录（自动按表格模板名命名）
-    if out_path.suffix.lower() not in (".xlsx", ".xls"):
+    if out_path.suffix.lower() not in XLSX_SUFFIXES:
         tpl_stem = Path(str(xlsx)).stem if str(xlsx).strip() else ""
         out_path = out_path / (f"{tpl_stem}.xlsx" if tpl_stem else "目录.xlsx")
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -142,7 +143,8 @@ def run_pipeline(
     converter = dc.get_converter()
     oda = converter.resolve(oda)
     has_dwg = template.suffix.lower() == ".dwg" or any(
-        p.suffix.lower() == ".dwg" for p in files)
+        p.suffix.lower() == ".dwg" for p in files
+    )
     err = converter.require_for_dwg(has_dwg, oda)
     if err:
         result.error = err
@@ -150,7 +152,7 @@ def run_pipeline(
 
     # 3. 统一复制到临时目录并转换 DXF（跨目录图纸 + 模板）
     #    先检测重名：同名文件（含大小写不敏感）会互相覆盖/漏处理，直接报错终止
-    all_inputs = [template] + files
+    all_inputs = [template, *files]
     try:
         check_duplicate_names(all_inputs)
     except ValueError as ex:
@@ -179,7 +181,8 @@ def run_pipeline(
         else:
             try:
                 template_dxf = converter.template_to_dxf(
-                    template, tmp_dir, oda, subdir="_dxf_out")
+                    template, tmp_dir, oda, subdir="_dxf_out"
+                )
             except dc.ODAError as ex:
                 result.error = f"模板 DWG 转换失败: {ex}"
                 return result
@@ -216,8 +219,10 @@ def run_pipeline(
                 failed_files.append(p.name)
         result.failed_files = failed_files
         if result.failed_files:
-            log(f"警告：{len(result.failed_files)} 个文件转换失败（已跳过）："
-                + "、".join(result.failed_files))
+            log(
+                f"警告：{len(result.failed_files)} 个文件转换失败（已跳过）："
+                + "、".join(result.failed_files)
+            )
         if not dxf_files:
             result.error = "没有任何 DXF 产物，无法继续"
             return result
@@ -228,12 +233,14 @@ def run_pipeline(
         # 图号字段识别：精确匹配优先，其次宽松匹配（配置 "图号" 可命中 "图纸号" 列）；
         # 图号类字段的单点锚点只取距离最近 1 个文字（一个图号位一个值）
         fig_fields = frozenset(
-            f for f in fields
-            if figure_field and (f == figure_field
-                                 or all(ch in f for ch in figure_field)))
+            f
+            for f in fields
+            if figure_field
+            and (f == figure_field or all(ch in f for ch in figure_field))
+        )
         total = len(dxf_files)
         tasks = [(f, anchors, point_tol, fig_fields) for f in dxf_files]
-        results: list[dict | None] = [None] * total
+        results: list[dict[str, list[str]] | None] = [None] * total
         cancelled = {"v": False}
 
         def _is_cancelled() -> bool:
@@ -256,34 +263,40 @@ def run_pipeline(
             else:
                 results[idx] = result
 
-        map_files(_extract_task, tasks, is_cancelled=_is_cancelled,
-                  on_done=_on_done)
+        map_files(_extract_task, tasks, is_cancelled=_is_cancelled, on_done=_on_done)
         if cancelled["v"]:
             result.error = "已取消"
             return result
         # 保持用户选择的文件顺序构建 entries（map_files 结果按提交顺序返回）
-        entries = [FileEntry(filename=dxf_files[i].stem, values=results[i])
-                   for i in range(total) if results[i] is not None]
+        entries = []
+        for i in range(total):
+            values = results[i]
+            if values is not None:
+                entries.append(FileEntry(filename=dxf_files[i].stem, values=values))
 
         # 7. 构建目录并输出
         progress(80)
         try:
             cat = build_file_catalog(
-                entries, fields,
+                entries,
+                fields,
                 data_rows_per_page=int(rules.get("data_rows_per_page", 50)),
                 cover_pages=int(rules.get("cover_pages", 1)),
             )
             result.na_rows = cat.na_rows
             result.total_pages = cat.total_pages
             catalog_excel_writer.write_catalog_from_template(
-                cat, xlsx, out_path, sheet_name=sheet_name)
+                cat, xlsx, out_path, sheet_name=sheet_name
+            )
         except Exception as ex:  # noqa: BLE001 - 输出阶段（表头反推/写入）失败按流程错误返回
             result.error = f"生成目录失败: {ex}"
             return result
         result.out_path = out_path
         log(f"目录已生成：{out_path}")
-        log(f"完成：{len(entries)} 张图纸，"
-            f"{cat.na_rows} 张无值(NA)，共 {cat.total_pages} 页")
+        log(
+            f"完成：{len(entries)} 张图纸，"
+            f"{cat.na_rows} 张无值(NA)，共 {cat.total_pages} 页"
+        )
         progress(100)
 
     result.ok = True

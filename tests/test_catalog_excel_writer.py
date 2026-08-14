@@ -36,11 +36,13 @@ def test_detect_header_row_no_match_returns_none():
 
 
 def test_detect_header_row_picks_best_match_row():
-    ws = _ws_with_rows([
-        ["图号"],                       # 命中 1 个
-        ["管段编号", "图号", "页码"],   # 命中 2 个 → 表头
-        ["管段编号"],                   # 命中 1 个
-    ])
+    ws = _ws_with_rows(
+        [
+            ["图号"],  # 命中 1 个
+            ["管段编号", "图号", "页码"],  # 命中 2 个 → 表头
+            ["管段编号"],  # 命中 1 个
+        ]
+    )
     assert detect_header_row(ws, ["管段编号", "图号"]) == 2
 
 
@@ -82,12 +84,14 @@ def test_adjacent_same_fig_merged_across_files(tmp_path):
     cat = Catalog(
         fields=["图纸号", "包含管段"],
         entries=[
-            FileEntry(filename="A", values={"图纸号": ["DWG-1"],
-                                            "包含管段": ["P-1", "P-2"]}),
-            FileEntry(filename="B", values={"图纸号": ["DWG-1"],
-                                            "包含管段": ["P-3"]}),
+            FileEntry(
+                filename="A", values={"图纸号": ["DWG-1"], "包含管段": ["P-1", "P-2"]}
+            ),
+            FileEntry(filename="B", values={"图纸号": ["DWG-1"], "包含管段": ["P-3"]}),
         ],
-        page_count=1, total_pages=4, na_rows=0,
+        page_count=1,
+        total_pages=4,
+        na_rows=0,
     )
     out = tmp_path / "out.xlsx"
     write_catalog_from_template(cat, _fig_template(tmp_path), out)
@@ -109,18 +113,20 @@ def test_adjacent_diff_fig_not_merged_across_files(tmp_path):
     cat = Catalog(
         fields=["图纸号", "包含管段"],
         entries=[
-            FileEntry(filename="A", values={"图纸号": ["DWG-1"],
-                                            "包含管段": ["P-1", "P-2"]}),
-            FileEntry(filename="B", values={"图纸号": ["DWG-2"],
-                                            "包含管段": ["P-3"]}),
+            FileEntry(
+                filename="A", values={"图纸号": ["DWG-1"], "包含管段": ["P-1", "P-2"]}
+            ),
+            FileEntry(filename="B", values={"图纸号": ["DWG-2"], "包含管段": ["P-3"]}),
         ],
-        page_count=1, total_pages=4, na_rows=0,
+        page_count=1,
+        total_pages=4,
+        na_rows=0,
     )
     out = tmp_path / "out2.xlsx"
     write_catalog_from_template(cat, _fig_template(tmp_path), out)
     ws = load_workbook(out).active
     merged = {str(m) for m in ws.merged_cells.ranges}
-    assert "A2:A3" in merged      # 文件 A 内部 2 行合并
+    assert "A2:A3" in merged  # 文件 A 内部 2 行合并
     assert "A2:A4" not in merged  # 不跨文件
     assert ws.cell(row=2, column=1).value == "DWG-1"
     assert ws.cell(row=4, column=1).value == "DWG-2"
@@ -131,14 +137,13 @@ def test_same_fig_not_adjacent_not_merged(tmp_path):
     cat = Catalog(
         fields=["图纸号", "包含管段"],
         entries=[
-            FileEntry(filename="A", values={"图纸号": ["DWG-1"],
-                                            "包含管段": ["P-1"]}),
-            FileEntry(filename="B", values={"图纸号": ["DWG-2"],
-                                            "包含管段": ["P-2"]}),
-            FileEntry(filename="C", values={"图纸号": ["DWG-1"],
-                                            "包含管段": ["P-3"]}),
+            FileEntry(filename="A", values={"图纸号": ["DWG-1"], "包含管段": ["P-1"]}),
+            FileEntry(filename="B", values={"图纸号": ["DWG-2"], "包含管段": ["P-2"]}),
+            FileEntry(filename="C", values={"图纸号": ["DWG-1"], "包含管段": ["P-3"]}),
         ],
-        page_count=1, total_pages=5, na_rows=0,
+        page_count=1,
+        total_pages=5,
+        na_rows=0,
     )
     out = tmp_path / "out3.xlsx"
     write_catalog_from_template(cat, _fig_template(tmp_path), out)

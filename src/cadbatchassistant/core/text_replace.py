@@ -119,7 +119,9 @@ def apply_rules(text: str, rules: list[ReplaceRule]) -> tuple[str, int]:
                 new_text, count = pattern.subn(rule.replace, new_text)
             else:
                 # 普通文本：替换内容按字面输出，避免 \\1 / \\ 被正则转义解释
-                new_text, count = pattern.subn(lambda _m: rule.replace, new_text)
+                # lambda 由 subn 在本轮迭代内立即调用，rule 绑定正确
+                new_text, count = pattern.subn(
+                    lambda _m: rule.replace, new_text)  # noqa: B023
         except re.error:
             continue  # 替换模板引用无效组（如 \\1 无对应捕获组）：跳过该规则
         total += count
@@ -147,8 +149,7 @@ def iter_text_entities(doc):
             if t in TEXT_TYPES:
                 yield e
             elif t == "INSERT":
-                for attrib in e.attribs:
-                    yield attrib
+                yield from e.attribs
 
 
 def _has_undecoded_surrogates(doc) -> bool:
@@ -179,18 +180,18 @@ def read_doc(src: str | Path) -> ezdxf.document.Drawing:
         doc = ezdxf.readfile(src)
     except ezdxf.DXFStructureError:
         raise
-    except Exception as first_err:
+    except Exception:  # 默认编码失败，尝试候选编码
         for enc in _candidate_encodings(src):
             try:
                 return ezdxf.readfile(src, encoding=enc)
-            except Exception:
+            except Exception:  # noqa: BLE001 - 尝试下一个候选编码
                 continue
-        raise first_err
+        raise
     if _has_undecoded_surrogates(doc):
         for enc in _candidate_encodings(src):
             try:
                 retry = ezdxf.readfile(src, encoding=enc)
-            except Exception:
+            except Exception:  # noqa: BLE001 - 尝试下一个候选编码
                 continue
             if not _has_undecoded_surrogates(retry):
                 return retry

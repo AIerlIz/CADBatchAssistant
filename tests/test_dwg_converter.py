@@ -127,9 +127,9 @@ def test_convert_batch_nonzero_includes_stderr(tmp_path, monkeypatch):
         convert_batch(exe, in_dir, out_dir)
     msg = str(ei.value)
     assert "退出码 3" in msg
-    assert "license invalid" in msg        # stderr 尾部
+    assert "license invalid" in msg  # stderr 尾部
     assert "missing dependency" in msg
-    assert "ODA File Converter" in msg     # stdout 尾部
+    assert "ODA File Converter" in msg  # stdout 尾部
 
 
 def test_convert_batch_nonzero_without_output(tmp_path, monkeypatch):

@@ -33,7 +33,7 @@ uv run python main.py
 
 ### 目录助手
 
-1. **图纸模板**：在取值位置放 `[字段名]` 文字（如 `[图号]`），可放多个同名候选位；用小矩形圈住区域则按区域内全部文字取值。上传到模板库下拉（`templates/catalog`）
+1. **图纸模板**：在取值位置放 `[字段名]` 文字（如 `[图号]`），可放多个同名候选位；用小矩形圈住区域则按区域内全部文字取值。取值区域 = 占位符文字在模板中的覆盖范围（包围盒），**把占位符文字调大即可扩大取值区域**，不再依赖坐标容差。上传到模板库下拉（`templates/catalog`）
 2. **表格模板（必填）**：Excel 表头列名 = 模板字段名 +「页码」，程序自动定位 sheet 与表头行；多个 sheet 并列时弹窗选择。可用 `write_style_template` 生成参考模板
 3. 选择图纸 → 设置输出目录 → 开始处理
 
@@ -43,8 +43,8 @@ uv run python main.py
 
 | 键 | 默认值 | 说明 |
 |---|---|---|
-| `figure_field` | `图号` | 图号字段名（用于识别图号列，取不到填 `NA`，不做文件名兜底） |
-| `point_tolerance` | `5` | 单点锚点取值坐标容差 |
+| `figure_field` | `图号` | 图号字段名（取不到填 `NA`，不做文件名兜底） |
+| `point_tolerance` | `5` | 历史保留（单点锚点已改由占位符覆盖区域取值，不再使用坐标容差） |
 | `data_rows_per_page` | `50` | 目录每页数据行数 |
 | `cover_pages` | `1` | 封皮页数 |
 
@@ -91,8 +91,10 @@ CADBatchAssistant.exe --selftest <图纸模板DWG> <图纸文件...>
 ```
 main.py                    # 入口：Notebook 窗口 + --selftest
 src/cadbatchassistant/
-  common.py                # 共享组件：配置、软件目录/模板库函数、控件、AsyncPanel
   core/
+    app_config.py          # 全局配置：JSON 读写、软件目录、目录助手规则、输出版本
+    templates.py           # 模板库纯文件操作（枚举/复制/删除，无 GUI 依赖）
+    filetypes.py           # 共享文件扩展名常量（CAD_SUFFIXES / XLSX_SUFFIXES）
     text_replace.py        # 改字：DXF 文字查找替换
     dwg_converter.py       # 转换引擎抽象：Converter 接口 + ODA 实现（三功能共用）
     dwg_workflow.py        # DWG 批处理工作流（统一成 DXF 批 / 处理后写回）
@@ -109,6 +111,9 @@ src/cadbatchassistant/
     catalog_excel_writer.py     # 目录：Excel 输出
     updater.py             # 在线更新
   gui/
+    async_panel.py         # 后台任务骨架：后台线程 + 消息队列 + after 轮询
+    tk_util.py             # GUI 通用工具：字体/主题/居中/去重/拖放解析
+    tk_widgets.py          # 通用控件构建 + ODA 助手 + 模板库弹窗包装
     gui_shared.py          # 三个面板共享组件（FilesPanel/TemplateLibrary/PanelLayout/RunStart Mixin）
     gui_text.py            # 改字助手面板
     gui_fill.py            # 填表助手面板
@@ -118,7 +123,7 @@ src/cadbatchassistant/
 scripts/
   inject_version.py        # 打包版本注入
   verify_end_to_end.py     # 目录助手端到端验证
-tests/                     # pytest 单测
+tests/                     # pytest 单测（core 纯逻辑 / GUI 冒烟 / updater 等）
 ```
 
 ## 验证

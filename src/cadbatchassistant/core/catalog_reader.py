@@ -54,11 +54,13 @@ def extract_by_anchors(
 ) -> dict[str, list[str]]:
     """按模板锚点从单个 DXF 提取每字段值列表。
 
-    - 区域锚点：取矩形内全部文字纯文本；单点锚点：取坐标 ± point_tolerance 内文字
-    - 仅保留编号型字符（字母/数字/连字符/下划线）；文件名不参与取值过滤
-    - 图号类字段（fig_fields）的单点锚点：只取距离最近 1 个文字（一个图号位
-      只对应一个图号，避免把相邻位置的其他文字误取进来）；其他字段取容差内全部
+    - 所有锚点统一按覆盖矩形取值：区域锚点 = 模板里圈选的小矩形；
+      单点锚点 = 占位符文字在模板中的包围盒（_text_bounds）
+    - 矩形内仅保留编号型字符（字母/数字/中文/连字符/下划线）
     - 同一字段多个锚点（候选位置）的值合并，保序去重；无值锚点忽略
+
+    point_tolerance / fig_fields 参数为历史兼容保留（单点锚点已改由
+    占位符覆盖区域取值，不再使用坐标容差与「最近 1 个」逻辑）。
     返回 {字段名: [值, ...]}（按锚点出现顺序）。
     """
     doc = ezdxf.readfile(str(dxf_path))
@@ -74,25 +76,10 @@ def extract_by_anchors(
     out: dict[str, list[str]] = {}
     for a in anchors:
         vals: list[str] = []
-        is_fig = a.field in fig_fields  # 图号类字段：单点锚点只取最近 1 个
-        if a.is_area:
-            for x, y, t in texts:
-                if a.min_x <= x <= a.max_x and a.min_y <= y <= a.max_y:
-                    if _is_id_chars(t):
-                        vals.append(t)
-        else:
-            hits: list[tuple[float, str]] = []
-            for x, y, t in texts:
-                if abs(x - a.point_x) <= point_tolerance \
-                        and abs(y - a.point_y) <= point_tolerance:
-                    if _is_id_chars(t):
-                        hits.append((max(abs(x - a.point_x), abs(y - a.point_y)), t))
-            if is_fig:
-                # 图号类单点锚点：容差内只取距离最近 1 个文字
-                if hits:
-                    vals.append(min(hits, key=lambda h: h[0])[1])
-            else:
-                vals = [t for _, t in hits]
+        for x, y, t in texts:
+            if (a.min_x <= x <= a.max_x and a.min_y <= y <= a.max_y
+                    and _is_id_chars(t)):
+                vals.append(t)
         # 保序去重后并入该字段（多候选锚点合并）
         bucket = out.setdefault(a.field, [])
         for v in vals:

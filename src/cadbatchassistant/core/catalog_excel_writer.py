@@ -20,11 +20,10 @@ from cadbatchassistant.core.catalog_builder import (
 )
 
 # ---- 内置样式 ----
-_HEADER_FILL = PatternFill("solid", fgColor="4472C4")   # 深蓝表头
+_HEADER_FILL = PatternFill("solid", fgColor="4472C4")  # 深蓝表头
 _HEADER_FONT = Font(bold=True, color="FFFFFF")
 _THIN_SIDE = Side(style="thin", color="BFBFBF")
-_BORDER = Border(left=_THIN_SIDE, right=_THIN_SIDE,
-                 top=_THIN_SIDE, bottom=_THIN_SIDE)
+_BORDER = Border(left=_THIN_SIDE, right=_THIN_SIDE, top=_THIN_SIDE, bottom=_THIN_SIDE)
 _CENTER = Alignment(horizontal="center", vertical="center")
 _LEFT = Alignment(horizontal="left", vertical="center")
 
@@ -47,8 +46,15 @@ def write_style_template(path: str | Path, fields: list[str] | None = None) -> N
     ws.append(headers)
     ws.append(["示例值" if h != "页码" else 1 for h in headers])
     ws.append([])
-    ws.append(["说明", "第一行为表头样式，第二行为数据行样式（含边框/字体/对齐/底色）。"])
-    ws.append(["使用", "编辑后保存，在「目录助手」中把它选为表格模板；表头行由图纸模板字段自动定位。"])
+    ws.append(
+        ["说明", "第一行为表头样式，第二行为数据行样式（含边框/字体/对齐/底色）。"]
+    )
+    ws.append(
+        [
+            "使用",
+            "编辑后保存，在「目录助手」中把它选为表格模板；表头行由图纸模板字段自动定位。",
+        ]
+    )
     for cell in ws[1]:
         cell.font = _HEADER_FONT
         cell.fill = _HEADER_FILL
@@ -73,8 +79,7 @@ def detect_header_row(ws, fields: list[str], max_scan: int = 10) -> int | None:
     best_row: int | None = None
     best_score = 0
     for r in range(1, min(int(max_scan), ws.max_row) + 1):
-        cells = [str(c.value).strip() if c.value is not None else ""
-                 for c in ws[r]]
+        cells = [str(c.value).strip() if c.value is not None else "" for c in ws[r]]
         score = sum(1 for f in fields if f in cells)
         if score > best_score:
             best_score = score
@@ -82,8 +87,9 @@ def detect_header_row(ws, fields: list[str], max_scan: int = 10) -> int | None:
     return best_row if best_score > 0 else None
 
 
-def detect_sheet_candidates(wb, fields: list[str],
-                            max_scan: int = 10) -> list[tuple[int, object, int]]:
+def detect_sheet_candidates(
+    wb, fields: list[str], max_scan: int = 10
+) -> list[tuple[int, object, int]]:
     """按字段命中数降序返回表格模板中所有候选 sheet。
 
     返回 [(score, sheet, header_row), ...]：只包含至少命中一个字段的 sheet；
@@ -95,16 +101,16 @@ def detect_sheet_candidates(wb, fields: list[str],
         hr = detect_header_row(ws, fields, max_scan=max_scan)
         if hr is None:
             continue
-        cells = [str(c.value).strip() if c.value is not None else ""
-                 for c in ws[hr]]
+        cells = [str(c.value).strip() if c.value is not None else "" for c in ws[hr]]
         score = sum(1 for f in fields if f in cells)
         hits.append((score, ws, hr))
     hits.sort(key=lambda t: t[0], reverse=True)
     return hits
 
 
-def detect_sheet(wb, fields: list[str],
-                 max_scan: int = 10) -> tuple[object, int] | None:
+def detect_sheet(
+    wb, fields: list[str], max_scan: int = 10
+) -> tuple[object, int] | None:
     """自动定位表格模板中与字段匹配的 sheet 及其表头行。
 
     取字段命中数最多的 (sheet, header_row)；无任何匹配返回 None；
@@ -116,9 +122,12 @@ def detect_sheet(wb, fields: list[str],
     return candidates[0][1], candidates[0][2]
 
 
-def write_catalog_from_template(catalog: Catalog, xlsx_template: str | Path,
-                                out_path: str | Path,
-                                sheet_name: str | None = None) -> None:
+def write_catalog_from_template(
+    catalog: Catalog,
+    xlsx_template: str | Path,
+    out_path: str | Path,
+    sheet_name: str | None = None,
+) -> None:
     """以用户提供的表格模板生成目录，完全保留模板样式。
 
     sheet_name : 指定使用的 sheet 名（可空）。为空时自动定位：遍历全部
@@ -139,25 +148,29 @@ def write_catalog_from_template(catalog: Catalog, xlsx_template: str | Path,
     if sheet_name:
         if sheet_name not in wb.sheetnames:
             raise ValueError(
-                f"表格模板中不存在名为 {sheet_name} 的 sheet: {wb.sheetnames}")
+                f"表格模板中不存在名为 {sheet_name} 的 sheet: {wb.sheetnames}"
+            )
         ws = wb[sheet_name]
         header_row = detect_header_row(ws, catalog.fields)
         if header_row is None:
             raise ValueError(
                 f"表格模板 sheet「{sheet_name}」中未找到与字段匹配的表头行"
                 f"（字段：{'、'.join(catalog.fields)}）。"
-                "表头列名应包含与图纸模板 [字段名] 占位符一致的字段名。")
+                "表头列名应包含与图纸模板 [字段名] 占位符一致的字段名。"
+            )
     else:
         hit = detect_sheet(wb, catalog.fields)
         if hit is None:
             raise ValueError(
                 "表格模板中未找到与字段匹配的表头（sheet 与表头行）（字段："
                 + "、".join(catalog.fields)
-                + "）。表头列名应包含与图纸模板 [字段名] 占位符一致的字段名。")
+                + "）。表头列名应包含与图纸模板 [字段名] 占位符一致的字段名。"
+            )
         ws, header_row = hit
     first_data_row = header_row + 1
-    headers = [str(c.value).strip() if c.value is not None else ""
-               for c in ws[header_row]]
+    headers = [
+        str(c.value).strip() if c.value is not None else "" for c in ws[header_row]
+    ]
     n_cols = len(headers)
     page_col = headers.index("页码") if "页码" in headers else None
     # 图号类列（如 图纸号）与页码列：数据居中显示
@@ -167,7 +180,7 @@ def write_catalog_from_template(catalog: Catalog, xlsx_template: str | Path,
     # MergedCell.value 只读，不先取消会导致下方清空/写入时报
     # AttributeError；单值列与页码列的合并由后续逻辑按程序规则重建。
     for mr in list(ws.merged_cells.ranges):
-        min_col, min_row, max_col, max_row = mr.bounds
+        min_col, _, _, max_row = mr.bounds
         if max_row >= first_data_row and min_col <= n_cols:
             ws.unmerge_cells(str(mr))
 
@@ -208,20 +221,27 @@ def write_catalog_from_template(catalog: Catalog, xlsx_template: str | Path,
                 continue
             if len(entry.values.get(col, [])) == 1 and n_rows > 1:
                 ws.merge_cells(
-                    start_row=entry_start, start_column=ci + 1,
-                    end_row=row - 1, end_column=ci + 1)
+                    start_row=entry_start,
+                    start_column=ci + 1,
+                    end_row=row - 1,
+                    end_column=ci + 1,
+                )
         # 页码列跨文件行合并
         if page_col is not None and n_rows > 1:
             ws.merge_cells(
-                start_row=entry_start, start_column=page_col + 1,
-                end_row=row - 1, end_column=page_col + 1)
+                start_row=entry_start,
+                start_column=page_col + 1,
+                end_row=row - 1,
+                end_column=page_col + 1,
+            )
         # 记录图号类列的取值与行段（仅单值参与跨文件合并）
         for ci, col in enumerate(headers):
             if not col or ci not in fig_cols:
                 continue
             vals = entry.values.get(col, [])
             fig_col_ranges.setdefault(ci, []).append(
-                (vals[0] if len(vals) == 1 else None, entry_start, row))
+                (vals[0] if len(vals) == 1 else None, entry_start, row)
+            )
 
     # 图号类列：相邻文件图号相同 → 跨文件合并为一个单元格
     for ci, ranges in fig_col_ranges.items():
@@ -237,8 +257,11 @@ def write_catalog_from_template(catalog: Catalog, xlsx_template: str | Path,
             end = ranges[j - 1][2]
             if end - s0 > 1:
                 ws.merge_cells(
-                    start_row=s0, start_column=ci + 1,
-                    end_row=end - 1, end_column=ci + 1)
+                    start_row=s0,
+                    start_column=ci + 1,
+                    end_row=end - 1,
+                    end_column=ci + 1,
+                )
             i = j
 
     wb.save(out_path)

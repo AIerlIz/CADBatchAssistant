@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """模板占位扫描（learn_spec）测试：sheet 透传与按名称精确匹配。"""
 
 from __future__ import annotations
@@ -28,14 +27,14 @@ def _make_xlsx_multi(path, sheets: dict) -> None:
     wb.close()
 
 
-def _make_dxf_with_placeholders(path, texts: list[str],
-                                layer: str = "0") -> None:
+def _make_dxf_with_placeholders(path, texts: list[str], layer: str = "0") -> None:
     """写含占位符 TEXT 的临时 DXF（默认图层 0，可指定图层）。"""
     doc = ezdxf.new("R2004")
     msp = doc.modelspace()
     for i, t in enumerate(texts):
-        msp.add_text(t, dxfattribs={
-            "insert": (10, 10 + i * 10), "height": 3.0, "layer": layer})
+        msp.add_text(
+            t, dxfattribs={"insert": (10, 10 + i * 10), "height": 3.0, "layer": layer}
+        )
     doc.saveas(path)
 
 
@@ -50,10 +49,13 @@ class ScanPlaceholdersSheetTest(unittest.TestCase):
 
     def test_sheet_affects_header_source(self):
         xlsx = self._tmp / "data.xlsx"
-        _make_xlsx_multi(xlsx, {
-            "SheetA": (["图号", "名称"], [["A-1", "图1"]]),
-            "SheetB": (["图号", "压力"], [["A-1", "1.5"]]),
-        })
+        _make_xlsx_multi(
+            xlsx,
+            {
+                "SheetA": (["图号", "名称"], [["A-1", "图1"]]),
+                "SheetB": (["图号", "压力"], [["A-1", "1.5"]]),
+            },
+        )
         dxf = self._tmp / "t.dxf"
         _make_dxf_with_placeholders(dxf, ["[压力]"])
 
@@ -63,7 +65,8 @@ class ScanPlaceholdersSheetTest(unittest.TestCase):
 
         # 指定 SheetB → 按名称精确匹配到「压力」
         by_sheet = fill_learn_spec.scan_placeholders(
-            str(dxf), str(xlsx), sheet="SheetB")
+            str(dxf), str(xlsx), sheet="SheetB"
+        )
         self.assertEqual(list(by_sheet["0"].keys()), ["压力"])
 
     def test_exact_match_no_normalization(self):
@@ -94,8 +97,8 @@ class ScanPlaceholdersSheetTest(unittest.TestCase):
         _make_dxf_with_placeholders(dxf, ["[图号]"], layer="0")
         doc = ezdxf.readfile(dxf)
         doc.modelspace().add_text(
-            "[名称]", dxfattribs={
-                "insert": (50, 10), "height": 3.0, "layer": "TEXT1"})
+            "[名称]", dxfattribs={"insert": (50, 10), "height": 3.0, "layer": "TEXT1"}
+        )
         doc.saveas(dxf)
 
         spec = fill_learn_spec.scan_placeholders(str(dxf), str(xlsx))

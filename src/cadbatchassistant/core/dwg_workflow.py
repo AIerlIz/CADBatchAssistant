@@ -66,9 +66,13 @@ def write_back_dxf_batch(
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     ok_dwg = [n for n in dwg_files if Path(n).stem not in skip]
     if ok_dwg:
-        converter.dxf_to_dwg(oda_exe, processed_dir, out_dir,
-                             [Path(n).stem + ".dxf" for n in ok_dwg],
-                             out_version)
+        converter.dxf_to_dwg(
+            oda_exe,
+            processed_dir,
+            out_dir,
+            [Path(n).stem + ".dxf" for n in ok_dwg],
+            out_version,
+        )
     for name in dxf_files:
         if Path(name).stem in skip:
             continue

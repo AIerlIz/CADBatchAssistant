@@ -11,10 +11,10 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
-from cadbatchassistant import common
+from cadbatchassistant.gui import async_panel as ap
 
 
-class _FakePanel(common.AsyncPanel):
+class _FakePanel(ap.AsyncPanel):
     """最小实现：只提供 _poll_queue / _stop / _on_finish 需要的属性。"""
 
     def _build_ui(self):
@@ -26,9 +26,9 @@ class _FakePanel(common.AsyncPanel):
 
 class AsyncPanelGenerationTest(unittest.TestCase):
     def setUp(self) -> None:
-        self._patcher = mock.patch.object(common, "apply_vista_theme")
+        self._patcher = mock.patch.object(ap, "apply_vista_theme")
         self._patcher.start()
-        self._style = mock.patch.object(common.ttk, "Style")
+        self._style = mock.patch.object(ap.ttk, "Style")
         self._style.start()
 
         parent = mock.Mock()
@@ -74,9 +74,9 @@ class AsyncPanelGenerationTest(unittest.TestCase):
 
 class StartWorkerSeqTest(unittest.TestCase):
     def setUp(self) -> None:
-        self._patcher = mock.patch.object(common, "apply_vista_theme")
+        self._patcher = mock.patch.object(ap, "apply_vista_theme")
         self._patcher.start()
-        self._style = mock.patch.object(common.ttk, "Style")
+        self._style = mock.patch.object(ap.ttk, "Style")
         self._style.start()
         parent = mock.Mock()
         root = mock.Mock()
@@ -91,7 +91,7 @@ class StartWorkerSeqTest(unittest.TestCase):
 
     def test_start_worker_increments_seq_and_passes_to_run(self) -> None:
         """每次启动分配递增代次，且 worker 以 (seq, *args) 调用 _run。"""
-        with mock.patch.object(common.threading, "Thread") as thread_cls:
+        with mock.patch.object(ap.threading, "Thread") as thread_cls:
             self.panel._start_worker(("a", "b"))
             self.panel._start_worker(("c",))
         self.assertEqual(self.panel._run_seq, 2)

@@ -40,11 +40,15 @@ class WriteBackSkipTest(unittest.TestCase):
         """skip={"C1"}：C1.DWG 不进 dxf_to_dwg，C1.dxf 不复制，其余照常。"""
         conv = self._conv()
         write_back_dxf_batch(
-            conv, "oda.exe", self.processed, self.out,
+            conv,
+            "oda.exe",
+            self.processed,
+            self.out,
             dwg_files=["A1.DWG", "C1.DWG"],
             dxf_files=["A1.dxf", "B1.dxf", "C1.dxf"],
             out_version="R2000",
-            skip={"C1"})
+            skip={"C1"},
+        )
         # DWG 源：dxf_to_dwg 只收到 A1 的 DXF 产物（C1.DWG 被过滤）
         conv.dxf_to_dwg.assert_called_once()
         args = conv.dxf_to_dwg.call_args
@@ -58,9 +62,14 @@ class WriteBackSkipTest(unittest.TestCase):
         """skip 为空时全部写回（行为不变）。"""
         conv = self._conv()
         write_back_dxf_batch(
-            conv, "oda.exe", self.processed, self.out,
-            dwg_files=["A1.DWG"], dxf_files=["A1.dxf", "B1.dxf"],
-            out_version="R2000")
+            conv,
+            "oda.exe",
+            self.processed,
+            self.out,
+            dwg_files=["A1.DWG"],
+            dxf_files=["A1.dxf", "B1.dxf"],
+            out_version="R2000",
+        )
         conv.dxf_to_dwg.assert_called_once()
         args = conv.dxf_to_dwg.call_args
         self.assertEqual(list(args[0][3]), ["A1.dxf"])

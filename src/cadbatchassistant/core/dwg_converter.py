@@ -9,8 +9,11 @@
   - 转换完成后轮询输出目录确认产物生成
 
 ODAFileConverter 命令行格式：
-    ODAFileConverter <InputFolder> <OutputFolder> <OutputVersion> <OutputType> <Recurse> <Audit> [InputFilter] [OutputFilter]
-OutputVersion: ACAD9|ACAD10|ACAD12|ACAD13|ACAD14|ACAD2000|ACAD2004|ACAD2007|ACAD2010|ACAD2013|ACAD2018
+    ODAFileConverter <InputFolder> <OutputFolder> <OutputVersion>
+        <OutputType> <Recurse> <Audit> [InputFilter] [OutputFilter]
+OutputVersion:
+    ACAD9|ACAD10|ACAD12|ACAD13|ACAD14|ACAD2000|ACAD2004|ACAD2007|
+    ACAD2010|ACAD2013|ACAD2018
 OutputType: DWG|DXF|DXF_B|DXF_A
 
 模块级函数（find_oda_converter / require_oda_for_dwg / convert_batch）为兼容保留的
@@ -168,8 +171,10 @@ class OdaConverter:
             return None
         oda = (oda or "").strip()
         if not oda or not Path(oda).is_file():
-            return ("输入包含 DWG 文件，未找到 ODAFileConverter.exe，"
-                    "请安装或在「设置」页配置其路径。（仅 DXF 文件无需 ODA）")
+            return (
+                "输入包含 DWG 文件，未找到 ODAFileConverter.exe，"
+                "请安装或在「设置」页配置其路径。（仅 DXF 文件无需 ODA）"
+            )
         return None
 
     def convert_batch(
@@ -198,8 +203,17 @@ class OdaConverter:
         out_dir.mkdir(parents=True, exist_ok=True)
 
         valid_versions = {
-            "ACAD9", "ACAD10", "ACAD12", "ACAD13", "ACAD14",
-            "ACAD2000", "ACAD2004", "ACAD2007", "ACAD2010", "ACAD2013", "ACAD2018",
+            "ACAD9",
+            "ACAD10",
+            "ACAD12",
+            "ACAD13",
+            "ACAD14",
+            "ACAD2000",
+            "ACAD2004",
+            "ACAD2007",
+            "ACAD2010",
+            "ACAD2013",
+            "ACAD2018",
         }
         if out_version not in valid_versions:
             raise ODAError(f"不支持的输出版本: {out_version}")
@@ -229,8 +243,12 @@ class OdaConverter:
 
         try:
             proc = subprocess.run(
-                cmd, capture_output=True, timeout=timeout,
-                startupinfo=startupinfo, creationflags=creationflags,
+                cmd,
+                capture_output=True,
+                timeout=timeout,
+                startupinfo=startupinfo,
+                creationflags=creationflags,
+                check=False,
             )
         except subprocess.TimeoutExpired as ex:
             raise ODAError(f"ODA 转换超时（{timeout}s）: {ex}") from ex
@@ -254,8 +272,7 @@ class OdaConverter:
                     tail = text.strip()[-500:]
                     if tail:
                         detail += f"\n  {name}: {tail}"
-            raise ODAError(
-                f"ODA 转换失败，退出码 {proc.returncode}{detail}")
+            raise ODAError(f"ODA 转换失败，退出码 {proc.returncode}{detail}")
 
     def wait_for_outputs(
         self,
@@ -270,14 +287,15 @@ class OdaConverter:
         missing: set[str] = set(expected_names)
         while time.time() < deadline:
             missing = {
-                name
-                for name in expected_names
-                if not (out_dir / name).is_file()
+                name for name in expected_names if not (out_dir / name).is_file()
             }
             if not missing:
                 return
             time.sleep(interval)
-        raise ODAError(f"等待 ODA 输出超时，仍缺失 {len(missing)} 个文件: {sorted(missing)[:5]} ...")
+        raise ODAError(
+            f"等待 ODA 输出超时，仍缺失 {len(missing)} 个文件: "
+            f"{sorted(missing)[:5]} ..."
+        )
 
     def template_to_dxf(
         self,
@@ -320,8 +338,16 @@ class OdaConverter:
         timeout 同时用于 ODA 进程等待与产物轮询，避免大图转换时
         产物等待（旧默认 120s）早于进程超时（900s）误报失败。
         """
-        self.convert_batch(oda_exe, in_dir, out_dir, out_version, "DXF", 0, timeout,
-                           input_filter="*.DWG")
+        self.convert_batch(
+            oda_exe,
+            in_dir,
+            out_dir,
+            out_version,
+            "DXF",
+            0,
+            timeout,
+            input_filter="*.DWG",
+        )
         expected = {Path(n).stem + ".dxf" for n in dwg_names}
         self.wait_for_outputs(out_dir, expected, timeout=timeout)
 
@@ -339,8 +365,16 @@ class OdaConverter:
         timeout 同时用于 ODA 进程等待与产物轮询，避免大图转换时
         产物等待（旧默认 120s）早于进程超时（900s）误报失败。
         """
-        self.convert_batch(oda_exe, in_dir, out_dir, out_version, "DWG", 0, timeout,
-                           input_filter="*.DXF")
+        self.convert_batch(
+            oda_exe,
+            in_dir,
+            out_dir,
+            out_version,
+            "DWG",
+            0,
+            timeout,
+            input_filter="*.DXF",
+        )
         expected = {Path(n).stem + ".dwg" for n in dxf_names}
         self.wait_for_outputs(out_dir, expected, timeout=timeout)
 
@@ -383,5 +417,12 @@ def convert_batch(
 ) -> None:
     """调用 ODAFileConverter 批量转换，阻塞直至进程退出。"""
     return _DEFAULT.convert_batch(
-        oda_exe, in_dir, out_dir, out_version=out_version, out_type=out_type,
-        recursive=recursive, timeout=timeout, input_filter=input_filter)
+        oda_exe,
+        in_dir,
+        out_dir,
+        out_version=out_version,
+        out_type=out_type,
+        recursive=recursive,
+        timeout=timeout,
+        input_filter=input_filter,
+    )

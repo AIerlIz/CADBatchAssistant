@@ -58,13 +58,21 @@ def _report(progress, percent: int) -> None:
         progress(percent)
 
 
-def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
-                 oda: str | None = None, out_version: str = dc.DEFAULT_OUT_VERSION,
-                 workdir: str | None = None, emit=print,
-                 cancel=None, inputs: list[str] | None = None,
-                 progress=None, template: str | None = None,
-                 match_col: str | None = None,
-                 sheet: str | None = None) -> dict:
+def run_pipeline(
+    xlsx: str,
+    before_dir: str,
+    out_dir: str,
+    oda: str | None = None,
+    out_version: str = dc.DEFAULT_OUT_VERSION,
+    workdir: str | None = None,
+    emit=print,
+    cancel=None,
+    inputs: list[str] | None = None,
+    progress=None,
+    template: str | None = None,
+    match_col: str | None = None,
+    sheet: str | None = None,
+) -> dict:
     """执行完整流程，返回摘要 dict。
 
     xlsx        : 数据表路径
@@ -94,12 +102,14 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
     # 输出目录与输入目录重合时，清理旧输出会误删源文件 → 跳过清理并整体拒绝
     # （输出阶段会把处理结果覆盖到源文件所在位置，同样危险）。
     # 提前校验，避免已创建临时目录/输出目录后再失败。
-    same_dir = os.path.normcase(os.path.abspath(out_dir)) == \
-        os.path.normcase(os.path.abspath(before_dir))
+    same_dir = os.path.normcase(os.path.abspath(out_dir)) == os.path.normcase(
+        os.path.abspath(before_dir)
+    )
     if same_dir:
         raise ValueError(
             f"输出目录不能与输入图纸目录相同：{out_dir}。"
-            "请选择其他输出目录，避免覆盖源文件。")
+            "请选择其他输出目录，避免覆盖源文件。"
+        )
 
     # 判断哪些是 DWG（需 ODA 转换），哪些是 DXF（直接处理）——大小写不敏感；
     # 同名 .dwg 与 .dxf 共存时显式优先按 DWG 处理（见 _classify_by_ext）。
@@ -133,15 +143,23 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
                     try:
                         os.remove(p)
                     except OSError as ex:
-                        emit(f"[WARN] 清理旧输出失败（跳过，可能被占用或只读）: {p} ({ex})")
+                        emit(
+                            f"[WARN] 清理旧输出失败（跳过，可能被占用或只读）: "
+                            f"{p} ({ex})"
+                        )
 
         # [1/4] DWG → DXF；DXF 直接复制（统一成 DXF 批，供后续处理）
         _check_cancel(cancel)
         emit("[1/4] 准备 DXF（DWG 经 ODA 转换，DXF 直接复制） ...")
         stage_dxf_batch(
-            dc.get_converter(), oda_exe, before_dir, before_dxf,
-            [n + ".DWG" for n in dwg_names], [n + ".dxf" for n in dxf_names],
-            out_version)
+            dc.get_converter(),
+            oda_exe,
+            before_dir,
+            before_dxf,
+            [n + ".DWG" for n in dwg_names],
+            [n + ".dxf" for n in dxf_names],
+            out_version,
+        )
         _report(progress, 25)
 
         # [2/4] 图纸模板占位扫描规格 → 广播到全部图纸
@@ -157,25 +175,38 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
         n_fields = sum(len(v) for v in one_spec.values())
         if n_fields == 0:
             # 不中断：警告并按无字段处理（输出为原图），便于排查模板
-            emit("[WARN] 模板中未找到与数据表表头匹配的占位符，"
-                 "将按无字段处理（输出为原图）。请检查模板占位符是否与数据表列名一致。")
+            emit(
+                "[WARN] 模板中未找到与数据表表头匹配的占位符，"
+                "将按无字段处理（输出为原图）。请检查模板占位符是否与数据表列名一致。"
+            )
         emit(f"      模板占位识别到 {n_fields} 个字段，应用到全部图纸")
 
         def _strip_entity(fields: dict) -> dict:
-            return {f: {k: v for k, v in fs.items() if k != "entity"}
-                    for f, fs in fields.items()}
+            return {
+                f: {k: v for k, v in fs.items() if k != "entity"}
+                for f, fs in fields.items()
+            }
 
         # 浅拷贝广播；entity 转为轻量描述（可 pickle、不含文档引用，
         # 并行任务不会随每张图序列化整份模板文档）；JSON 输出剥离 entity
         def _desc_entity(fields: dict) -> dict:
-            return {f: ({**fs, "entity": entity_to_desc(fs["entity"])}
-                        if fs.get("entity") is not None else dict(fs))
-                    for f, fs in fields.items()}
+            return {
+                f: (
+                    {**fs, "entity": entity_to_desc(fs["entity"])}
+                    if fs.get("entity") is not None
+                    else dict(fs)
+                )
+                for f, fs in fields.items()
+            }
 
-        specs = {n: {layer: _desc_entity(fields)
-                     for layer, fields in one_spec.items()} for n in names}
-        json_specs = {n: {layer: _strip_entity(fields)
-                          for layer, fields in one_spec.items()} for n in names}
+        specs = {
+            n: {layer: _desc_entity(fields) for layer, fields in one_spec.items()}
+            for n in names
+        }
+        json_specs = {
+            n: {layer: _strip_entity(fields) for layer, fields in one_spec.items()}
+            for n in names
+        }
         with open(specs_path, "w", encoding="utf-8") as fh:
             json.dump(json_specs, fh, ensure_ascii=False, indent=2)
 
@@ -188,9 +219,17 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
         def _fill_progress(done: int, total: int) -> None:
             _report(progress, 50 + int(done / max(total, 1) * 25))
 
-        failed, skipped = fill_all(before_dxf, filled_dxf, xlsx, specs, emit=emit,
-                                   progress=_fill_progress, match_col=match_col,
-                                   sheet=sheet, cancel=cancel)
+        failed, skipped = fill_all(
+            before_dxf,
+            filled_dxf,
+            xlsx,
+            specs,
+            emit=emit,
+            progress=_fill_progress,
+            match_col=match_col,
+            sheet=sheet,
+            cancel=cancel,
+        )
         _check_cancel(cancel)  # 填表阶段被取消：中断整批，避免把未填充的图当作输出
         _report(progress, 75)
 
@@ -200,9 +239,15 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
         _check_cancel(cancel)
         emit(f"[4/4] 输出 → {out_dir} ...")
         write_back_dxf_batch(
-            dc.get_converter(), oda_exe, filled_dxf, out_dir,
-            [n + ".DWG" for n in dwg_names], [n + ".dxf" for n in dxf_names],
-            out_version, skip=set(failed) | set(skipped))
+            dc.get_converter(),
+            oda_exe,
+            filled_dxf,
+            out_dir,
+            [n + ".DWG" for n in dwg_names],
+            [n + ".dxf" for n in dxf_names],
+            out_version,
+            skip=set(failed) | set(skipped),
+        )
         _report(progress, 100)
 
         return {
@@ -219,13 +264,20 @@ def run_pipeline(xlsx: str, before_dir: str, out_dir: str,
             shutil.rmtree(tmp, ignore_errors=True)
 
 
-def run_pipeline_files(xlsx: str, files: list[str], out_dir: str,
-                       oda: str | None = None, out_version: str = dc.DEFAULT_OUT_VERSION,
-                       emit=print, cancel=None, progress=None,
-                       workdir: str | None = None,
-                       template: str | None = None,
-                       match_col: str | None = None,
-                       sheet: str | None = None) -> dict:
+def run_pipeline_files(
+    xlsx: str,
+    files: list[str],
+    out_dir: str,
+    oda: str | None = None,
+    out_version: str = dc.DEFAULT_OUT_VERSION,
+    emit=print,
+    cancel=None,
+    progress=None,
+    workdir: str | None = None,
+    template: str | None = None,
+    match_col: str | None = None,
+    sheet: str | None = None,
+) -> dict:
     """处理选中的文件列表（DWG/DXF 混合）。
 
     把选中文件复制到临时输入目录后调用 run_pipeline(inputs=..., template=...)。
@@ -239,17 +291,28 @@ def run_pipeline_files(xlsx: str, files: list[str], out_dir: str,
     if os.path.normcase(os.path.abspath(out_dir)) in src_dirs:
         raise ValueError(
             f"输出目录不能与输入图纸所在目录相同：{out_dir}。"
-            "请选择其他输出目录，避免覆盖源文件。")
+            "请选择其他输出目录，避免覆盖源文件。"
+        )
     # 重名检测（大小写不敏感）+ 复制到临时输入目录（input_files.stage_inputs）
     tmp_created = workdir is None  # 本函数自建临时目录时，结束后清理
     tmp = workdir or tempfile.mkdtemp(prefix="iso_fill_files_")
     try:
         before_dir, stems = stage_inputs(files, tmp, prefix="iso_fill_files_")
-        return run_pipeline(xlsx, before_dir, out_dir, oda=oda,
-                            out_version=out_version, workdir=tmp,
-                            emit=emit, cancel=cancel, inputs=stems,
-                            progress=progress, template=template,
-                            match_col=match_col, sheet=sheet)
+        return run_pipeline(
+            xlsx,
+            before_dir,
+            out_dir,
+            oda=oda,
+            out_version=out_version,
+            workdir=tmp,
+            emit=emit,
+            cancel=cancel,
+            inputs=stems,
+            progress=progress,
+            template=template,
+            match_col=match_col,
+            sheet=sheet,
+        )
     finally:
         if tmp_created:
             shutil.rmtree(tmp, ignore_errors=True)
@@ -262,19 +325,30 @@ def main() -> None:
     ap.add_argument("--xlsx", required=True, help="数据表 .xlsx/.xls")
     ap.add_argument("--before", required=True, help="输入图纸目录（DWG/DXF）")
     ap.add_argument("--out", required=True, help="输出目录")
-    ap.add_argument("--oda", default=None, help="ODAFileConverter.exe 路径（默认自动探测）")
-    ap.add_argument("--template", required=True, help="图纸模板文件（已填好的 .dwg/.dxf 样例）")
-    ap.add_argument("--version", default=dc.DEFAULT_OUT_VERSION,
-                    help=f"输出 DWG 版本（默认 {dc.DEFAULT_OUT_VERSION}）")
-    ap.add_argument("--match-col", default=None,
-                    help="数据表中图纸名列（默认第一列）")
-    ap.add_argument("--sheet", default=None,
-                    help="数据表中工作表名（默认第一个）")
+    ap.add_argument(
+        "--oda", default=None, help="ODAFileConverter.exe 路径（默认自动探测）"
+    )
+    ap.add_argument(
+        "--template", required=True, help="图纸模板文件（已填好的 .dwg/.dxf 样例）"
+    )
+    ap.add_argument(
+        "--version",
+        default=dc.DEFAULT_OUT_VERSION,
+        help=f"输出 DWG 版本（默认 {dc.DEFAULT_OUT_VERSION}）",
+    )
+    ap.add_argument("--match-col", default=None, help="数据表中图纸名列（默认第一列）")
+    ap.add_argument("--sheet", default=None, help="数据表中工作表名（默认第一个）")
     args = ap.parse_args()
-    summary = run_pipeline(args.xlsx, args.before, args.out,
-                           oda=args.oda, out_version=args.version,
-                           template=args.template,
-                           match_col=args.match_col, sheet=args.sheet)
+    summary = run_pipeline(
+        args.xlsx,
+        args.before,
+        args.out,
+        oda=args.oda,
+        out_version=args.version,
+        template=args.template,
+        match_col=args.match_col,
+        sheet=args.sheet,
+    )
     print("\n完成:", summary)
 
 

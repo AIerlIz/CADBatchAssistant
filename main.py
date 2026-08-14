@@ -16,6 +16,7 @@ selftest_log.txt，用于定位打包环境下偶发的解析问题。
 from __future__ import annotations
 
 import argparse
+import contextlib
 import multiprocessing
 import os
 import shutil
@@ -35,23 +36,22 @@ if os.name == "nt":
 from tkinterdnd2 import TkinterDnD
 
 from cadbatchassistant import __version__
-from cadbatchassistant.common import (
+from cadbatchassistant.core import updater
+from cadbatchassistant.core.app_config import (
     APP_CONFIG_FILE,
-    center_window,
-    default_font_family,
     load_config,
     resource_path,
 )
-from cadbatchassistant.core import updater
 from cadbatchassistant.gui import gui_catalog, gui_fill, gui_text, settings
+from cadbatchassistant.gui.tk_util import center_window, default_font_family
 
 APP_TITLE = "CAD批处理助手"
 
 
 def _selftest(template_dwg: str, dwg_files: list[str]) -> int:
     """诊断模式：图纸模板 + 图纸 → 完整目录流程，把日志/异常写入 selftest_log.txt。"""
-    from cadbatchassistant.common import get_oda
     from cadbatchassistant.core import catalog_excel_writer
+    from cadbatchassistant.core.app_config import get_oda
     from cadbatchassistant.core.catalog_pipeline import (
         parse_template_fields,
         run_pipeline,
@@ -78,13 +78,23 @@ def _selftest(template_dwg: str, dwg_files: list[str]) -> int:
             oda = get_oda()
             fields = parse_template_fields(template_dwg, oda=oda)
             style_tpl = tmp / "style.xlsx"
-            catalog_excel_writer.write_style_template(style_tpl, fields=fields + ["页码"])
+            catalog_excel_writer.write_style_template(
+                style_tpl, fields=[*fields, "页码"]
+            )
             out_xlsx = tmp / "out.xlsx"
             res = run_pipeline(
-                template_dwg, style_tpl, dwg_files, out_xlsx,
-                oda=oda, log=_log, progress=lambda p: None)
-            lines.append(f"[selftest] 结果: ok={res.ok}  图纸={res.total_files}  "
-                         f"NA={res.na_rows}  页={res.total_pages}")
+                template_dwg,
+                style_tpl,
+                dwg_files,
+                out_xlsx,
+                oda=oda,
+                log=_log,
+                progress=lambda p: None,
+            )
+            lines.append(
+                f"[selftest] 结果: ok={res.ok}  图纸={res.total_files}  "
+                f"NA={res.na_rows}  页={res.total_pages}"
+            )
             for m in logs:
                 lines.append(f"[selftest] {m}")
             if res.error:
@@ -108,9 +118,13 @@ def _selftest(template_dwg: str, dwg_files: list[str]) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=APP_TITLE)
-    ap.add_argument("--selftest", nargs="+", metavar="PATH",
-                    help="诊断模式：第一个参数为图纸模板 DWG，其余为图纸文件；"
-                         "日志写入 selftest_log.txt")
+    ap.add_argument(
+        "--selftest",
+        nargs="+",
+        metavar="PATH",
+        help="诊断模式：第一个参数为图纸模板 DWG，其余为图纸文件；"
+        "日志写入 selftest_log.txt",
+    )
     args = ap.parse_args(argv)
     if args.selftest:
         return _selftest(args.selftest[0], args.selftest[1:])
@@ -119,10 +133,8 @@ def main(argv: list[str] | None = None) -> int:
     root.title(APP_TITLE)
     root.geometry("820x900")
     root.minsize(720, 700)
-    try:
+    with contextlib.suppress(Exception):  # 图标缺失时使用默认图标
         root.iconbitmap(resource_path("assets/logo.ico"))  # 窗口/任务栏图标
-    except Exception:  # noqa: BLE001 - 图标缺失时使用默认图标
-        pass
     center_window(root)  # 主窗口屏幕居中
     root.option_add("*Font", (default_font_family(), 10))
 

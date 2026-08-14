@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """fill_dwg 填表取值行为测试：只从占位符对应的列取值。"""
 
 from __future__ import annotations
@@ -15,9 +14,15 @@ from cadbatchassistant.core.fill_dwg import fill_one
 def _fspec(x: float, y: float) -> dict:
     """构造一个占位符规格（无实体，走 attribs 新建 TEXT 分支）。"""
     return {
-        "x": x, "y": y, "height": 3.0,
-        "style": "", "halign": 0, "valign": 0,
-        "value_rule": "value", "sep": "", "entity": None,
+        "x": x,
+        "y": y,
+        "height": 3.0,
+        "style": "",
+        "halign": 0,
+        "valign": 0,
+        "value_rule": "value",
+        "sep": "",
+        "entity": None,
     }
 
 
@@ -40,24 +45,26 @@ class FillOnlyPlaceholderColumnsTest(unittest.TestCase):
         doc.saveas(self.before)
 
     def test_only_placeholder_columns_written(self) -> None:
-        spec = {"0": {
-            "图号": _fspec(10.0, 20.0),
-            "名称": _fspec(30.0, 20.0),
-        }}
+        spec = {
+            "0": {
+                "图号": _fspec(10.0, 20.0),
+                "名称": _fspec(30.0, 20.0),
+            }
+        }
         # 数据行含占位符对应列 + 无关列（干扰值不应出现）
         row = {"图号": "D-001", "名称": "舱段A", "无关列": "不应出现"}
         out = Path(self.tmp) / "out.dxf"
         fill_one(str(self.before), str(out), spec, row)
 
         texts = _texts_of(out)
-        self.assertIn("D-001", texts)          # 占位符 [图号] 对应列的值填入
-        self.assertIn("舱段A", texts)          # 占位符 [名称] 对应列的值填入
-        self.assertNotIn("不应出现", texts)    # 无关列的值绝不进入图纸
+        self.assertIn("D-001", texts)  # 占位符 [图号] 对应列的值填入
+        self.assertIn("舱段A", texts)  # 占位符 [名称] 对应列的值填入
+        self.assertNotIn("不应出现", texts)  # 无关列的值绝不进入图纸
 
     def test_missing_placeholder_column_empties_value(self) -> None:
         """占位符对应的列在数据表中不存在 → 该字段置空（不猜取其他列）。"""
         spec = {"0": {"图号": _fspec(10.0, 20.0)}}
-        row = {"名称": "舱段A"}   # 数据行没有「图号」列
+        row = {"名称": "舱段A"}  # 数据行没有「图号」列
         out = Path(self.tmp) / "out.dxf"
         fill_one(str(self.before), str(out), spec, row)
 
@@ -94,8 +101,11 @@ class FillExistingTextTest(unittest.TestCase):
 
     def _texts_of(self) -> set[str]:
         doc = ezdxf.readfile(str(self.out))
-        return {e.dxf.text for e in doc.modelspace()
-                if e.dxftype() == "TEXT" and e.dxf.text.strip()}
+        return {
+            e.dxf.text
+            for e in doc.modelspace()
+            if e.dxftype() == "TEXT" and e.dxf.text.strip()
+        }
 
     def test_text_existing_content_not_overwritten(self) -> None:
         """位置已有 TEXT 内容（不同值）→ 跳过不覆盖，原文本保留且不新增。"""
@@ -136,8 +146,9 @@ class FillExistingTextTest(unittest.TestCase):
 
         doc = ezdxf.new("R2013")
         msp = doc.modelspace()
-        msp.add_mtext("D-001\\P（续）",
-                      dxfattribs={"insert": (10, 20), "char_height": 3.0})
+        msp.add_mtext(
+            "D-001\\P（续）", dxfattribs={"insert": (10, 20), "char_height": 3.0}
+        )
         doc.saveas(self.before)
         spec = {"0": {"图号": {**_fspec(10.0, 20.0)}}}
         fill_one(str(self.before), str(self.out), spec, {"图号": "D-001"})
@@ -197,8 +208,12 @@ class FillAllSkippedTest(unittest.TestCase):
         from cadbatchassistant.core.fill_dwg import fill_all
 
         failed, skipped = fill_all(
-            str(self.before_dir), str(self.out_dir), str(self.xlsx),
-            self._specs("A1", "B1"), emit=lambda m: None)
+            str(self.before_dir),
+            str(self.out_dir),
+            str(self.xlsx),
+            self._specs("A1", "B1"),
+            emit=lambda m: None,
+        )
         self.assertEqual(failed, [])
         self.assertEqual(skipped, ["B1"])
         # A1 正常产出，B1 无产物
@@ -210,8 +225,12 @@ class FillAllSkippedTest(unittest.TestCase):
 
         # C1 在数据表中但没有 before DXF → skipped
         failed, skipped = fill_all(
-            str(self.before_dir), str(self.out_dir), str(self.xlsx),
-            self._specs("A1", "C1"), emit=lambda m: None)
+            str(self.before_dir),
+            str(self.out_dir),
+            str(self.xlsx),
+            self._specs("A1", "C1"),
+            emit=lambda m: None,
+        )
         self.assertEqual(failed, [])
         self.assertEqual(skipped, ["C1"])
         self.assertTrue((self.out_dir / "A1.dxf").is_file())
@@ -233,6 +252,7 @@ class FillEntityDescTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         import shutil
+
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def _template_desc(self) -> dict:
@@ -243,9 +263,16 @@ class FillEntityDescTest(unittest.TestCase):
         doc.layers.add("GT_1", color=1, linetype="CONTINUOUS", lineweight=25)
         doc.styles.add("BigFont", font="simhei.ttf", dxfattribs={"height": 2.5})
         t = doc.modelspace().add_text(
-            "[图号]", dxfattribs={"layer": "GT_1", "insert": (10, 20, 0),
-                                  "height": 3.5, "style": "BigFont",
-                                  "rotation": 15, "color": 3})
+            "[图号]",
+            dxfattribs={
+                "layer": "GT_1",
+                "insert": (10, 20, 0),
+                "height": 3.5,
+                "style": "BigFont",
+                "rotation": 15,
+                "color": 3,
+            },
+        )
         return entity_to_desc(t)
 
     def test_desc_rebuilds_entity_and_backfills_layer_style(self) -> None:
@@ -290,8 +317,8 @@ class FillEntityDescTest(unittest.TestCase):
 
         doc = ezdxf.new("R2013")
         mt = doc.modelspace().add_mtext(
-            "[图号]", dxfattribs={"layer": "0", "insert": (1, 2),
-                                  "char_height": 3.0})
+            "[图号]", dxfattribs={"layer": "0", "insert": (1, 2), "char_height": 3.0}
+        )
         desc = entity_to_desc(mt)
         spec = {"0": {"图号": {**_fspec(1.0, 2.0), "entity": desc}}}
         out = self.tmp / "out_mt.dxf"
@@ -335,6 +362,7 @@ class FillAllProgressMonotonicTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         import shutil
+
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def _specs(self, *names: str) -> dict:
@@ -345,9 +373,13 @@ class FillAllProgressMonotonicTest(unittest.TestCase):
 
         calls: list[tuple[int, int]] = []
         failed, skipped = fill_all(
-            str(self.before_dir), str(self.out_dir), str(self.xlsx),
-            self._specs("A1", "B1", "C1"), emit=lambda m: None,
-            progress=lambda i, t: calls.append((i, t)))
+            str(self.before_dir),
+            str(self.out_dir),
+            str(self.xlsx),
+            self._specs("A1", "B1", "C1"),
+            emit=lambda m: None,
+            progress=lambda i, t: calls.append((i, t)),
+        )
         self.assertEqual(failed, [])
         self.assertEqual(skipped, ["B1"])
         # 3 张全部计入，index 单调：1,2,3（B1 在位置 2，不被漏掉）
@@ -360,9 +392,13 @@ class FillAllProgressMonotonicTest(unittest.TestCase):
         (self.before_dir / "A1.dxf").write_text("损坏", encoding="utf-8")
         calls: list[tuple[int, int]] = []
         failed, skipped = fill_all(
-            str(self.before_dir), str(self.out_dir), str(self.xlsx),
-            self._specs("A1", "B1", "C1"), emit=lambda m: None,
-            progress=lambda i, t: calls.append((i, t)))
+            str(self.before_dir),
+            str(self.out_dir),
+            str(self.xlsx),
+            self._specs("A1", "B1", "C1"),
+            emit=lambda m: None,
+            progress=lambda i, t: calls.append((i, t)),
+        )
         self.assertEqual(failed, ["A1"])
         self.assertEqual(skipped, ["B1"])
         self.assertEqual(calls, [(1, 3), (2, 3), (3, 3)])

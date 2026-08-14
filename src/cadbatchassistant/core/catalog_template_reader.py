@@ -30,21 +30,45 @@ _PLACEHOLDER_RE = re.compile(r"^\[([^\]]+)\]$")
 _EPS = 1e-4
 
 
+def _text_bounds(e) -> tuple[float, float, float, float]:
+    """占位符文字包围盒（覆盖区域）：单点锚点按此矩形取值。
+
+    MTEXT 优先用 ezdxf 的 get_bounding_box；TEXT/回退按字符数估算
+    （中文字符宽 ≈ 字高，ASCII 宽 ≈ 0.6×字高），以插入点为中心扩展。
+    覆盖区域完全由占位符文字在模板中的大小决定——把占位符文字调大
+    即可覆盖更大的取值范围，不再依赖 point_tolerance。
+    """
+    x, y = _entity_insert_point(e)
+    if e.dxftype() == "MTEXT":
+        try:
+            bb = e.get_bounding_box()
+            if bb.has_data:
+                return bb.extmin.x, bb.extmin.y, bb.extmax.x, bb.extmax.y
+        except Exception:  # noqa: BLE001 - 个别 MTEXT 无包围盒时回退估算
+            pass
+    height = float(getattr(e.dxf, "height", 1.0) or 1.0)
+    text = _plain_text(e)
+    width = sum(1.0 if ord(ch) > 0x2E7F else 0.6 for ch in text) * height
+    return x - width / 2, y - height / 2, x + width / 2, y + height / 2
+
+
 @dataclass
 class Anchor:
     """一个取值锚点（模板中的一个占位符）。"""
 
-    field: str                          # 字段名，如 图号 / 管段编号
-    is_area: bool                       # True=矩形区域；False=单点
+    field: str  # 字段名，如 图号 / 管段编号
+    is_area: bool  # True=矩形区域；False=单点
     min_x: float = 0.0
     min_y: float = 0.0
     max_x: float = 0.0
     max_y: float = 0.0
-    point_x: float = 0.0                # 单点锚点的占位符坐标
+    point_x: float = 0.0  # 单点锚点的占位符坐标
     point_y: float = 0.0
 
 
-def _collect_rects(doc, area_max_size: float) -> list[tuple[float, float, float, float]]:
+def _collect_rects(
+    doc, area_max_size: float
+) -> list[tuple[float, float, float, float]]:
     """收集模型空间中 4 点闭合的轴对齐矩形，返回 (minx,miny,maxx,maxy)。
 
     只保留面积 ≤ area_max_size 的小矩形（圈取值区域用）——图框边框等
@@ -58,8 +82,11 @@ def _collect_rects(doc, area_max_size: float) -> list[tuple[float, float, float,
             continue
         pts = list(e.get_points("xy"))
         # 闭合多段线首尾可能重复，去掉重复尾点
-        if len(pts) >= 5 and abs(pts[0][0] - pts[-1][0]) < _EPS \
-                and abs(pts[0][1] - pts[-1][1]) < _EPS:
+        if (
+            len(pts) >= 5
+            and abs(pts[0][0] - pts[-1][0]) < _EPS
+            and abs(pts[0][1] - pts[-1][1]) < _EPS
+        ):
             pts = pts[:-1]
         if len(pts) != 4:
             continue
@@ -78,8 +105,9 @@ def _collect_rects(doc, area_max_size: float) -> list[tuple[float, float, float,
     return rects
 
 
-def parse_template(template_path: str | Path,
-                   area_max_size: float = 10000.0) -> list[Anchor]:
+def parse_template(
+    template_path: str | Path, area_max_size: float = 10000.0
+) -> list[Anchor]:
     """解析模板 DWG/DXF，返回按出现顺序排列的锚点列表。
 
     area_max_size：视为取值区域的矩形最大面积（图框边框等大矩形被排除，
@@ -101,22 +129,40 @@ def parse_template(template_path: str | Path,
             continue
         x, y = _entity_insert_point(e)
         # 关联矩形：占位符坐标落在某矩形内
-        hit = next((r for r in rects
-                    if r[0] <= x <= r[2] and r[1] <= y <= r[3]), None)
+        hit = next((r for r in rects if r[0] <= x <= r[2] and r[1] <= y <= r[3]), None)
         if hit is not None:
-            anchors.append(Anchor(
-                field=field, is_area=True,
-                min_x=hit[0], min_y=hit[1], max_x=hit[2], max_y=hit[3],
-                point_x=x, point_y=y,
-            ))
+            anchors.append(
+                Anchor(
+                    field=field,
+                    is_area=True,
+                    min_x=hit[0],
+                    min_y=hit[1],
+                    max_x=hit[2],
+                    max_y=hit[3],
+                    point_x=x,
+                    point_y=y,
+                )
+            )
         else:
-            anchors.append(Anchor(
-                field=field, is_area=False, point_x=x, point_y=y,
-            ))
+            min_x, min_y, max_x, max_y = _text_bounds(e)
+            anchors.append(
+                Anchor(
+                    field=field,
+                    is_area=False,
+                    min_x=min_x,
+                    min_y=min_y,
+                    max_x=max_x,
+                    max_y=max_y,
+                    point_x=x,
+                    point_y=y,
+                )
+            )
 
     if not anchors:
         raise ValueError(
-            f"模板中未找到 [字段名] 占位符: {template_path}（请在取值位置放 [字段名] 文字）")
+            f"模板中未找到 [字段名] 占位符: {template_path}"
+            "（请在取值位置放 [字段名] 文字）"
+        )
     return anchors
 
 

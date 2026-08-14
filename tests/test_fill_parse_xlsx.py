@@ -86,8 +86,9 @@ class LoadXlsxMatchColTest(unittest.TestCase):
 
     def test_load_default_and_named(self):
         p = self._tmp / "data.xlsx"
-        _make_xlsx(p, ["序号", "图号", "NPD (inch)"],
-                   [[1, "A-1", 12.5], [2, "A-2", 8.0]])
+        _make_xlsx(
+            p, ["序号", "图号", "NPD (inch)"], [[1, "A-1", 12.5], [2, "A-2", 8.0]]
+        )
         by_default = fill_parse_xlsx.load_xlsx(p)
         self.assertEqual(set(by_default), {"1", "2"})  # 第一列「序号」为键
         by_fig = fill_parse_xlsx.load_xlsx(p, match_col="图号")
@@ -115,10 +116,13 @@ class ListSheetsTest(unittest.TestCase):
 
     def test_load_named_sheet(self):
         p = self._tmp / "multi.xlsx"
-        _make_xlsx_multi(p, {
-            "数据表": (["图号", "名称"], [["A-1", "图1"], ["A-2", "图2"]]),
-            "说明": (["说明"], [["yyy"]]),
-        })
+        _make_xlsx_multi(
+            p,
+            {
+                "数据表": (["图号", "名称"], [["A-1", "图1"], ["A-2", "图2"]]),
+                "说明": (["说明"], [["yyy"]]),
+            },
+        )
         by_named = fill_parse_xlsx.load_xlsx(p, sheet="数据表")
         self.assertEqual(set(by_named), {"A-1", "A-2"})
         # sheet 为 None 时仍取第一个工作表（向后兼容）
@@ -138,10 +142,13 @@ class ListSheetsTest(unittest.TestCase):
 
     def test_get_headers_with_sheet(self):
         p = self._tmp / "multi.xlsx"
-        _make_xlsx_multi(p, {
-            "数据表": (["图号", "名称"], [["A-1", "图1"]]),
-            "其他": (["X"], [["1"]]),
-        })
+        _make_xlsx_multi(
+            p,
+            {
+                "数据表": (["图号", "名称"], [["A-1", "图1"]]),
+                "其他": (["X"], [["1"]]),
+            },
+        )
         self.assertEqual(fill_parse_xlsx.get_headers(p, sheet="其他"), ["X"])
         self.assertEqual(fill_parse_xlsx.get_headers(p), ["图号", "名称"])
 
@@ -159,10 +166,13 @@ class LoadSheetMetaTest(unittest.TestCase):
 
     def test_names_and_headers(self):
         p = self._tmp / "multi.xlsx"
-        _make_xlsx_multi(p, {
-            "数据表": (["图号", "名称"], [["A-1", "图1"]]),
-            "说明": (["说明"], [["xxx"]]),
-        })
+        _make_xlsx_multi(
+            p,
+            {
+                "数据表": (["图号", "名称"], [["A-1", "图1"]]),
+                "说明": (["说明"], [["xxx"]]),
+            },
+        )
         names, headers = fill_parse_xlsx.load_sheet_meta(p)
         self.assertEqual(names, ["数据表", "说明"])
         self.assertEqual(headers["数据表"], ["图号", "名称"])
@@ -171,10 +181,13 @@ class LoadSheetMetaTest(unittest.TestCase):
     def test_empty_sheet_header_empty(self):
         """空工作表（无首行）表头记为 []，不影响其他表。"""
         p = self._tmp / "multi.xlsx"
-        _make_xlsx_multi(p, {
-            "数据表": (["图号"], [["A-1"]]),
-            "空表": ([], []),
-        })
+        _make_xlsx_multi(
+            p,
+            {
+                "数据表": (["图号"], [["A-1"]]),
+                "空表": ([], []),
+            },
+        )
         names, headers = fill_parse_xlsx.load_sheet_meta(p)
         self.assertEqual(names, ["数据表", "空表"])
         self.assertEqual(headers["数据表"], ["图号"])
@@ -183,10 +196,13 @@ class LoadSheetMetaTest(unittest.TestCase):
     def test_consistent_with_get_headers(self):
         """load_sheet_meta 的表头与 get_headers（按 sheet）结果一致。"""
         p = self._tmp / "multi.xlsx"
-        _make_xlsx_multi(p, {
-            "数据表": (["图号", "名称"], [["A-1", "图1"]]),
-            "其他": (["X"], [["1"]]),
-        })
+        _make_xlsx_multi(
+            p,
+            {
+                "数据表": (["图号", "名称"], [["A-1", "图1"]]),
+                "其他": (["X"], [["1"]]),
+            },
+        )
         names, headers = fill_parse_xlsx.load_sheet_meta(p)
         for name in names:
             self.assertEqual(headers[name], fill_parse_xlsx.get_headers(p, sheet=name))

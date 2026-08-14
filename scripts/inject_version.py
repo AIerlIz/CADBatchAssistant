@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import re
 import sys
@@ -27,10 +28,8 @@ except ModuleNotFoundError:
 # Windows 非中文系统（如 CI 的 en-US runner）管道输出默认用 cp1252，
 # print 中文会 UnicodeEncodeError；强制 UTF-8 输出
 for _stream in (sys.stdout, sys.stderr):
-    try:
+    with contextlib.suppress(AttributeError, ValueError):
         _stream.reconfigure(encoding="utf-8")
-    except (AttributeError, ValueError):
-        pass
 
 ROOT = Path(__file__).resolve().parent.parent
 INIT_FILE = ROOT / "src" / "cadbatchassistant" / "__init__.py"
@@ -69,8 +68,7 @@ def current_version() -> str | None:
 def inject(version: str) -> bool:
     """写入 __version__；返回是否发生了实际修改。"""
     src = INIT_FILE.read_text(encoding="utf-8")
-    new_src, n = _VERSION_RE.subn(
-        lambda m: f'{m.group(1)}"{version}"', src, count=1)
+    new_src, n = _VERSION_RE.subn(lambda m: f'{m.group(1)}"{version}"', src, count=1)
     if n == 0:
         raise RuntimeError(f"未在 {INIT_FILE} 中找到 __version__")
     changed = new_src != src
@@ -86,8 +84,10 @@ def main() -> int:
 
     version = resolve_version()
     if not version:
-        print("ERROR: 无法确定版本（GITHUB_REF_NAME 与 pyproject.toml 均无）",
-              file=sys.stderr)
+        print(
+            "ERROR: 无法确定版本（GITHUB_REF_NAME 与 pyproject.toml 均无）",
+            file=sys.stderr,
+        )
         return 1
     old = current_version()
     if args.dry_run:
@@ -98,8 +98,9 @@ def main() -> int:
     except RuntimeError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
-    print(f"__version__: {old} -> {version}"
-          + ("（已写入）" if changed else "（无变化）"))
+    print(
+        f"__version__: {old} -> {version}" + ("（已写入）" if changed else "（无变化）")
+    )
     return 0
 
 

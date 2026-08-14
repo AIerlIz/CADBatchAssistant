@@ -11,14 +11,12 @@ import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from cadbatchassistant.common import (
-    AsyncPanel,
-    get_oda,
-    get_out_version,
-    templates_dir,
-)
+from cadbatchassistant.core.app_config import get_oda, get_out_version
 from cadbatchassistant.core.dwg_converter import require_oda_for_dwg
+from cadbatchassistant.core.filetypes import XLSX_SUFFIXES
 from cadbatchassistant.core.fill_pipeline import run_pipeline_files
+from cadbatchassistant.core.templates import templates_dir
+from cadbatchassistant.gui.async_panel import AsyncPanel
 from cadbatchassistant.gui.gui_shared import (
     FilesPanelMixin,
     PanelLayoutMixin,
@@ -28,8 +26,9 @@ from cadbatchassistant.gui.gui_shared import (
 )
 
 
-class IsoFillApp(FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin,
-                 RunStartMixin, AsyncPanel):
+class IsoFillApp(
+    FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel
+):
     """「填表助手」面板：文件列表/模板库/拖放/输出目录复用共享组件。"""
 
     TEMPLATE_CATEGORY = "fill"
@@ -57,22 +56,27 @@ class IsoFillApp(FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin,
         src_frame = ttk.LabelFrame(self._main, text="数据源", padding=8)
         src_frame.pack(fill="x", **self._pad)
         self._add_xlsx_row(
-            src_frame, "数据表格:", (".xlsx", ".xls"),
-            on_hit=lambda h: self._refresh_sources())
+            src_frame,
+            "数据表格:",
+            XLSX_SUFFIXES,
+            on_hit=lambda h: self._refresh_sources(),
+        )
 
         # 工作表 + 匹配列（同一行）
         row_sheet = ttk.Frame(src_frame)
         row_sheet.pack(fill="x", pady=(6, 0))
         ttk.Label(row_sheet, text="工作表格:").pack(side="left")
         self.var_sheet = tk.StringVar()
-        self.sheet_combo = ttk.Combobox(row_sheet, textvariable=self.var_sheet,
-                                        state="readonly", width=16)
+        self.sheet_combo = ttk.Combobox(
+            row_sheet, textvariable=self.var_sheet, state="readonly", width=16
+        )
         self.sheet_combo.pack(side="left", fill="x", expand=True, padx=4)
         self.sheet_combo.bind("<<ComboboxSelected>>", self._on_sheet_changed)
         ttk.Label(row_sheet, text="匹配列:").pack(side="left")
         self.var_match_col = tk.StringVar()
-        self.match_combo = ttk.Combobox(row_sheet, textvariable=self.var_match_col,
-                                        state="readonly", width=16)
+        self.match_combo = ttk.Combobox(
+            row_sheet, textvariable=self.var_match_col, state="readonly", width=16
+        )
         self.match_combo.pack(side="left", fill="x", expand=True, padx=4)
 
         # 图纸模板（模板库下拉选择）
@@ -91,7 +95,8 @@ class IsoFillApp(FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin,
     # ---------------- 输入 ----------------
     def _browse_xlsx(self) -> None:
         f = filedialog.askopenfilename(
-            title="选择数据表格", filetypes=[("Excel 数据表", "*.xlsx *.xls"), ("所有文件", "*.*")]
+            title="选择数据表格",
+            filetypes=[("Excel 数据表", "*.xlsx *.xls"), ("所有文件", "*.*")],
         )
         if f:
             self.var_xlsx.set(f)
@@ -165,41 +170,74 @@ class IsoFillApp(FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin,
         oda = get_oda()
         out_version = get_out_version()
 
-        if not warn_require(bool(xlsx) and os.path.isfile(xlsx),
-                            "请选择有效的数据表格文件"):
+        if not warn_require(
+            bool(xlsx) and os.path.isfile(xlsx), "请选择有效的数据表格文件"
+        ):
             return None
-        if not warn_require(bool(tpl_name) and os.path.isfile(template),
-                            "请从图纸模板下拉框选择模板（可先「上传」）"):
+        if not warn_require(
+            bool(tpl_name) and os.path.isfile(template),
+            "请从图纸模板下拉框选择模板（可先「上传」）",
+        ):
             return None
         if not warn_require(bool(files), "请选择要处理的 DWG/DXF 文件"):
             return None
         if not warn_require(bool(out), "请设置输出目录"):
             return None
-        has_dwg = (any(f.lower().endswith(".dwg") for f in files)
-                   or template.lower().endswith(".dwg"))
+        has_dwg = any(
+            f.lower().endswith(".dwg") for f in files
+        ) or template.lower().endswith(".dwg")
         err = require_oda_for_dwg(has_dwg, oda)
         if err:
             messagebox.showerror("缺少 ODA File Converter", err)
             return None
 
-        return (xlsx, template, files, out, oda,
-                out_version, self._cancel_event, match_col, sheet)
+        return (
+            xlsx,
+            template,
+            files,
+            out,
+            oda,
+            out_version,
+            self._cancel_event,
+            match_col,
+            sheet,
+        )
 
-    def _work(self, xlsx: str, template: str, files: list[str], out: str,
-              oda: str, version: str, cancel, match_col: str | None,
-              sheet: str | None) -> bool:
+    def _work(
+        self,
+        xlsx: str,
+        template: str,
+        files: list[str],
+        out: str,
+        oda: str,
+        version: str,
+        cancel,
+        match_col: str | None,
+        sheet: str | None,
+    ) -> bool:
         summary = run_pipeline_files(
-            xlsx, files, out, oda=oda or None, out_version=version,
-            emit=self._emit, cancel=cancel, template=template,
-            match_col=match_col, sheet=sheet,
+            xlsx,
+            files,
+            out,
+            oda=oda or None,
+            out_version=version,
+            emit=self._emit,
+            cancel=cancel,
+            template=template,
+            match_col=match_col,
+            sheet=sheet,
             progress=lambda p: self._emit("", p),
         )
         failed = summary.get("failed", [])
         if failed:
-            self._emit(f"==== 完成 {summary['ok']}/{summary['count']} 张，"
-                       f"失败 {len(failed)} 张：{', '.join(failed)}，"
-                       f"输出见 {summary['output']} ====")
+            self._emit(
+                f"==== 完成 {summary['ok']}/{summary['count']} 张，"
+                f"失败 {len(failed)} 张：{', '.join(failed)}，"
+                f"输出见 {summary['output']} ===="
+            )
         else:
-            self._emit(f"==== 全部完成：{summary['count']} 张图纸，"
-                       f"输出见 {summary['output']} ====")
+            self._emit(
+                f"==== 全部完成：{summary['count']} 张图纸，"
+                f"输出见 {summary['output']} ===="
+            )
         return not failed

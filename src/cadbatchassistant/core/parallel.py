@@ -67,8 +67,7 @@ def _run_pool(pool_cls, worker, items, is_cancelled, on_done, max_workers) -> li
             if is_cancelled is not None and is_cancelled():
                 cancelled = True
                 break
-            done, pending = _wait(pending, timeout=0.2,
-                                  return_when=FIRST_COMPLETED)
+            done, pending = _wait(pending, timeout=0.2, return_when=FIRST_COMPLETED)
             for fut in done:
                 i = fut_map[fut]
                 try:
@@ -89,9 +88,14 @@ def _run_pool(pool_cls, worker, items, is_cancelled, on_done, max_workers) -> li
 class Executor(Protocol):
     """批量任务执行器接口：业务代码依赖本协议，实现可切换（串行/进程/线程）。"""
 
-    def map(self, worker, items: list,
-            is_cancelled=None, on_done=None,
-            max_workers: int | None = None) -> list:
+    def map(
+        self,
+        worker,
+        items: list,
+        is_cancelled=None,
+        on_done=None,
+        max_workers: int | None = None,
+    ) -> list:
         """执行 worker(item)，返回与提交顺序一致的结果列表。"""
         ...
 
@@ -99,9 +103,14 @@ class Executor(Protocol):
 class SerialExecutor:
     """串行执行器（调试/小批量/单核场景）。"""
 
-    def map(self, worker, items: list,
-            is_cancelled=None, on_done=None,
-            max_workers: int | None = None) -> list:
+    def map(
+        self,
+        worker,
+        items: list,
+        is_cancelled=None,
+        on_done=None,
+        max_workers: int | None = None,
+    ) -> list:
         return _run_serial(worker, items, is_cancelled, on_done)
 
 
@@ -111,12 +120,22 @@ class ProcessExecutor:
     def __init__(self, max_workers: int | None = None) -> None:
         self.max_workers = max_workers
 
-    def map(self, worker, items: list,
-            is_cancelled=None, on_done=None,
-            max_workers: int | None = None) -> list:
-        return _run_pool(ProcessPoolExecutor, worker, items,
-                         is_cancelled, on_done,
-                         max_workers or self.max_workers)
+    def map(
+        self,
+        worker,
+        items: list,
+        is_cancelled=None,
+        on_done=None,
+        max_workers: int | None = None,
+    ) -> list:
+        return _run_pool(
+            ProcessPoolExecutor,
+            worker,
+            items,
+            is_cancelled,
+            on_done,
+            max_workers or self.max_workers,
+        )
 
 
 class ThreadExecutor:
@@ -125,12 +144,22 @@ class ThreadExecutor:
     def __init__(self, max_workers: int | None = None) -> None:
         self.max_workers = max_workers
 
-    def map(self, worker, items: list,
-            is_cancelled=None, on_done=None,
-            max_workers: int | None = None) -> list:
-        return _run_pool(ThreadPoolExecutor, worker, items,
-                         is_cancelled, on_done,
-                         max_workers or self.max_workers)
+    def map(
+        self,
+        worker,
+        items: list,
+        is_cancelled=None,
+        on_done=None,
+        max_workers: int | None = None,
+    ) -> list:
+        return _run_pool(
+            ThreadPoolExecutor,
+            worker,
+            items,
+            is_cancelled,
+            on_done,
+            max_workers or self.max_workers,
+        )
 
 
 class AutoExecutor:
@@ -139,9 +168,14 @@ class AutoExecutor:
     def __init__(self, max_workers: int | None = None) -> None:
         self.max_workers = max_workers
 
-    def map(self, worker, items: list,
-            is_cancelled=None, on_done=None,
-            max_workers: int | None = None) -> list:
+    def map(
+        self,
+        worker,
+        items: list,
+        is_cancelled=None,
+        on_done=None,
+        max_workers: int | None = None,
+    ) -> list:
         n = len(items)
         if n == 0:
             return []
@@ -149,12 +183,12 @@ class AutoExecutor:
         workers = max_workers or self.max_workers or max(1, min(cpus, 4))
         if n < 4 or workers <= 1:
             return _run_serial(worker, items, is_cancelled, on_done)
-        return _run_pool(ProcessPoolExecutor, worker, items,
-                         is_cancelled, on_done, workers)
+        return _run_pool(
+            ProcessPoolExecutor, worker, items, is_cancelled, on_done, workers
+        )
 
 
-def create_executor(mode: str = "auto",
-                    max_workers: int | None = None) -> Executor:
+def create_executor(mode: str = "auto", max_workers: int | None = None) -> Executor:
     """创建批量任务执行器（工厂）。
 
     mode:
@@ -175,11 +209,14 @@ def create_executor(mode: str = "auto",
     raise ValueError(f"未知的并行模式: {mode}")
 
 
-def map_files(worker, items: list,
-              max_workers: int | None = None,
-              is_cancelled=None,
-              on_done=None,
-              executor: Executor | None = None) -> list:
+def map_files(
+    worker,
+    items: list,
+    max_workers: int | None = None,
+    is_cancelled=None,
+    on_done=None,
+    executor: Executor | None = None,
+) -> list:
     """并行执行 worker(item)，返回与提交顺序一致的结果列表（兼容入口）。
 
     worker  : 模块级顶层函数，接收单个 item（可 pickle 的元组/对象）
@@ -191,7 +228,13 @@ def map_files(worker, items: list,
                需要固定串行/线程时传 create_executor(...) 的结果。
     """
     if executor is not None:
-        return executor.map(worker, items, is_cancelled=is_cancelled,
-                            on_done=on_done, max_workers=max_workers)
+        return executor.map(
+            worker,
+            items,
+            is_cancelled=is_cancelled,
+            on_done=on_done,
+            max_workers=max_workers,
+        )
     return create_executor("auto", max_workers=max_workers).map(
-        worker, items, is_cancelled=is_cancelled, on_done=on_done)
+        worker, items, is_cancelled=is_cancelled, on_done=on_done
+    )

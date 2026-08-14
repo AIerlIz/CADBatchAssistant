@@ -12,6 +12,7 @@ https://ghproxy.com/https://github.com/... 或 https://github.com/...
 from __future__ import annotations
 
 import base64
+import contextlib
 import hashlib
 import http.client
 import json
@@ -58,8 +59,9 @@ def parse_version(tag: str) -> tuple[int, int, int] | None:
     return nums  # type: ignore[return-value]
 
 
-def is_newer(latest: tuple[int, int, int] | None,
-             current: tuple[int, int, int] | None) -> bool:
+def is_newer(
+    latest: tuple[int, int, int] | None, current: tuple[int, int, int] | None
+) -> bool:
     """latest > current 视为有新版本；任一解析失败返回 False。"""
     if latest is None or current is None:
         return False
@@ -77,7 +79,7 @@ def is_ignored(latest_tag: str, ignored_tag: str | None) -> bool:
 
 def ignored_version() -> str | None:
     """读取用户忽略的版本 tag（配置 update_ignore）；无则返回 None。"""
-    from cadbatchassistant.common import load_app_config
+    from cadbatchassistant.core.app_config import load_app_config
 
     v = load_app_config().get(IGNORE_KEY, "")
     return str(v).strip() or None
@@ -88,7 +90,7 @@ def set_ignored_version(tag: str) -> None:
 
     合并写入配置，保留 update_mirror 等其他配置项。
     """
-    from cadbatchassistant.common import save_app_config
+    from cadbatchassistant.core.app_config import save_app_config
 
     save_app_config({IGNORE_KEY: tag})
 
@@ -100,12 +102,17 @@ def _request_json(url: str, timeout: int = API_TIMEOUT) -> dict:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             body = resp.read(MAX_RESPONSE_BYTES + 1)
             if len(body) > MAX_RESPONSE_BYTES:
-                raise UpdateError("更新信息响应过大，已中止读取")
+                raise UpdateError("更新信息响应过大，已中止读取")  # noqa: TRY301
     except UpdateError:
         raise
     except urllib.error.HTTPError as e:
         raise UpdateError(f"服务器返回 {e.code}（{e.reason}）") from e
-    except (TimeoutError, urllib.error.URLError, OSError, http.client.HTTPException) as e:
+    except (
+        TimeoutError,
+        urllib.error.URLError,
+        OSError,
+        http.client.HTTPException,
+    ) as e:
         raise UpdateError(f"无法连接 GitHub：{e}") from e
     try:
         data = json.loads(body)
@@ -116,8 +123,7 @@ def _request_json(url: str, timeout: int = API_TIMEOUT) -> dict:
     return data
 
 
-def check_latest(repo: str = GITHUB_REPO,
-                 timeout: int = API_TIMEOUT) -> dict:
+def check_latest(repo: str = GITHUB_REPO, timeout: int = API_TIMEOUT) -> dict:
     """查询 GitHub 最新 Release。
 
     返回：
@@ -127,7 +133,8 @@ def check_latest(repo: str = GITHUB_REPO,
     """
     try:
         data = _request_json(
-            f"https://api.github.com/repos/{repo}/releases/latest", timeout)
+            f"https://api.github.com/repos/{repo}/releases/latest", timeout
+        )
     except UpdateError as e:
         return {"ok": False, "error": str(e)}
 
@@ -152,9 +159,14 @@ def check_latest(repo: str = GITHUB_REPO,
     if not url:
         return {"ok": False, "error": f"最新版本未包含安装包 {ASSET_NAME}"}
 
-    return {"ok": True, "tag": tag, "version": version,
-            "url": str(url), "size": int(size) if size else None,
-            "sha256_url": str(sha256_url) if sha256_url else None}
+    return {
+        "ok": True,
+        "tag": tag,
+        "version": version,
+        "url": str(url),
+        "size": int(size) if size else None,
+        "sha256_url": str(sha256_url) if sha256_url else None,
+    }
 
 
 def _mirror_url(url: str, mirror: str | None) -> str:
@@ -174,7 +186,8 @@ def _validate_mirror_scheme(mirror: str | None) -> None:
     if mirror.lower().startswith("http://"):
         raise UpdateError(
             "下载镜像仅支持 HTTPS（明文 http 会被中间人篡改，已拒绝）。"
-            "请改用 https 镜像或清空镜像配置直连 GitHub。")
+            "请改用 https 镜像或清空镜像配置直连 GitHub。"
+        )
 
 
 def _parse_sha256(text: str) -> str:
@@ -194,8 +207,9 @@ def _parse_sha256(text: str) -> str:
     raise UpdateError("校验和文件格式无法解析（未找到 64 位 SHA-256 哈希）")
 
 
-def _fetch_sha256(sha256_url: str, mirror: str | None,
-                  timeout: int = API_TIMEOUT) -> str:
+def _fetch_sha256(
+    sha256_url: str, mirror: str | None, timeout: int = API_TIMEOUT
+) -> str:
     """下载 .sha256 校验和文件并解析哈希；失败抛 UpdateError。
 
     与 exe 相同地应用镜像前缀并支持「镜像失败回退直连」（校验和是
@@ -216,9 +230,16 @@ def _fetch_sha256(sha256_url: str, mirror: str | None,
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 body = resp.read(MAX_RESPONSE_BYTES + 1)
             if len(body) > MAX_RESPONSE_BYTES:
-                raise UpdateError("校验和响应过大，已中止读取")
+                raise UpdateError("校验和响应过大，已中止读取")  # noqa: TRY301
             return _parse_sha256(body.decode("utf-8", errors="replace"))
-        except (TimeoutError, urllib.error.HTTPError, urllib.error.URLError, OSError, http.client.HTTPException, UpdateError) as e:
+        except (
+            TimeoutError,
+            urllib.error.HTTPError,
+            urllib.error.URLError,
+            OSError,
+            http.client.HTTPException,
+            UpdateError,
+        ) as e:
             last_err = e
     raise UpdateError(f"获取校验和失败：{last_err}") from last_err
 
@@ -230,16 +251,19 @@ CANCEL_MSG = "已取消"
 
 def _cleanup(dest: Path) -> None:
     """尽力删除半成品下载文件，失败静默。"""
-    try:
+    with contextlib.suppress(OSError):
         dest.unlink(missing_ok=True)
-    except OSError:
-        pass
 
 
-def _download_once(dest: Path, url: str, source: str,
-                   progress_cb, size: int | None,
-                   expect_exe: bool,
-                   expected_sha256: str | None = None) -> str:
+def _download_once(
+    dest: Path,
+    url: str,
+    source: str,
+    progress_cb,
+    size: int | None,
+    expect_exe: bool,
+    expected_sha256: str | None = None,
+) -> str:
     """单次下载 + 校验（不做重试）。
 
     - 网络 / 协议错误（含 IncompleteRead 等 HTTPException）转 UpdateError 并清理；
@@ -249,8 +273,10 @@ def _download_once(dest: Path, url: str, source: str,
     """
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
-        with urllib.request.urlopen(req, timeout=API_TIMEOUT) as resp, \
-                open(dest, "wb") as f:
+        with (
+            urllib.request.urlopen(req, timeout=API_TIMEOUT) as resp,
+            open(dest, "wb") as f,
+        ):
             total = int(resp.headers.get("Content-Length") or 0)
             if progress_cb is not None:
                 progress_cb(0, total)
@@ -266,7 +292,12 @@ def _download_once(dest: Path, url: str, source: str,
     except UpdateError:
         _cleanup(dest)  # 用户取消：清理半成品后原样传播，不重试
         raise
-    except (TimeoutError, urllib.error.URLError, OSError, http.client.HTTPException) as e:
+    except (
+        TimeoutError,
+        urllib.error.URLError,
+        OSError,
+        http.client.HTTPException,
+    ) as e:
         _cleanup(dest)
         raise UpdateError(f"{source}下载失败：{e}") from e
 
@@ -289,7 +320,8 @@ def _download_once(dest: Path, url: str, source: str,
             _cleanup(dest)
             raise UpdateError(
                 f"{source}下载文件校验失败（SHA-256 不匹配），"
-                "文件可能被篡改，请检查网络或更换下载镜像")
+                "文件可能被篡改，请检查网络或更换下载镜像"
+            )
     if expect_exe:
         try:
             with open(dest, "rb") as f:
@@ -301,17 +333,24 @@ def _download_once(dest: Path, url: str, source: str,
             _cleanup(dest)
             raise UpdateError(
                 f"{source}返回的内容不是安装包（可能是错误页面），"
-                "请检查网络或更换下载镜像")
+                "请检查网络或更换下载镜像"
+            )
     return str(dest)
 
 
-def download_asset(url: str, dest: str | Path, mirror: str | None = None,
-                   progress_cb=None, size: int | None = None,
-                   retries: int = 3, retry_delay: float = 1.0,
-                   fallback_to_direct: bool = True,
-                   expect_exe: bool = True,
-                   abort_event: threading.Event | None = None,
-                   sha256_url: str | None = None) -> str:
+def download_asset(
+    url: str,
+    dest: str | Path,
+    mirror: str | None = None,
+    progress_cb=None,
+    size: int | None = None,
+    retries: int = 3,
+    retry_delay: float = 1.0,
+    fallback_to_direct: bool = True,
+    expect_exe: bool = True,
+    abort_event: threading.Event | None = None,
+    sha256_url: str | None = None,
+) -> str:
     """分块下载更新包到 dest，返回 dest 路径。
 
     progress_cb(downloaded, total) 在主线程之外的调用线程执行。
@@ -347,9 +386,15 @@ def download_asset(url: str, dest: str | Path, mirror: str | None = None,
     for candidate_url, source in candidates:
         for attempt in range(1, retries + 1):
             try:
-                return _download_once(dest, candidate_url, source,
-                                      progress_cb, size, expect_exe,
-                                      expected_sha256)
+                return _download_once(
+                    dest,
+                    candidate_url,
+                    source,
+                    progress_cb,
+                    size,
+                    expect_exe,
+                    expected_sha256,
+                )
             except UpdateError as e:
                 if e.args and e.args[0] == CANCEL_MSG:
                     raise
@@ -359,19 +404,23 @@ def download_asset(url: str, dest: str | Path, mirror: str | None = None,
                     if abort_event is not None:
                         # 可中断退避：取消被置位时立即中止，不等满整个退避时长
                         if abort_event.wait(delay):
-                            raise UpdateError(CANCEL_MSG)
+                            raise UpdateError(CANCEL_MSG) from None
                     else:
                         time.sleep(delay)
 
     total_attempts = len(candidates) * retries
     raise UpdateError(
         f"下载失败：已自动尝试 {total_attempts} 次。最后错误：{last_error}。"
-        "请检查网络连接，或更换/清空下载镜像后重试。") from last_error
+        "请检查网络连接，或更换/清空下载镜像后重试。"
+    ) from last_error
 
 
-def build_replace_command(downloaded: str, current_exe: str,
-                          restart: bool = True,
-                          expected_sha256: str | None = None) -> str:
+def build_replace_command(
+    downloaded: str,
+    current_exe: str,
+    restart: bool = True,
+    expected_sha256: str | None = None,
+) -> str:
     """生成更新替换命令：等待主进程退出 → 覆盖 exe → 校验 → 重启。
 
     使用 PowerShell -EncodedCommand（base64/UTF-16LE 内嵌整段命令），
@@ -391,7 +440,8 @@ def build_replace_command(downloaded: str, current_exe: str,
     dst_esc = current_exe.replace("'", "''")
     log_esc = os.path.join(
         os.environ.get("TEMP", os.environ.get("TMP", ".")),
-        "CADBatchAssistant_update.log").replace("'", "''")
+        "CADBatchAssistant_update.log",
+    ).replace("'", "''")
     verify_ps = ""
     if expected_sha256:
         expected_ps = expected_sha256.lower()
@@ -454,8 +504,12 @@ if (-not $copied) {{
     return f"powershell -NoProfile -NonInteractive -EncodedCommand {encoded}"
 
 
-def run_replace(downloaded: str, current_exe: str, restart: bool = True,
-                expected_sha256: str | None = None) -> None:
+def run_replace(
+    downloaded: str,
+    current_exe: str,
+    restart: bool = True,
+    expected_sha256: str | None = None,
+) -> None:
     """启动替换进程（不等待）；随后应尽快让主进程退出。
 
     expected_sha256 : 下载 exe 的 SHA-256（可选）。提供时替换脚本在
@@ -463,8 +517,7 @@ def run_replace(downloaded: str, current_exe: str, restart: bool = True,
         （如 Failed to load Python DLL）。
     """
     subprocess.Popen(
-        build_replace_command(downloaded, current_exe, restart,
-                             expected_sha256),
+        build_replace_command(downloaded, current_exe, restart, expected_sha256),
         shell=False,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )

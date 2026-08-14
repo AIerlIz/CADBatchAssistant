@@ -17,13 +17,10 @@ from tkinter import filedialog, messagebox, ttk
 
 from openpyxl import load_workbook
 
-from cadbatchassistant.common import (
-    AsyncPanel,
-    center_window,
+from cadbatchassistant.core.app_config import (
     get_oda,
     get_out_version,
     load_catalog_rules,
-    templates_dir,
 )
 from cadbatchassistant.core.catalog_excel_writer import detect_sheet_candidates
 from cadbatchassistant.core.catalog_pipeline import (
@@ -32,6 +29,8 @@ from cadbatchassistant.core.catalog_pipeline import (
     run_pipeline,
 )
 from cadbatchassistant.core.catalog_template_reader import collect_fields
+from cadbatchassistant.core.templates import templates_dir
+from cadbatchassistant.gui.async_panel import AsyncPanel
 from cadbatchassistant.gui.gui_shared import (
     FilesPanelMixin,
     PanelLayoutMixin,
@@ -42,10 +41,12 @@ from cadbatchassistant.gui.gui_shared import (
     save_panel_config,
     warn_require,
 )
+from cadbatchassistant.gui.tk_util import center_window
 
 
-class CatalogPanel(FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin,
-                   RunStartMixin, AsyncPanel):
+class CatalogPanel(
+    FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel
+):
     """目录生成面板（模板标记取值）；文件列表/模板库复用共享组件。"""
 
     TEMPLATE_CATEGORY = "catalog"
@@ -68,9 +69,11 @@ class CatalogPanel(FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin,
 
         # 2. 数据源区：表格模板 + 图纸模板
         self._add_src_section(
-            "表格模板:", (".xlsx",),
+            "表格模板:",
+            (".xlsx",),
             on_xlsx_hit=lambda h: save_panel_config({"catalog_xlsx": h}),
-            tpl_width=24)
+            tpl_width=24,
+        )
 
         # 3. 输出区
         self.var_out = tk.StringVar()
@@ -135,11 +138,14 @@ class CatalogPanel(FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin,
         files = list(self.scanned_files)
         out = self.var_out.get().strip()
 
-        if not warn_require(bool(tpl_name) and os.path.isfile(template),
-                            "请从图纸模板下拉框选择模板（可先「上传」）"):
+        if not warn_require(
+            bool(tpl_name) and os.path.isfile(template),
+            "请从图纸模板下拉框选择模板（可先「上传」）",
+        ):
             return None
-        if not warn_require(bool(xlsx) and os.path.isfile(xlsx),
-                            "请选择有效的表格模板"):
+        if not warn_require(
+            bool(xlsx) and os.path.isfile(xlsx), "请选择有效的表格模板"
+        ):
             return None
         if not warn_require(bool(files), "请选择要处理的 DWG/DXF 文件"):
             return None
@@ -169,15 +175,25 @@ class CatalogPanel(FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin,
                 "图纸目录助手",
                 "表格模板中未找到与字段匹配的表头（sheet 与表头行）（字段："
                 + "、".join(fields)
-                + "）。表头列名应包含与图纸模板 [字段名] 占位符一致的字段名。")
+                + "）。表头列名应包含与图纸模板 [字段名] 占位符一致的字段名。",
+            )
             return None
         tied = [c for c in cands if c[0] == cands[0][0]]
         if len(tied) > 1:
             sheet_name = self._ask_sheet(tied, fields)
             if sheet_name is None:
                 return None
-        return (template, xlsx, files, out, oda, get_out_version(),
-                load_catalog_rules(), sheet_name, anchors)
+        return (
+            template,
+            xlsx,
+            files,
+            out,
+            oda,
+            get_out_version(),
+            load_catalog_rules(),
+            sheet_name,
+            anchors,
+        )
 
     def _after_begin_run(self, args: tuple) -> None:
         """begin_run 之后输出 sheet 定位日志（worker 参数 args[7] 为 sheet 名）。"""
@@ -195,12 +211,11 @@ class CatalogPanel(FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin,
         ttk.Label(
             win,
             text="表格模板中有多个 sheet 与字段匹配（字段："
-                 + "、".join(fields)
-                 + "），请选择本次使用的 sheet：",
+            + "、".join(fields)
+            + "），请选择本次使用的 sheet：",
             wraplength=420,
         ).pack(padx=12, pady=(12, 6))
-        lb = tk.Listbox(win, height=min(len(names), 8), width=40,
-                        selectmode="single")
+        lb = tk.Listbox(win, height=min(len(names), 8), width=40, selectmode="single")
         for n in names:
             lb.insert("end", n)
         lb.selection_set(0)
@@ -225,12 +240,20 @@ class CatalogPanel(FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin,
         self._root.wait_window(win)
         return pick["name"]
 
-    def _work(self, template, xlsx, files, out, oda, version, rules,
-              sheet_name, anchors=None) -> bool:
+    def _work(
+        self, template, xlsx, files, out, oda, version, rules, sheet_name, anchors=None
+    ) -> bool:
         res = run_pipeline(
-            template, xlsx, files, out, oda, version, rules,
+            template,
+            xlsx,
+            files,
+            out,
+            oda,
+            version,
+            rules,
             sheet_name=sheet_name,
-            log=self._emit, progress=lambda p: self._emit(None, int(p)),
+            log=self._emit,
+            progress=lambda p: self._emit(None, int(p)),
             is_cancelled=self._is_cancelled,
             template_anchors=anchors,
         )
@@ -239,24 +262,29 @@ class CatalogPanel(FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin,
             self._emit(f"处理失败：{res.error}")
         return res.ok
 
-    def _on_finish(self, success: bool) -> None:
-        # 只恢复按钮状态（跳过 PanelLayoutMixin 默认的 finish_popup 弹窗，
-        # 本面板用自己的统计弹窗，避免处理完弹两次提示）。
-        # 弹窗标题与改字/填表助手统一为「完成」（成功 showinfo / 失败
-        # showwarning），正文保留目录统计信息。
-        AsyncPanel._on_finish(self, success)
+    def _finish_notify(self, success: bool) -> None:
+        """目录助手专属完成弹窗（覆盖 PanelLayoutMixin 默认的 finish_popup）。
+
+        按钮复位由 AsyncPanel._on_finish 统一完成，这里只负责统计弹窗；
+        弹窗标题与改字/填表助手统一为「完成」（成功 showinfo / 失败
+        showwarning），正文保留目录统计信息。
+        """
         res = self._last_result
         if res is None:
             finish_popup(success)
             return
         if success and res.out_path:
-            msg = (f"目录生成完成：{res.out_path}\n\n"
-                   f"图纸：{res.total_files} 个文件\n"
-                   f"无管段(NA)：{res.na_rows} 张\n"
-                   f"总页数：{res.total_pages}\n"
-                   f"字段：{' / '.join(res.fields)}\n")
+            msg = (
+                f"目录生成完成：{res.out_path}\n\n"
+                f"图纸：{res.total_files} 个文件\n"
+                f"无管段(NA)：{res.na_rows} 张\n"
+                f"总页数：{res.total_pages}\n"
+                f"字段：{' / '.join(res.fields)}\n"
+            )
             if res.failed_files:
-                msg += f"\n转换失败：{len(res.failed_files)} 个\n" + "\n".join(res.failed_files[:10])
+                msg += f"\n转换失败：{len(res.failed_files)} 个\n" + "\n".join(
+                    res.failed_files[:10]
+                )
             messagebox.showinfo("完成", msg)
         elif not success:
             messagebox.showwarning("完成", f"处理失败：\n{res.error or '未知错误'}")

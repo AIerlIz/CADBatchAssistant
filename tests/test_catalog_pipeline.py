@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """catalog_pipeline 配置解析测试。"""
 
 from __future__ import annotations
@@ -61,14 +60,20 @@ def test_on_done_progress_and_log_monotonic_when_out_of_order(monkeypatch, tmp_p
     conv.resolve.return_value = ""
     conv.require_for_dwg.return_value = None
     anchors = [Anchor(field="图号", is_area=False, point_x=1.0, point_y=2.0)]
-    with mock.patch.object(cp.dc, "get_converter", return_value=conv), \
-            mock.patch.object(cp, "map_files", side_effect=fake_map_files), \
-            mock.patch.object(cp.catalog_excel_writer,
-                              "write_catalog_from_template"):
+    with (
+        mock.patch.object(cp.dc, "get_converter", return_value=conv),
+        mock.patch.object(cp, "map_files", side_effect=fake_map_files),
+        mock.patch.object(cp.catalog_excel_writer, "write_catalog_from_template"),
+    ):
         result = cp.run_pipeline(
-            template, xlsx, files, out,
-            log=logs.append, progress=progs.append,
-            template_anchors=anchors)
+            template,
+            xlsx,
+            files,
+            out,
+            log=logs.append,
+            progress=progs.append,
+            template_anchors=anchors,
+        )
 
     assert result.ok
     on_done = captured["on_done"]

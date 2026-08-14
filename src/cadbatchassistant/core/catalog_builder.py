@@ -16,7 +16,7 @@ NA = "NA"
 class FileEntry:
     """一张图纸（一个 DWG 文件）的取值结果。"""
 
-    filename: str                           # 图纸文件名（去扩展名）
+    filename: str  # 图纸文件名（去扩展名）
     values: dict[str, list[str]] = field(default_factory=dict)
 
 
@@ -24,11 +24,11 @@ class FileEntry:
 class Catalog:
     """完整目录数据（文件粒度）。"""
 
-    fields: list[str] = field(default_factory=list)   # 列顺序（模板字段名）
+    fields: list[str] = field(default_factory=list)  # 列顺序（模板字段名）
     entries: list[FileEntry] = field(default_factory=list)
-    page_count: int = 1                    # 目录打印页数 P
-    total_pages: int = 1                   # 总页数 = 封皮 + P + 文件数
-    na_rows: int = 0                       # 无任何值的条目数（NA 行）
+    page_count: int = 1  # 目录打印页数 P
+    total_pages: int = 1  # 总页数 = 封皮 + P + 文件数
+    na_rows: int = 0  # 无任何值的条目数（NA 行）
 
 
 def build_file_catalog(
@@ -52,8 +52,7 @@ def build_file_catalog(
 
     # 页码：目录打印页数 P = ceil(总行数 / 每页数据行数)
     total_rows = sum(
-        max((len(e.values.get(f, [])) for f in fields), default=0) or 1
-        for e in entries
+        max((len(e.values.get(f, [])) for f in fields), default=0) or 1 for e in entries
     )
     per_page = max(1, data_rows_per_page or 50)
     catalog.page_count = max(1, math.ceil(total_rows / per_page))

@@ -18,9 +18,9 @@ import zlib
 from pathlib import Path
 
 SIZE = 256
-RADIUS = 56                      # 圆角半径(256 尺寸)
-BG = (31, 78, 121, 255)          # 深蓝背景
-FG = (255, 255, 255, 255)        # 白色前景
+RADIUS = 56  # 圆角半径(256 尺寸)
+BG = (31, 78, 121, 255)  # 深蓝背景
+FG = (255, 255, 255, 255)  # 白色前景
 
 # 5x7 点阵字库(C/A/D)
 GLYPHS = {
@@ -29,14 +29,15 @@ GLYPHS = {
     "D": [0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110],
 }
 GLYPH_W, GLYPH_H = 5, 7
-LETTER_SPACING = 2               # 字母间距(格)
+LETTER_SPACING = 2  # 字母间距(格)
 
 # ICO 内包含的尺寸
 ICO_SIZES = (16, 32, 48, 256)
 
 
-def _in_rounded_rect(x: int, y: int, x0: int, y0: int,
-                     x1: int, y1: int, r: int) -> bool:
+def _in_rounded_rect(
+    x: int, y: int, x0: int, y0: int, x1: int, y1: int, r: int
+) -> bool:
     """点 (x,y) 是否在圆角矩形 [x0,x1]x[y0,y1] 内(圆角半径 r)。"""
     if not (x0 <= x <= x1 and y0 <= y <= y1):
         return False
@@ -52,7 +53,7 @@ def _render_pixels(size: int = SIZE) -> list[list[tuple[int, int, int, int]]]:
     """
     text = "CAD"
     grid_w = len(text) * GLYPH_W + (len(text) - 1) * LETTER_SPACING
-    scale = max(1, round(size / 21))       # 21 = grid 19 格 + 边距
+    scale = max(1, round(size / 21))  # 21 = grid 19 格 + 边距
     px_w, px_h = grid_w * scale, GLYPH_H * scale
     off_x = (size - px_w) // 2
     off_y = (size - px_h) // 2
@@ -87,12 +88,15 @@ def make_png(pixels, w: int, h: int) -> bytes:
 
     raw = b"".join(
         b"\x00" + b"".join(struct.pack("4B", *pixels[y][x]) for x in range(w))
-        for y in range(h))
+        for y in range(h)
+    )
     ihdr = struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)
-    return (b"\x89PNG\r\n\x1a\n"
-            + chunk(b"IHDR", ihdr)
-            + chunk(b"IDAT", zlib.compress(raw, 9))
-            + chunk(b"IEND", b""))
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", ihdr)
+        + chunk(b"IDAT", zlib.compress(raw, 9))
+        + chunk(b"IEND", b"")
+    )
 
 
 def make_ico(images: list[tuple[int, int, bytes]]) -> bytes:
@@ -102,9 +106,9 @@ def make_ico(images: list[tuple[int, int, bytes]]) -> bytes:
     payload = b""
     offset = 6 + 16 * len(images)
     for w, h, png in images:
-        entries += struct.pack("<BBBBHHII",
-                               w % 256, h % 256, 0, 0, 1, 32,
-                               len(png), offset)
+        entries += struct.pack(
+            "<BBBBHHII", w % 256, h % 256, 0, 0, 1, 32, len(png), offset
+        )
         payload += png
         offset += len(png)
     return header + entries + payload
@@ -124,8 +128,10 @@ def main() -> int:
     (assets / "logo.png").write_bytes(png_256)
     (assets / "logo.ico").write_bytes(ico)
     print(f"已生成: {assets / 'logo.png'} ({len(png_256)} B)")
-    print(f"已生成: {assets / 'logo.ico'} ({len(ico)} B, "
-          f"尺寸 {[s for s, _, _ in ico_images]})")
+    print(
+        f"已生成: {assets / 'logo.ico'} ({len(ico)} B, "
+        f"尺寸 {[s for s, _, _ in ico_images]})"
+    )
     return 0
 
 

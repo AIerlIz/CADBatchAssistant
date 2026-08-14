@@ -9,10 +9,11 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 
 
-def check_duplicate_names(paths: list[str | Path]) -> None:
+def check_duplicate_names(paths: Sequence[str | Path]) -> None:
     """检测输入文件是否重名（大小写不敏感）；重名时抛 ValueError。
 
     跨目录同名文件复制到同一临时目录会互相覆盖，必须在复制前终止，
@@ -24,13 +25,16 @@ def check_duplicate_names(paths: list[str | Path]) -> None:
         if key in name_map:
             raise ValueError(
                 "输入文件重名（复制到临时目录会互相覆盖，请重命名后重试）："
-                f"{name_map[key]} 与 {p}")
+                f"{name_map[key]} 与 {p}"
+            )
         name_map[key] = str(p)
 
 
-def stage_inputs(files: list[str | Path],
-                 workdir: str | Path | None = None,
-                 prefix: str = "cad_inputs_") -> tuple[str, list[str]]:
+def stage_inputs(
+    files: Sequence[str | Path],
+    workdir: str | Path | None = None,
+    prefix: str = "cad_inputs_",
+) -> tuple[str, list[str]]:
     """把文件列表复制到临时输入目录，返回 (输入目录, 去扩展名文件名列表)。
 
     先做重名检测（check_duplicate_names），通过后复制到

@@ -103,29 +103,43 @@ def main() -> int:
     # 1.表格模板必填
     logs: list[str] = []
     res_no_tpl = run_pipeline(
-        template, "", [f1], TMP / "x.xlsx",
-        rules={"figure_field": "图号"}, log=logs.append, progress=lambda p: None)
+        template,
+        "",
+        [f1],
+        TMP / "x.xlsx",
+        rules={"figure_field": "图号"},
+        log=logs.append,
+        progress=lambda p: None,
+    )
     if res_no_tpl.ok or "表格模板" not in res_no_tpl.error:
         failures.append(f"表格模板必填校验失效: {res_no_tpl.error}")
 
     # 2. 完整流程
     res = run_pipeline(
-        template, xlsx_tpl, [f1, f2, f3], out,
+        template,
+        xlsx_tpl,
+        [f1, f2, f3],
+        out,
         rules={"figure_field": "图号"},
-        log=logs.append, progress=lambda p: None,
+        log=logs.append,
+        progress=lambda p: None,
     )
     if not res.ok:
         print(f"pipeline 失败: {res.error}")
         return 1
-    print(f"[1] 字段列 = {res.fields}，图纸 {res.total_files} 张，NA {res.na_rows} 行，总页 {res.total_pages}")
+    print(
+        f"[1] 字段列 = {res.fields}，图纸 {res.total_files} 张，"
+        f"NA {res.na_rows} 行，总页 {res.total_pages}"
+    )
     if res.fields != ["管段编号", "图号"]:
         failures.append(f"字段列不符: {res.fields}")
     if res.na_rows != 2:
         failures.append(f"NA 行数不符（图纸B 管段、图纸C 图号共 2 行）: {res.na_rows}")
 
     ws = load_workbook(out)["目录"]
-    rows = [tuple(r) for r in ws.iter_rows(min_row=1, max_row=ws.max_row,
-                                           values_only=True)]
+    rows = [
+        tuple(r) for r in ws.iter_rows(min_row=1, max_row=ws.max_row, values_only=True)
+    ]
     for r in rows:
         print("   ", r)
     if rows[0] != ("管段编号", "图号", "页码"):
@@ -153,16 +167,22 @@ def main() -> int:
     xlsx_tpl3 = make_xlsx_template(header_row=3)
     out3 = TMP / "目录_h3.xlsx"
     res3 = run_pipeline(
-        template, xlsx_tpl3, [f1, f2, f3], out3,
+        template,
+        xlsx_tpl3,
+        [f1, f2, f3],
+        out3,
         rules={"figure_field": "图号"},
-        log=logs.append, progress=lambda p: None,
+        log=logs.append,
+        progress=lambda p: None,
     )
     if not res3.ok:
         failures.append(f"表头第3行流程失败: {res3.error}")
     else:
         ws3 = load_workbook(out3)["目录"]
-        rows3 = [tuple(r) for r in ws3.iter_rows(min_row=1, max_row=ws3.max_row,
-                                                 values_only=True)]
+        rows3 = [
+            tuple(r)
+            for r in ws3.iter_rows(min_row=1, max_row=ws3.max_row, values_only=True)
+        ]
         if rows3[2] != ("管段编号", "图号", "页码"):
             failures.append(f"表头第3行反推失败: {rows3[2]}")
         if rows3[3][0] != "PIPE-001-AA":
@@ -178,9 +198,13 @@ def main() -> int:
     bad = TMP / "无匹配表头模板.xlsx"
     wb_bad.save(bad)
     res_bad = run_pipeline(
-        template, bad, [f1], TMP / "bad.xlsx",
+        template,
+        bad,
+        [f1],
+        TMP / "bad.xlsx",
         rules={"figure_field": "图号"},
-        log=logs.append, progress=lambda p: None,
+        log=logs.append,
+        progress=lambda p: None,
     )
     if res_bad.ok or "表头" not in res_bad.error:
         failures.append(f"表头反推失败未报错: {res_bad.error}")
@@ -197,18 +221,26 @@ def main() -> int:
     wb_multi.save(multi)
     out_m = TMP / "目录_multi.xlsx"
     res_m = run_pipeline(
-        template, multi, [f1], out_m,
+        template,
+        multi,
+        [f1],
+        out_m,
         rules={"figure_field": "图号"},
-        log=logs.append, progress=lambda p: None,
+        log=logs.append,
+        progress=lambda p: None,
     )
     if not res_m.ok:
         failures.append(f"多sheet自动定位失败: {res_m.error}")
     else:
-        rows_m = [tuple(r) for r in load_workbook(out_m)["目录表"].iter_rows(
-            min_row=1, max_row=load_workbook(out_m)["目录表"].max_row,
-            values_only=True)]
-        if rows_m[0] != ("管段编号", "图号", "页码") \
-                or rows_m[1][0] != "PIPE-001-AA":
+        rows_m = [
+            tuple(r)
+            for r in load_workbook(out_m)["目录表"].iter_rows(
+                min_row=1,
+                max_row=load_workbook(out_m)["目录表"].max_row,
+                values_only=True,
+            )
+        ]
+        if rows_m[0] != ("管段编号", "图号", "页码") or rows_m[1][0] != "PIPE-001-AA":
             failures.append(f"多sheet自动定位填值不符: {rows_m}")
 
     # 3.8 并列 sheet：两个表头一致的 sheet——自动定位取第一个；
@@ -221,9 +253,13 @@ def main() -> int:
     tie = TMP / "并列sheet模板.xlsx"
     wb_tie.save(tie)
     res_t = run_pipeline(
-        template, tie, [f1], TMP / "目录_tie.xlsx",
+        template,
+        tie,
+        [f1],
+        TMP / "目录_tie.xlsx",
         rules={"figure_field": "图号"},
-        log=logs.append, progress=lambda p: None,
+        log=logs.append,
+        progress=lambda p: None,
     )
     if not res_t.ok:
         failures.append(f"并列sheet流程失败: {res_t.error}")
@@ -234,9 +270,14 @@ def main() -> int:
         if wb_t_out["目录A"].cell(row=2, column=1).value != "PIPE-001-AA":
             failures.append("并列sheet自动定位未取第一个 sheet")
     res_tb = run_pipeline(
-        template, tie, [f1], TMP / "目录_tieB.xlsx",
-        rules={"figure_field": "图号"}, sheet_name="目录B",
-        log=logs.append, progress=lambda p: None,
+        template,
+        tie,
+        [f1],
+        TMP / "目录_tieB.xlsx",
+        rules={"figure_field": "图号"},
+        sheet_name="目录B",
+        log=logs.append,
+        progress=lambda p: None,
     )
     if not res_tb.ok:
         failures.append(f"指定sheet流程失败: {res_tb.error}")

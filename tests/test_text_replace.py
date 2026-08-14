@@ -32,7 +32,8 @@ class ApplyRulesModeTest(unittest.TestCase):
         """普通模式：整句含半角括号直接匹配（根因场景）。"""
         text = "机舱A2DK区域管子制作图(四十一)"
         new, cnt = apply_rules(
-            text, [ReplaceRule(find="机舱A2DK区域管子制作图(四十一)", replace="X")])
+            text, [ReplaceRule(find="机舱A2DK区域管子制作图(四十一)", replace="X")]
+        )
         self.assertEqual(cnt, 1)
         self.assertEqual(new, "X")
 
@@ -42,20 +43,21 @@ class ApplyRulesModeTest(unittest.TestCase):
 
     def test_plain_text_replacement_backslash_literal(self):
         """普通模式：替换文本中的 \\1 / 反斜杠按字面输出。"""
-        new, cnt = apply_rules(
-            "AB", [ReplaceRule(find="AB", replace=r"路径\1")])
+        new, cnt = apply_rules("AB", [ReplaceRule(find="AB", replace=r"路径\1")])
         self.assertEqual((cnt, new), (1, r"路径\1"))
 
     def test_regex_mode_keep_regex_semantics(self):
         """正则模式：保留正则能力（元字符、捕获组反向引用）。"""
         new, cnt = apply_rules(
-            "REV1 REV23", [ReplaceRule(find=r"REV(\d+)", replace=r"R\1", regex=True)])
+            "REV1 REV23", [ReplaceRule(find=r"REV(\d+)", replace=r"R\1", regex=True)]
+        )
         self.assertEqual((cnt, new), (2, "R1 R23"))
 
     def test_regex_mode_parentheses_are_groups(self):
         """正则模式：未转义括号是捕获组（与旧行为一致，只匹配括号内文字）。"""
         new, cnt = apply_rules(
-            "x(四十一)y", [ReplaceRule(find="(四十一)", replace="Z", regex=True)])
+            "x(四十一)y", [ReplaceRule(find="(四十一)", replace="Z", regex=True)]
+        )
         self.assertEqual((cnt, new), (1, "x(Z)y"))
 
     def test_empty_find_skipped(self):
@@ -83,11 +85,10 @@ class ReadDocEncodingTest(unittest.TestCase):
         """UTF-8 内容（现代 CAD 默认）中文替换正常。"""
         src = self._make_cn_dxf("u.dxf")
         res = process_dxf_file(
-            src, self._tmp / "u_out.dxf",
-            [ReplaceRule(find="管子", replace="管道")])
+            src, self._tmp / "u_out.dxf", [ReplaceRule(find="管子", replace="管道")]
+        )
         self.assertEqual(res.replaced_total, 1)
-        self.assertIn("管道".encode("utf-8"),
-                      (self._tmp / "u_out.dxf").read_bytes())
+        self.assertIn("管道".encode(), (self._tmp / "u_out.dxf").read_bytes())
 
     def test_gbk_content_declared_936_replaces(self):
         """老图纸真实形态：内容 GBK + 声明 ANSI_936，按声明编码重读可替换。"""
@@ -96,11 +97,10 @@ class ReadDocEncodingTest(unittest.TestCase):
         body = src.read_bytes().decode("utf-8").encode("gbk")
         gbk.write_bytes(body.replace(b"ANSI_1252", b"ANSI_936"))
         res = process_dxf_file(
-            gbk, self._tmp / "g_out.dxf",
-            [ReplaceRule(find="管子", replace="管道")])
+            gbk, self._tmp / "g_out.dxf", [ReplaceRule(find="管子", replace="管道")]
+        )
         self.assertEqual(res.replaced_total, 1)
-        self.assertIn("管道".encode("utf-8"),
-                      (self._tmp / "g_out.dxf").read_bytes())
+        self.assertIn("管道".encode(), (self._tmp / "g_out.dxf").read_bytes())
 
     def test_gbk_content_unknown_codepage_falls_back(self):
         """声明不可映射（ANSI_9999）时按中文编码兜底，仍可替换。"""
@@ -109,8 +109,8 @@ class ReadDocEncodingTest(unittest.TestCase):
         body = src.read_bytes().decode("utf-8").encode("gbk")
         gbk.write_bytes(body.replace(b"ANSI_1252", b"ANSI_9999"))
         res = process_dxf_file(
-            gbk, self._tmp / "g2_out.dxf",
-            [ReplaceRule(find="管子", replace="管道")])
+            gbk, self._tmp / "g2_out.dxf", [ReplaceRule(find="管子", replace="管道")]
+        )
         self.assertEqual(res.replaced_total, 1)
 
     def test_english_still_replaces_on_gbk_content(self):
@@ -119,8 +119,8 @@ class ReadDocEncodingTest(unittest.TestCase):
         gbk = self._tmp / "e_gbk.dxf"
         gbk.write_bytes(src.read_bytes().decode("utf-8").encode("gbk"))
         res = process_dxf_file(
-            gbk, self._tmp / "e_out.dxf",
-            [ReplaceRule(find="A2DK", replace="X")])
+            gbk, self._tmp / "e_out.dxf", [ReplaceRule(find="A2DK", replace="X")]
+        )
         self.assertEqual(res.replaced_total, 1)
 
     def _make_declared_cp(self, declared_cp: str, enc: str, name: str) -> Path:
@@ -135,16 +135,16 @@ class ReadDocEncodingTest(unittest.TestCase):
         """Big5 内容 + ANSI_950 声明（繁体中文图纸）：按声明编码重读可替换。"""
         p = self._make_declared_cp("ANSI_950", "big5", "big5.dxf")
         res = process_dxf_file(
-            p, self._tmp / "big5_out.dxf",
-            [ReplaceRule(find="管子", replace="管道")])
+            p, self._tmp / "big5_out.dxf", [ReplaceRule(find="管子", replace="管道")]
+        )
         self.assertEqual(res.replaced_total, 1)
 
     def test_shift_jis_content_uses_declared_codepage(self):
         """Shift_JIS 内容 + ANSI_932 声明（日文图纸）：按声明编码重读可替换。"""
         p = self._make_declared_cp("ANSI_932", "shift_jis", "sjis.dxf")
         res = process_dxf_file(
-            p, self._tmp / "sjis_out.dxf",
-            [ReplaceRule(find="管子", replace="管道")])
+            p, self._tmp / "sjis_out.dxf", [ReplaceRule(find="管子", replace="管道")]
+        )
         self.assertEqual(res.replaced_total, 1)
 
     def test_utf8_content_with_codepage_declaration_not_rerun(self):
@@ -155,8 +155,10 @@ class ReadDocEncodingTest(unittest.TestCase):
         p = self._tmp / "u8_decl936.dxf"
         p.write_bytes(body)
         res = process_dxf_file(
-            p, self._tmp / "u8_decl936_out.dxf",
-            [ReplaceRule(find="管子", replace="管道")])
+            p,
+            self._tmp / "u8_decl936_out.dxf",
+            [ReplaceRule(find="管子", replace="管道")],
+        )
         self.assertEqual(res.replaced_total, 1)
 
 

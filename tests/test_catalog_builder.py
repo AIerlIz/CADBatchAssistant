@@ -14,8 +14,8 @@ def _entry(filename, **values):
 def test_na_rows_count():
     entries = [
         _entry("A", 图号=["D-1"], 管段=["P-1"]),  # 全有 → 不 NA
-        _entry("B", 图号=["D-2"]),                # 管段缺失 → NA
-        _entry("C", 管段=[]),                     # 图号缺失 → NA
+        _entry("B", 图号=["D-2"]),  # 管段缺失 → NA
+        _entry("C", 管段=[]),  # 图号缺失 → NA
     ]
     cat = build_file_catalog(entries, ["管段", "图号"])
     assert cat.na_rows == 2
@@ -25,10 +25,7 @@ def test_na_rows_count():
 
 def test_page_count_ceil():
     # 3 个文件各 20 行 → 60 行,每页 50 → 2 页
-    entries = [
-        _entry(f"F{i}", 管段=[f"P{i}-{j}" for j in range(20)])
-        for i in range(3)
-    ]
+    entries = [_entry(f"F{i}", 管段=[f"P{i}-{j}" for j in range(20)]) for i in range(3)]
     cat = build_file_catalog(entries, ["管段"], data_rows_per_page=50)
     assert cat.page_count == 2
     assert cat.total_pages == 1 + 2 + 3

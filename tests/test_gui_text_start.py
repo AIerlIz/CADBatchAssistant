@@ -22,8 +22,8 @@ class TextStartCopyFailureTest(unittest.TestCase):
         self.app.scanned_files = [r"D:\a\A1.dwg"]
         self.app.var_dry = mock.Mock()
         self.app.var_dry.get.return_value = False
-        self.app.var_output = mock.Mock()
-        self.app.var_output.get.return_value = r"D:\out"
+        self.app.var_out = mock.Mock()
+        self.app.var_out.get.return_value = r"D:\out"
         self.app.rules_data = [("旧", "新")]
         self.app.var_case = mock.Mock()
         self.app.var_case.get.return_value = True

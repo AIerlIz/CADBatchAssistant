@@ -23,4 +23,57 @@ pythonpath = ["src"]
 [dependency-groups]
 dev = [
     "pyinstaller>=6.22.0",
+    "mypy>=2.3.0",
+    "ruff>=0.16.2",
 ]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle 错误
+    "F",    # pyflakes
+    "W",    # pycodestyle 警告
+    "I",    # isort import 排序
+    "UP",   # pyupgrade 现代化
+    "B",    # flake8-bugbear 常见 bug
+    "SIM",  # flake8-simplify 简化
+    "RUF",  # ruff 特有
+    "BLE",  # flake8-blind-except 盲捕获
+    "S",    # flake8-bandit 安全
+    "TRY",  # tryceratops 异常处理
+    "PLW",  # pylint 警告
+]
+ignore = [
+    "RUF001",  # 中文项目：字符串中的「模糊 Unicode 字符」为误报
+    "RUF002",  # 中文项目：docstring 中的模糊 Unicode 字符为误报
+    "RUF003",  # 中文项目：注释中的模糊 Unicode 字符为误报
+    "TRY003",  # raise XxxError("msg") 为项目既有风格
+    "S110",    # try-except-pass：本地文件/配置容错（损坏静默回退，桌面工具合理权衡）
+    "S112",    # try-except-continue：批处理逐文件容错
+    "S301",    # pickle：multiprocessing 任务序列化（本地进程，非不可信输入）
+    "S310",    # urllib urlopen：updater 下载 GitHub Release（HTTPS 可信源）
+    "S603",    # subprocess：ODA File Converter 本地 exe 调用，无 shell 注入面
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Mixin 模块：跨 Mixin/子类的协作成员（self._xxx / 控件字段）与
+# tkinterdnd2 对 tkinter 控件的运行时 monkey-patch（drop_target_register/dnd_bind）
+# 均无法静态声明，禁用 attr-defined 检查（其余检查保留）。
+module = [
+    "cadbatchassistant.gui.async_panel",
+    "cadbatchassistant.gui.gui_shared",
+]
+disable_error_code = ["attr-defined"]
+

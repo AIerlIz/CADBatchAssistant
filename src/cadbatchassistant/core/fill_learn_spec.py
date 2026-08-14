@@ -15,8 +15,9 @@ from cadbatchassistant.core.fill_parse_xlsx import get_headers
 from cadbatchassistant.core.text_replace import decode_text, read_doc
 
 
-def scan_placeholders(dxf_path: str, xlsx_path: str | None = None,
-                      sheet: str | None = None) -> dict:
+def scan_placeholders(
+    dxf_path: str, xlsx_path: str | None = None, sheet: str | None = None
+) -> dict:
     """扫描模板 DXF 占位符（[列名]），与数据表表头精确匹配。
 
     sheet：数据表中工作表名（None 默认第一个），与填表 load_xlsx 使用
@@ -26,7 +27,7 @@ def scan_placeholders(dxf_path: str, xlsx_path: str | None = None,
       value_rule（按列名分类）、sep（压力格默认空格）、entity（占位符实体）。
     """
     headers: list[str] = get_headers(xlsx_path, sheet) if xlsx_path else []
-    header_map = {h.strip(): h for h in headers}   # 精确匹配（不归一化）
+    header_map = {h.strip(): h for h in headers}  # 精确匹配（不归一化）
 
     doc = read_doc(dxf_path)
     spec: dict = {}
@@ -34,7 +35,8 @@ def scan_placeholders(dxf_path: str, xlsx_path: str | None = None,
         if e.dxftype() not in ("TEXT", "MTEXT"):
             continue
         layer = e.dxf.layer
-        t = e.dxf.text if e.dxftype() == "TEXT" else e.text
+        # MTEXT 文本经 .text property 取（DXFGraphic 静态类型无该属性，用 getattr）
+        t = e.dxf.text if e.dxftype() == "TEXT" else getattr(e, "text", "")
         ts = decode_text(t).strip()
         if not (ts.startswith("[") and ts.endswith("]")):
             continue
@@ -51,7 +53,7 @@ def scan_placeholders(dxf_path: str, xlsx_path: str | None = None,
             "halign": int(getattr(e.dxf, "halign", 0) or 0),
             "valign": int(getattr(e.dxf, "valign", 0) or 0),
             "ref_text": t,
-            "value_rule": "value",   # 数据表值原样填入，不分类加工
+            "value_rule": "value",  # 数据表值原样填入，不分类加工
             "sep": "",
             "entity": e,
         }

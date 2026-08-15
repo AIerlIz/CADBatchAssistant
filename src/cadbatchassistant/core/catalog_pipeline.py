@@ -16,6 +16,7 @@ from cadbatchassistant.core import dwg_converter as dc
 from cadbatchassistant.core.catalog_builder import (
     FileEntry,
     build_file_catalog,
+    is_fig_no_col,
 )
 from cadbatchassistant.core.catalog_reader import extract_by_anchors
 from cadbatchassistant.core.catalog_template_reader import (
@@ -233,13 +234,12 @@ def run_pipeline(
         # 6. 逐文件按锚点取值（图纸号只从图纸中提取，不做文件名兜底）
         point_tol = _point_tolerance(rules)
         figure_field = str(rules.get("figure_field", "图号"))
-        # 图号字段识别：精确匹配优先，其次宽松匹配（配置 "图号" 可命中 "图纸号" 列）；
-        # 图号类字段的单点锚点只取距离最近 1 个文字（一个图号位一个值）
+        # 图号字段识别：精确匹配配置优先，其次按图号类列判定
+        # （命中 "图纸号/图幅号" 等；排除「图例符号」等含图含号但非图号列）
         fig_fields = frozenset(
             f
             for f in fields
-            if figure_field
-            and (f == figure_field or all(ch in f for ch in figure_field))
+            if figure_field and (f == figure_field or is_fig_no_col(f))
         )
         total = len(dxf_files)
         tasks = [(f, anchors, point_tol, fig_fields) for f in dxf_files]

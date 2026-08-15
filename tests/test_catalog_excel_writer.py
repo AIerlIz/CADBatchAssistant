@@ -2,7 +2,7 @@
 
 from openpyxl import Workbook, load_workbook
 
-from cadbatchassistant.core.catalog_builder import Catalog, FileEntry
+from cadbatchassistant.core.catalog_builder import Catalog, FileEntry, is_fig_no_col
 from cadbatchassistant.core.catalog_excel_writer import (
     detect_header_row,
     detect_sheet,
@@ -203,3 +203,14 @@ def test_detect_sheet_no_match():
     wb.active.append(["名称", "备注"])
     assert detect_sheet(wb, ["管段编号", "图号"]) is None
     assert detect_sheet_candidates(wb, ["管段编号", "图号"]) == []
+
+
+def test_is_fig_no_col_judgement():
+    """图号类列判定：命中 图号/图纸号/图幅号，排除「图例符号」等误判。"""
+    assert is_fig_no_col("图号")
+    assert is_fig_no_col("图纸号")
+    assert is_fig_no_col("图幅号")
+    assert not is_fig_no_col("图例符号")
+    assert not is_fig_no_col("图形编号")
+    assert not is_fig_no_col("包含管段")
+    assert not is_fig_no_col("页码")

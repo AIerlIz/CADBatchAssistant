@@ -37,8 +37,7 @@ _CANDIDATE_GLOBS = [
     r"%ProgramFiles%\ODA\ODAFileConverter*\ODAFileConverter.exe",
     r"%ProgramFiles(x86)%\ODA\ODAFileConverter*\ODAFileConverter.exe",
     r"%LOCALAPPDATA%\Programs\ODA\ODAFileConverter*\ODAFileConverter.exe",
-    r"%LOCALAPPDATA%\ODA\ODAFileConverter*\ODAFileConverter.exe",
-    r"%ProgramFiles%\ODA\ODAFileConverter.exe\ODAFileConverter.exe",
+    r"%LOCALAPPDATA%\ODA\ODAFileConverter\ODAFileConverter.exe",
 ]
 
 

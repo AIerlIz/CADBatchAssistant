@@ -8,14 +8,17 @@ logger.exception(...) 记录堆栈，GUI 仍保留用户可读提示（日志仅
 from __future__ import annotations
 
 import logging
+from logging.handlers import RotatingFileHandler
 
 from cadbatchassistant.core.app_config import software_dir
 
 _LOGGER_NAME = "cadbatchassistant"
+_LOG_MAX_BYTES = 1024 * 1024  # 单文件上限 1MB，超出后轮转
+_LOG_BACKUP_COUNT = 3  # 保留最多 3 个历史日志（app.log.1 ~ app.log.3）
 
 
 def setup_logging(level: int = logging.INFO) -> None:
-    """初始化根 logger（幂等）：FileHandler 到 软件目录/logs/app.log。"""
+    """初始化根 logger（幂等）：RotatingFileHandler 到 软件目录/logs/app.log。"""
     logger = logging.getLogger(_LOGGER_NAME)
     if logger.handlers:
         return  # 已配置（幂等，防止重复 FileHandler 追加行）
@@ -26,7 +29,12 @@ def setup_logging(level: int = logging.INFO) -> None:
     log_dir = software_dir() / "logs"
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
-        fh = logging.FileHandler(log_dir / "app.log", encoding="utf-8")
+        fh = RotatingFileHandler(
+            log_dir / "app.log",
+            maxBytes=_LOG_MAX_BYTES,
+            backupCount=_LOG_BACKUP_COUNT,
+            encoding="utf-8",
+        )
         fh.setFormatter(fmt)
         logger.addHandler(fh)
     except OSError:

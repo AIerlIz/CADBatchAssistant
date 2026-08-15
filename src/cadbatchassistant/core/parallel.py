@@ -57,7 +57,6 @@ def _run_pool(pool_cls, worker, items, is_cancelled, on_done, max_workers) -> li
     n = len(items)
     results: list = [None] * n
     ex = pool_cls(max_workers=max_workers)
-    cancelled = False
     try:
         fut_map = {ex.submit(worker, item): i for i, item in enumerate(items)}
         # 用 wait(timeout) 轮询而非 as_completed 阻塞：每 0.2s 检查一次取消，
@@ -65,7 +64,6 @@ def _run_pool(pool_cls, worker, items, is_cancelled, on_done, max_workers) -> li
         pending = set(fut_map)
         while pending:
             if is_cancelled is not None and is_cancelled():
-                cancelled = True
                 break
             done, pending = _wait(pending, timeout=0.2, return_when=FIRST_COMPLETED)
             for fut in done:
@@ -78,10 +76,11 @@ def _run_pool(pool_cls, worker, items, is_cancelled, on_done, max_workers) -> li
                 if on_done is not None:
                     on_done(result, i, items[i])
     finally:
-        if cancelled:
-            ex.shutdown(wait=False, cancel_futures=True)
-        else:
-            ex.shutdown(wait=True)
+        # 取消：未开始的任务取消，运行中的任务等待其完成（与串行
+        # 「当前文件处理完后停止」语义一致）。不能用 shutdown(wait=False)：
+        # 运行中的子进程会继续写临时目录，调用方随后 rmtree 因句柄占用
+        # 静默失败 → 残留 %TEMP% 目录 + 子进程后台空转。
+        ex.shutdown(wait=True, cancel_futures=True)
     return results
 
 

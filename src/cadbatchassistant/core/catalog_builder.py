@@ -7,9 +7,19 @@
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 
 NA = "NA"
+
+# 图号类列判定：列名含「图[纸幅位框]?号」——命中 "图号/图纸号/图幅号/图位号/图框号"，
+# 排除「图例符号」「图形编号」等含"图"与"号"但并非图号列的误判
+_FIG_NO_RE = re.compile(r"图[纸幅位框]?号")
+
+
+def is_fig_no_col(col: str) -> bool:
+    """判定列名是否为图号类列（用于跨文件相同图号合并/居中显示）。"""
+    return bool(_FIG_NO_RE.search(col))
 
 
 @dataclass

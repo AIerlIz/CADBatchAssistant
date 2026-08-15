@@ -17,6 +17,7 @@ import hashlib
 import http.client
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -208,40 +209,31 @@ def _parse_sha256(text: str) -> str:
 
 
 def _fetch_sha256(
-    sha256_url: str, mirror: str | None, timeout: int = API_TIMEOUT
+    sha256_url: str, timeout: int = API_TIMEOUT
 ) -> str:
     """下载 .sha256 校验和文件并解析哈希；失败抛 UpdateError。
 
-    与 exe 相同地应用镜像前缀并支持「镜像失败回退直连」（校验和是
-    内容哈希，从直连 GitHub 获取同样可信——直连本就是 HTTPS）。
+    始终直连 GitHub（不走镜像）：校验和是内容哈希，若与 exe 走同一镜像，
+    镜像被攻破时 sha256 强校验形同虚设（攻击者可同时篡改两者）。
     """
-    direct_url = sha256_url
-    mirror_url = _mirror_url(sha256_url, mirror)
-    candidates: list[str] = []
-    if mirror_url != direct_url:
-        candidates.append(mirror_url)
-    if direct_url not in candidates:  # 直连始终作为兜底
-        candidates.append(direct_url)
-
-    last_err: Exception | None = None
-    for url in candidates:
-        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                body = resp.read(MAX_RESPONSE_BYTES + 1)
-            if len(body) > MAX_RESPONSE_BYTES:
-                raise UpdateError("校验和响应过大，已中止读取")  # noqa: TRY301
-            return _parse_sha256(body.decode("utf-8", errors="replace"))
-        except (
-            TimeoutError,
-            urllib.error.HTTPError,
-            urllib.error.URLError,
-            OSError,
-            http.client.HTTPException,
-            UpdateError,
-        ) as e:
-            last_err = e
-    raise UpdateError(f"获取校验和失败：{last_err}") from last_err
+    req = urllib.request.Request(
+        sha256_url, headers={"User-Agent": USER_AGENT}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read(MAX_RESPONSE_BYTES + 1)
+        if len(body) > MAX_RESPONSE_BYTES:
+            raise UpdateError("校验和响应过大，已中止读取")  # noqa: TRY301
+        return _parse_sha256(body.decode("utf-8", errors="replace"))
+    except (
+        TimeoutError,
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+        OSError,
+        http.client.HTTPException,
+        UpdateError,
+    ) as e:
+        raise UpdateError(f"获取校验和失败：{e}") from e
 
 
 # progress_cb 抛出的取消消息；重试逻辑须原样放行，不做重试。
@@ -368,11 +360,11 @@ def download_asset(
     dest.parent.mkdir(parents=True, exist_ok=True)
     _validate_mirror_scheme(mirror)
 
-    # M9：取 sha256 校验和（与 exe 同源/同镜像）。获取失败视为异常中断，
-    # 避免在"应可强校验"的场景降级为弱校验。
+    # M9：取 sha256 校验和——始终直连 GitHub（不走镜像），确保镜像被攻破时
+    # 强校验仍有效；获取失败视为异常中断，避免在"应可强校验"的场景降级为弱校验。
     expected_sha256: str | None = None
     if sha256_url:
-        expected_sha256 = _fetch_sha256(sha256_url, mirror)
+        expected_sha256 = _fetch_sha256(sha256_url)
 
     direct_url = url
     mirror_url = _mirror_url(url, mirror)
@@ -415,26 +407,16 @@ def download_asset(
     ) from last_error
 
 
-def build_replace_command(
+def _replace_script(
     downloaded: str,
     current_exe: str,
-    restart: bool = True,
-    expected_sha256: str | None = None,
+    restart: bool,
+    expected_sha256: str | None,
 ) -> str:
-    """生成更新替换命令：等待主进程退出 → 覆盖 exe → 校验 → 重启。
+    """生成 PowerShell 替换脚本（不含外壳调用层）。
 
-    使用 PowerShell -EncodedCommand（base64/UTF-16LE 内嵌整段命令），
-    路径含中文/空格/单引号也能正确传递。返回完整可执行的命令行字符串。
-
-    M6 加固（替换旧版固定 Start-Sleep 1500ms + 单次 Copy-Item 的竞态）：
-    - 轮询探测目标 exe 是否仍被占用（文件句柄不可写 = 主进程未退出），
-      最长等待 60 秒，避免主进程退出慢于固定延时导致覆盖失败；
-    - Copy-Item 失败自动重试（最多 10 次 × 500ms）；
-    - 复制后校验目标 exe 的 SHA-256（expected_sha256 提供时）：
-      落盘/复制环节损坏的文件不会被重启（否则就是"升级后启动即崩"），
-      校验失败写日志并 exit 1，保留旧 exe 由用户手动处理；
-    - 最终仍失败时把原因写入 %TEMP%\\CADBatchAssistant_update.log 供用户查看
-      （PowerShell 窗口默认隐藏，静默失败用户无从得知）。
+    供 build_replace_command（字符串形式）与 run_replace（列表传参）共用，
+    避免两处维护同一段脚本。
     """
     src_esc = downloaded.replace("'", "''")
     dst_esc = current_exe.replace("'", "''")
@@ -500,6 +482,31 @@ if (-not $copied) {{
 """
     if restart:
         script += f"Start-Process -FilePath '{dst_esc}'\n"
+    return script
+
+
+def build_replace_command(
+    downloaded: str,
+    current_exe: str,
+    restart: bool = True,
+    expected_sha256: str | None = None,
+) -> str:
+    """生成更新替换命令：等待主进程退出 → 覆盖 exe → 校验 → 重启。
+
+    使用 PowerShell -EncodedCommand（base64/UTF-16LE 内嵌整段命令），
+    路径含中文/空格/单引号也能正确传递。返回完整可执行的命令行字符串。
+
+    M6 加固（替换旧版固定 Start-Sleep 1500ms + 单次 Copy-Item 的竞态）：
+    - 轮询探测目标 exe 是否仍被占用（文件句柄不可写 = 主进程未退出），
+      最长等待 60 秒，避免主进程退出慢于固定延时导致覆盖失败；
+    - Copy-Item 失败自动重试（最多 10 次 × 500ms）；
+    - 复制后校验目标 exe 的 SHA-256（expected_sha256 提供时）：
+      落盘/复制环节损坏的文件不会被重启（否则就是"升级后启动即崩"），
+      校验失败写日志并 exit 1，保留旧 exe 由用户手动处理；
+    - 最终仍失败时把原因写入 %TEMP%\\CADBatchAssistant_update.log 供用户查看
+      （PowerShell 窗口默认隐藏，静默失败用户无从得知）。
+    """
+    script = _replace_script(downloaded, current_exe, restart, expected_sha256)
     encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
     return f"powershell -NoProfile -NonInteractive -EncodedCommand {encoded}"
 
@@ -516,8 +523,14 @@ def run_replace(
         覆盖后、重启前先校验落盘文件，防止复制环节损坏导致"升级后启动即崩"
         （如 Failed to load Python DLL）。
     """
+    script = _replace_script(downloaded, current_exe, restart, expected_sha256)
+    encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+    # 列表传参：shell=False 下传整串字符串依赖 Windows CreateProcess 的
+    # 命令行解析（行为不规范），显式拆分为参数列表更稳妥；
+    # powershell 解析为绝对路径（shutil.which），避免依赖 PATH 查找。
+    powershell = shutil.which("powershell") or "powershell"
     subprocess.Popen(
-        build_replace_command(downloaded, current_exe, restart, expected_sha256),
+        [powershell, "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
         shell=False,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )

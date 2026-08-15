@@ -125,3 +125,23 @@ def test_remove_template_missing_raises(monkeypatch, tmp_path: Path) -> None:
     _patch_templates_dir(monkeypatch, tmp_path)
     with pytest.raises(OSError):
         templates.remove_template("fill", "nope.dwg")
+
+
+def test_remove_template_rejects_path_traversal(monkeypatch, tmp_path: Path) -> None:
+    """路径穿越防护：含分隔符/越界的模板名被拒绝，不做任何删除。
+
+    模板名可能来自被篡改的 meta JSON 的 source 字段（模板库目录本地可写），
+    拼接删除前必须校验，防止删除操作逃出模板库目录删任意文件。
+    """
+    d = tmp_path / "templates" / "fill"
+    d.mkdir(parents=True)
+    _write_meta(d, "a.dwg", source="a.dwg")
+    victim = tmp_path / "victim.dwg"
+    victim.write_text("x")
+    _patch_templates_dir(monkeypatch, tmp_path)
+    for bad in ("../victim.dwg", "..\\victim.dwg", "sub/a.dwg", "..", "."):
+        with pytest.raises(ValueError):
+            templates.remove_template("fill", bad)
+    # 越界目标与库内合法条目均未被删除
+    assert victim.exists()
+    assert (d / "a.dwg.json").exists()

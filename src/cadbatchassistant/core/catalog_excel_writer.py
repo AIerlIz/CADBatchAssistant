@@ -17,6 +17,7 @@ from cadbatchassistant.core.catalog_builder import (
     NA,
     Catalog,
     entry_rows,
+    is_fig_no_col,
 )
 
 # ---- 内置样式 ----
@@ -173,8 +174,8 @@ def write_catalog_from_template(
     ]
     n_cols = len(headers)
     page_col = headers.index("页码") if "页码" in headers else None
-    # 图号类列（如 图纸号）与页码列：数据居中显示
-    fig_cols = {ci for ci, col in enumerate(headers) if "图" in col and "号" in col}
+    # 图号类列（如 图号/图纸号；排除「图例符号」等含图含号但非图号列）：数据居中
+    fig_cols = {ci for ci, col in enumerate(headers) if is_fig_no_col(col)}
 
     # 取消数据区（表头行+1 起、字段列内）原有的合并单元格：
     # MergedCell.value 只读，不先取消会导致下方清空/写入时报

@@ -62,11 +62,23 @@ def list_templates(category: str) -> list[str]:
     return sorted(set(names))
 
 
+def _validate_template_name(name: str) -> None:
+    """校验模板名可安全拼接到模板库目录；非法（越界/含分隔符）抛 ValueError。
+
+    模板名可能来自用户篡改的 meta JSON 的 source 字段（模板库目录本地可写），
+    拼接前必须校验，防止删除操作逃出模板库目录（路径穿越删任意文件）。
+    """
+    if not name or name in (".", "..") or any(ch in name for ch in "/\\"):
+        raise ValueError(f"非法的模板名：{name!r}")
+
+
 def remove_template(category: str, name: str) -> None:
     """删除模板库（category 子目录）中的模板条目（meta JSON + 同名遗留原文件）。
 
-    条目不存在时抛 FileNotFoundError（由调用方处理）。
+    条目不存在时抛 FileNotFoundError（由调用方处理）；name 含路径分隔符或
+    越界（被篡改的 source 字段）时抛 ValueError，不做任何删除。
     """
+    _validate_template_name(name)
     d = templates_dir(category)
     removed = False
     # meta：优先 <name>.json；source 与文件名脱钩时按枚举名（source）扫目录匹配

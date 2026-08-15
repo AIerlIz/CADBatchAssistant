@@ -537,7 +537,7 @@ class Sha256VerificationTest(unittest.TestCase):
         m.assert_not_called()
 
     def test_https_mirror_allowed(self):
-        """https 镜像正常使用（sha256 也走镜像）。"""
+        """https 镜像正常使用（sha256 校验和仍直连 GitHub）。"""
         dest = self._dest("mirror.exe")
         content = b"MZ" + b"ok"
         real_hash = hashlib.sha256(content).hexdigest()
@@ -561,21 +561,24 @@ class Sha256VerificationTest(unittest.TestCase):
                 sha256_url=self.sha_url,
             )
         urls = [c.args[0].full_url for c in m.call_args_list]
-        self.assertEqual(urls[0], f"https://ghproxy.com/{self.sha_url}")
+        # 校验和始终直连 GitHub；exe 走镜像
+        self.assertEqual(urls[0], self.sha_url)
         self.assertEqual(urls[1], f"https://ghproxy.com/{self.exe_url}")
 
-    def test_sha256_mirror_down_falls_back_to_direct(self):
-        """镜像不可达时 sha256 获取回退直连 GitHub（与 exe 回退语义一致）。"""
-        dest = self._dest("fallback_sha.exe")
+    def test_sha256_always_direct_not_mirrored(self):
+        """M9：sha256 校验和始终直连 GitHub（不走镜像）。
+
+        若校验和与 exe 同镜像，镜像被攻破时可同时篡改两者，强校验形同虚设；
+        直连 GitHub 保证校验和的来源独立于下载镜像。
+        """
+        dest = self._dest("direct_sha.exe")
         content = b"MZ" + b"body"
         real_hash = hashlib.sha256(content).hexdigest()
         calls = {"n": 0}
 
         def fake_urlopen(req, timeout=None):
             calls["n"] += 1
-            if "ghproxy.com" in req.full_url:
-                raise updater.urllib.error.URLError("mirror down")
-            if calls["n"] == 2:  # 直连取 sha256
+            if calls["n"] == 1:
                 return self._sha_resp(f"{real_hash}  a.exe".encode())
             return _download_resp([content, b""], total=len(content))
 
@@ -593,11 +596,9 @@ class Sha256VerificationTest(unittest.TestCase):
         self.assertEqual(result, str(dest))
         self.assertEqual(dest.read_bytes(), content)
         urls = [c.args[0].full_url for c in m.call_args_list]
-        # 镜像 sha256 失败 → 直连 sha256 → 镜像 exe 失败 → 直连 exe
-        self.assertEqual(urls[0], f"https://ghproxy.com/{self.sha_url}")
-        self.assertEqual(urls[1], self.sha_url)
-        self.assertEqual(urls[2], f"https://ghproxy.com/{self.exe_url}")
-        self.assertEqual(urls[3], self.exe_url)
+        # 校验和直连（不经 ghproxy 前缀）；exe 走镜像
+        self.assertEqual(urls[0], self.sha_url)
+        self.assertEqual(urls[1], f"https://ghproxy.com/{self.exe_url}")
 
     def test_parse_sha256_strips_bom(self):
         """带 UTF-8 BOM 的校验和文件也能解析（防手动上传）。"""
@@ -683,20 +684,25 @@ class BuildReplaceCommandTest(unittest.TestCase):
 
 class RunReplaceTest(unittest.TestCase):
     def test_spawns_powershell_without_shell(self):
+        """run_replace 以参数列表（而非整串命令）启动 powershell，shell=False。"""
         with mock.patch.object(updater.subprocess, "Popen") as m:
             updater.run_replace(r"C:\a\new.exe", r"C:\a\app.exe")
         m.assert_called_once()
         cmd = m.call_args.args[0]
-        self.assertTrue(cmd.startswith("powershell -NoProfile"))
+        self.assertIsInstance(cmd, list)
+        self.assertTrue(cmd[0].lower().endswith("powershell.exe"))
+        self.assertEqual(cmd[1:4], ["-NoProfile", "-NonInteractive", "-EncodedCommand"])
+        self.assertTrue(cmd[4])
         self.assertFalse(m.call_args.kwargs.get("shell"))
 
     def test_run_replace_forwards_sha256(self):
-        """run_replace 把 expected_sha256 透传给替换命令。"""
+        """run_replace 把 expected_sha256 透传给替换脚本。"""
         h = "d" * 64
         with mock.patch.object(updater.subprocess, "Popen") as m:
             updater.run_replace(r"C:\a\new.exe", r"C:\a\app.exe", expected_sha256=h)
         cmd = m.call_args.args[0]
-        script = base64.b64decode(cmd.rsplit(" ", 1)[-1]).decode("utf-16-le")
+        encoded = cmd[cmd.index("-EncodedCommand") + 1]
+        script = base64.b64decode(encoded).decode("utf-16-le")
         self.assertIn(h, script)
 
 

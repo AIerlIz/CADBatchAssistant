@@ -132,7 +132,34 @@ def test_prepare_run_accepts_meta_without_template_file(monkeypatch, tmp_path):
         doc.saveas(src)
         save_template_meta(
             template_path("fill", "tpl.dxf"),
-            {"placeholders": [{"text": "图号"}]},
+            {
+                "placeholders": [
+                    {
+                        "text": "图号",
+                        "layer": "0",
+                        "x": 10.0,
+                        "y": 10.0,
+                        "height": 3.0,
+                        "style": "",
+                        "halign": 0,
+                        "valign": 0,
+                        "ref_text": "[图号]",
+                        "entity_desc": {
+                            "dxftype": "TEXT",
+                            "attribs": {
+                                "layer": "0",
+                                "insert": (10.0, 10.0, 0.0),
+                                "height": 3.0,
+                                "style": "",
+                                "halign": 0,
+                                "valign": 0,
+                            },
+                            "layer_attribs": None,
+                            "style_attribs": None,
+                        },
+                    }
+                ]
+            },
         )
         assert not (tmp_path / "templates" / "fill" / "tpl.dxf").exists()  # 无原文件
         xlsx = tmp_path / "tpl.xlsx"

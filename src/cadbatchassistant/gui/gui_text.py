@@ -517,10 +517,14 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
                         converted = {task[0].stem for task in dwg_tasks}
                         missing = {Path(n).stem for n in dwg_names} - converted
                         if missing:
+                            names = sorted(missing)
                             self._emit(
                                 "[WARN] 以下 DWG 无转换产物，跳过写回："
-                                + "、".join(sorted(missing))
+                                + "、".join(names)
                             )
+                            for n in names:
+                                self._emit(f"[DWG] {n}.dwg: 转换失败（无产物）")
+                                total_fail += 1
                         self._emit("正在用 ODA 转换处理后的 DXF → DWG ...")
                         write_back_dxf_batch(
                             converter,

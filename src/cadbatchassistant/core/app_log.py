@@ -39,8 +39,3 @@ def setup_logging(level: int = logging.INFO) -> None:
         logger.addHandler(fh)
     except OSError:
         pass  # 日志目录不可写时不阻塞应用
-
-
-def get_logger(name: str) -> logging.Logger:
-    """获取应用命名空间下的 logger（自动带上统一前缀）。"""
-    return logging.getLogger(f"{_LOGGER_NAME}.{name}")

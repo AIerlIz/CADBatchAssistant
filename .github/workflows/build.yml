@@ -37,6 +37,11 @@ jobs:
           uv run ruff check src tests
           uv run mypy src
 
+      - name: Test
+        # pytest 门禁：单测（core 纯逻辑 / GUI 冒烟 / updater 等）全绿才发版，
+        # 防止失败用例混入 Release（本地用同样命令验证）。
+        run: uv run pytest -q
+
       - name: Inject version from tag
         # 发版 tag（如 v1.0.1）自动写入 __version__，无需手动同步版本号；
         # 直接调用 uv sync 已创建的 .venv python，避免依赖 uv run 的项目解析

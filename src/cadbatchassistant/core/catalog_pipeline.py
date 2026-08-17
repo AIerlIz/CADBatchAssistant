@@ -16,7 +16,6 @@ from cadbatchassistant.core import dwg_converter as dc
 from cadbatchassistant.core.catalog_builder import (
     FileEntry,
     build_file_catalog,
-    is_fig_no_col,
 )
 from cadbatchassistant.core.catalog_reader import extract_by_anchors
 from cadbatchassistant.core.catalog_template_reader import (
@@ -78,15 +77,13 @@ def parse_template_fields(template_dwg: str | Path, oda: str = "") -> list[str]:
 
 
 def _extract_task(item: tuple) -> dict:
-    """并行 worker：解包 (dxf_path, anchors, point_tolerance, fig_fields) 取值。
+    """并行 worker：解包 (dxf_path, anchors, point_tolerance) 取值。
 
     顶层函数（Windows spawn 可 pickle）；单文件异常由 map_files 包装为
     TaskFailed，调用方统一容错。
     """
-    f, anchors, point_tol, fig_fields = item
-    return extract_by_anchors(
-        f, anchors, point_tolerance=point_tol, fig_fields=fig_fields
-    )
+    f, anchors, point_tol = item
+    return extract_by_anchors(f, anchors, point_tolerance=point_tol)
 
 
 def run_pipeline(
@@ -231,18 +228,11 @@ def run_pipeline(
             result.error = "没有任何 DXF 产物，无法继续"
             return result
 
-        # 6. 逐文件按锚点取值（图纸号只从图纸中提取，不做文件名兜底）
+        # 6. 逐文件按锚点取值（图号列判定已并入取值/输出层，此处不再重复计算）
+        #    锚点一律按覆盖矩形取值，point_tolerance 仅为历史配置兼容保留
         point_tol = _point_tolerance(rules)
-        figure_field = str(rules.get("figure_field", "图号"))
-        # 图号字段识别：精确匹配配置优先，其次按图号类列判定
-        # （命中 "图纸号/图幅号" 等；排除「图例符号」等含图含号但非图号列）
-        fig_fields = frozenset(
-            f
-            for f in fields
-            if figure_field and (f == figure_field or is_fig_no_col(f))
-        )
         total = len(dxf_files)
-        tasks = [(f, anchors, point_tol, fig_fields) for f in dxf_files]
+        tasks = [(f, anchors, point_tol) for f in dxf_files]
         results: list[dict[str, list[str]] | None] = [None] * total
         cancelled = {"v": False}
 

@@ -1,33 +1,26 @@
-"""按 specs.json + 数据表.xlsx 填充 修改前 DXF 的标题栏值格。
+"""按模板占位规格 + 数据表.xlsx 填充 修改前 DXF 的标题栏值格。
 
 流程（对每张图）：
 1. 加载 before DXF（ACAD2004）
-2. 删除 GT_1 层 text=='barg' 的压力占位实体
-3. 对 specs.json 中每个字段：
+2. 对 specs 中每个字段：
    - 用 value_rule 从 xlsx 值生成显示文本
    - 目标位置已有相同文本实体 → 跳过（避免重复）
-   - 否则在规格位置新建 TEXT（图层/坐标/字高/样式/对齐）
-4. 保存为 filled DXF
+   - 否则在规格位置新建 TEXT（图层/坐标/字高/样式/对齐）；
+     图纸预置的压力单位 'barg' 不删除，与填入值共存显示
+3. 保存为 filled DXF
 
-用法：
-    python fill_dwg.py <before_dxf_dir> <out_dxf_dir>
+入口为 fill_all（由 fill_pipeline 调用，多进程并行）。
 """
 
 from __future__ import annotations
 
-import json
 import os
-import sys
 
 from ezdxf import const
 
 from cadbatchassistant.core.fill_parse_xlsx import load_xlsx
 from cadbatchassistant.core.parallel import TaskFailed, map_files
 from cadbatchassistant.core.text_replace import read_doc
-
-HERE = os.path.dirname(os.path.abspath(__file__))
-SPECS = os.path.join(HERE, "specs.json")
-XLSX = r"D:\ISO图\数据表.xlsx"
 
 
 def make_text(val: str) -> str:
@@ -308,20 +301,3 @@ def fill_all(
         + ("全部成功" if not failed and not skipped else "")
     )
     return failed, skipped
-
-
-def main() -> None:
-    # 用法: fill_dwg.py <before_dxf_dir> <out_dxf_dir> [xlsx] [specs.json]
-    before_dir = sys.argv[1]
-    out_dir = sys.argv[2]
-    xlsx = sys.argv[3] if len(sys.argv) > 3 else XLSX
-    specs_path = sys.argv[4] if len(sys.argv) > 4 else SPECS
-    os.makedirs(out_dir, exist_ok=True)
-
-    with open(specs_path, encoding="utf-8") as fh:
-        spec = json.load(fh)
-    fill_all(before_dir, out_dir, xlsx, spec)
-
-
-if __name__ == "__main__":
-    main()

@@ -41,7 +41,9 @@ jobs:
       - name: Test
         # pytest 门禁：单测（core 纯逻辑 / GUI 冒烟 / updater 等）全绿才发版，
         # 防止失败用例混入 Release（本地用同样命令验证）。
-        run: uv run pytest -q
+        # --timeout 依赖 dev 组 pytest-timeout：防 runner 上某个测试无限挂起
+        # （如 GUI 冒烟在会话环境下卡住），超时即失败并输出挂起测试名，便于定位。
+        run: uv run pytest -q --timeout=120
 
       - name: Inject version from tag
         # 发版 tag（如 v1.0.1）自动写入 __version__，无需手动同步版本号；

@@ -32,9 +32,10 @@ jobs:
 
       - name: Lint & Type check
         # ruff（代码风格/bug 面）+ mypy（类型）门禁：失败即中断发版，
-        # 防止未达标的改动进入 Release（本地用同样命令验证）。
+        # 防止未达标的改动进入 Release（本地用同样命令验证：
+        # ruff check src tests scripts main.py；mypy src）。
         run: |
-          uv run ruff check src tests
+          uv run ruff check src tests scripts main.py
           uv run mypy src
 
       - name: Test
@@ -76,8 +77,10 @@ jobs:
           Write-Host "UPX 已安装: $upxExe"
 
       - name: Build EXE
-        # spec 输出名即 Release 资产名（CADBatchAssistant.exe），本地与 CI 产物一致
-        run: uv run pyinstaller --noconfirm --clean CADBatchAssistant.spec
+        # spec 输出名即 Release 资产名（CADBatchAssistant.exe），本地与 CI 产物一致。
+        # UPX 由前一步安装到 runner.temp（path-upx 目录已加入 PATH，PyInstaller upx=True
+        # 自动发现）；此处显式 --upx-dir 双保险确保 UPX 生效。
+        run: uv run pyinstaller --noconfirm --clean --upx-dir "${{ runner.temp }}\upx\upx-4.2.4-win64" CADBatchAssistant.spec
 
       - name: Generate sha256 checksum
         # M9：为安装包生成 sha256 校验和资产（<hash>  文件名 格式），

@@ -9,5 +9,11 @@ __pycache__/
 .reasonix/
 reasonix.toml
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .dev_tmp/
 logs/
+*.log
+selftest_log.txt
+.DS_Store
+Thumbs.db

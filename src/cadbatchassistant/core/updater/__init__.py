@@ -27,23 +27,9 @@ from cadbatchassistant.core.updater.constants import (
     UpdateError,
     is_frozen,
 )
-from cadbatchassistant.core.updater.download import (
-    CANCEL_MSG,
-    _cleanup,
-    _download_once,
-    _fetch_sha256,
-    _mirror_url,
-    _parse_sha256,
-    _validate_mirror_scheme,
-    download_asset,
-)
-from cadbatchassistant.core.updater.release import (
-    _find_assets,
-    _request_json,
-    check_latest,
-)
+from cadbatchassistant.core.updater.download import CANCEL_MSG, download_asset
+from cadbatchassistant.core.updater.release import check_latest
 from cadbatchassistant.core.updater.replace import (
-    _replace_script,
     build_replace_command,
     current_exe_path,
     run_replace,
@@ -67,15 +53,6 @@ __all__ = [
     "SHA256_ASSET_NAME",
     "USER_AGENT",
     "UpdateError",
-    "_cleanup",
-    "_download_once",
-    "_fetch_sha256",
-    "_find_assets",
-    "_mirror_url",
-    "_parse_sha256",
-    "_replace_script",
-    "_request_json",
-    "_validate_mirror_scheme",
     "build_replace_command",
     "check_latest",
     "current_exe_path",

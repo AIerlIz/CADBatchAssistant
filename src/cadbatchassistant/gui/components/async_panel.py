@@ -45,9 +45,6 @@ class AsyncPanel:
     def _emit(self, msg: str | None = None, progress: int | None = None) -> None:
         self.msg_queue.put((msg, progress))
 
-    def _stop_event(self) -> threading.Event:
-        return self._cancel_event
-
     def _start_worker(self, args: tuple) -> None:
         """在后台线程运行 self._run(*args)；分配新任务代次。"""
         self._run_seq += 1

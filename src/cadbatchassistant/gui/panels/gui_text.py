@@ -442,7 +442,7 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
                     f"[DXF] {src.name}: {verb}，替换 {result.replaced_total} 处 "
                     f"({', '.join(f'{k}:{v}' for k, v in result.per_type.items())})"
                 )
-            self._progress(done, total_ok, total_fail, total_replaced)
+            self._progress(done)
 
         map_files(
             _text_task, dxf_tasks, is_cancelled=self._is_cancelled, on_done=_on_dxf_done
@@ -459,7 +459,7 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
                 total_skipped += len(dwg_files)
                 for src in dwg_files:
                     done += 1
-                    self._progress(done, total_ok, total_fail, total_replaced)
+                    self._progress(done)
                     self._emit(
                         f"[DWG] {src.name}: dry-run 跳过"
                         "（DWG 需 ODA 转换，dry-run 不执行）"
@@ -499,7 +499,7 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
                                 f"[DWG] {f.stem}.dwg: 转换+替换完成，"
                                 f"替换 {result.replaced_total} 处 ({per_type})"
                             )
-                        self._progress(done, total_ok, total_fail, total_replaced)
+                        self._progress(done)
 
                     map_files(
                         _text_task,
@@ -553,5 +553,5 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
         if dry_run:
             self._emit("（dry-run 模式：未写入任何文件）")
 
-    def _progress(self, done: int, ok: int, fail: int, replaced: int) -> None:
+    def _progress(self, done: int) -> None:
         self._emit("", done)

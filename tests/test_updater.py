@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 from cadbatchassistant.core import updater
+from cadbatchassistant.core.updater.download import _parse_sha256
 
 
 class ParseVersionTest(unittest.TestCase):
@@ -646,10 +647,10 @@ class Sha256VerificationTest(unittest.TestCase):
     def test_parse_sha256_both_formats(self):
         """_parse_sha256 兼容「hash  文件名」与纯 hash 两种格式。"""
         h = "a" * 64
-        self.assertEqual(updater._parse_sha256(f"{h}  CADBatchAssistant.exe\n"), h)
-        self.assertEqual(updater._parse_sha256(f"{h.upper()}\n"), h)
+        self.assertEqual(_parse_sha256(f"{h}  CADBatchAssistant.exe\n"), h)
+        self.assertEqual(_parse_sha256(f"{h.upper()}\n"), h)
         with self.assertRaises(updater.UpdateError):
-            updater._parse_sha256("not a hash")
+            _parse_sha256("not a hash")
 
     def test_plain_http_mirror_rejected(self):
         """M9：明文 http:// 镜像被拒绝，不发起任何下载。"""
@@ -735,7 +736,7 @@ class Sha256VerificationTest(unittest.TestCase):
     def test_parse_sha256_strips_bom(self):
         """带 UTF-8 BOM 的校验和文件也能解析（防手动上传）。"""
         h = "b" * 64
-        self.assertEqual(updater._parse_sha256("\ufeff" + h + "\n"), h)
+        self.assertEqual(_parse_sha256("\ufeff" + h + "\n"), h)
 
 
 class BuildReplaceCommandTest(unittest.TestCase):

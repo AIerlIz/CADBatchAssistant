@@ -87,7 +87,6 @@ class FileResult:
 
     src: str
     dst: str | None
-    status: str = "ok"  # ok | skipped | error
     error: str = ""
     replaced_total: int = 0
     per_type: dict[str, int] = field(default_factory=dict)
@@ -211,7 +210,6 @@ def process_dxf_file(
     try:
         doc = read_doc(src)
     except Exception as ex:  # noqa: BLE001 - 逐个文件容错，错误进结果不中断批次
-        result.status = "error"
         result.error = f"读取失败: {ex}"
         return result
 
@@ -230,7 +228,6 @@ def process_dxf_file(
         return result
 
     if dst is None:
-        result.status = "error"
         result.error = "未指定输出路径"
         return result
 
@@ -240,6 +237,5 @@ def process_dxf_file(
         doc.saveas(dst)
         result.dst = str(dst)
     except Exception as ex:  # noqa: BLE001
-        result.status = "error"
         result.error = f"保存失败: {ex}"
     return result

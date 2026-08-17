@@ -55,13 +55,16 @@ class TextStartCopyFailureTest(unittest.TestCase):
 
         复制输入文件在 begin_run 之前完成（_prepare_run 阶段），失败即不启动，
         按钮无需复位（从未被禁用），不存在卡死运行态的可能。
+        本测试依赖 ODA 校验通过才走复制分支，故 mock require_for_dwg 返回 None
+        （否则 CI 无 ODA 时停在校验、rmtree 不被调用而失败）。
         """
         self._patch_work_chain()
-        # mock 弹窗：_prepare_run 里缺 ODA 时会 showerror（本地桌面会弹窗，
-        # CI 无交互会话则模态框无人点击→挂起→120s 超时）。必须 mock 掉。
+        conv = mock.Mock()
+        conv.require_for_dwg.return_value = None
         with (
             mock.patch.object(gt.messagebox, "showwarning"),
             mock.patch.object(gt.messagebox, "showerror"),
+            mock.patch.object(gt.dc, "get_converter", return_value=conv),
         ):
             self.app._start()
         self.assertFalse(self.app.running)

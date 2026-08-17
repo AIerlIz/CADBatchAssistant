@@ -41,24 +41,35 @@ jobs:
       - name: Test
         # pytest 门禁：单测（core 纯逻辑 / GUI 冒烟 / updater 等）全绿才发版，
         # 防止失败用例混入 Release（本地用同样命令验证）。
-        # --timeout 依赖 dev 组 pytest-timeout：防 runner 上某个测试无限挂起
-        # （如 GUI 冒烟在会话环境下卡住），超时即失败并输出挂起测试名，便于定位。
-        # 失败时用 ::error 把 FAILED 测试名转成 GitHub annotation（匿名可读），
-        # 避免依赖受限的 job 日志下载。
+        # --timeout 依赖 dev 组 pytest-timeout：防 runner 上某个测试无限挂起。
+        # 失败时保留完整输出为 artifact（公开 repo 可匿名下载），并转 FAILED/
+        # Timeout 行成 ::error annotation，便于定位 CI 独有失败而不依赖受限日志。
         shell: pwsh
         run: |
-          $out = uv run pytest -q --timeout=120 2>&1
+          $out = uv run pytest -q --timeout=120 --timeout-method=thread 2>&1
           $code = $LASTEXITCODE
+          $out | Out-File -FilePath test_output.txt -Encoding utf8
           if ($code -ne 0) {
-            # 把 pytest 失败摘要（含测试名的行）输出为 annotation
-            $out | Select-String -Pattern 'FAILED|pytest-timeout|Timeout|AssertionError|Error' `
-              | Select-Object -First 20 | ForEach-Object {
-                $line = $_.Line.Substring(0, [Math]::Min(200, $_.Line.Length))
-                Write-Output "::error file=tests::$line"
-              }
+            $toEmit = @()
+            foreach ($l in $out) {
+              if ($l -match 'FAILED|TIMEOUT|Timed out') { $toEmit += $l.Trim() }
+              if ($l -match 'tests\\[^'"]+\.py'', line .+in test_') { $toEmit += $l.Trim() }
+            }
+            foreach ($e in ($toEmit | Select-Object -Unique | Select-Object -First 20)) {
+              if ($e.Length -gt 200) { $e = $e.Substring(0, 200) }
+              Write-Output "::error file=tests,title=Test failure::$e"
+            }
           }
-          $out | Select-Object -Last 5
+          $out | Select-Object -Last 6
           exit $code
+
+      - name: Upload test output (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-output
+          path: test_output.txt
+          if-no-files-found: ignore
 
       - name: Inject version from tag
         # 发版 tag（如 v1.0.1）自动写入 __version__，无需手动同步版本号；

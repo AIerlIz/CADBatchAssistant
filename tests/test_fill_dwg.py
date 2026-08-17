@@ -8,7 +8,7 @@ from pathlib import Path
 
 import ezdxf
 
-from cadbatchassistant.core.fill_dwg import fill_one
+from cadbatchassistant.core.fill.fill_dwg import fill_one
 
 
 def _fspec(x: float, y: float) -> dict:
@@ -109,7 +109,7 @@ class FillExistingTextTest(unittest.TestCase):
 
     def test_text_existing_content_not_overwritten(self) -> None:
         """位置已有 TEXT 内容（不同值）→ 跳过不覆盖，原文本保留且不新增。"""
-        from cadbatchassistant.core.fill_dwg import fill_one
+        from cadbatchassistant.core.fill.fill_dwg import fill_one
 
         self._make_before([("旧内容", 10.0, 20.0)])
         spec = {"0": {"图号": {**_fspec(10.0, 20.0)}}}
@@ -120,7 +120,7 @@ class FillExistingTextTest(unittest.TestCase):
 
     def test_text_same_content_skipped(self) -> None:
         """位置已有 TEXT 且内容与待填值相同 → 判定"已存在"跳过（幂等）。"""
-        from cadbatchassistant.core.fill_dwg import fill_one
+        from cadbatchassistant.core.fill.fill_dwg import fill_one
 
         self._make_before([("D-001", 10.0, 20.0)])
         spec = {"0": {"图号": {**_fspec(10.0, 20.0)}}}
@@ -131,7 +131,7 @@ class FillExistingTextTest(unittest.TestCase):
 
     def test_text_empty_position_filled(self) -> None:
         """位置无 TEXT → 正常填写新值（回归：不影响正常填入）。"""
-        from cadbatchassistant.core.fill_dwg import fill_one
+        from cadbatchassistant.core.fill.fill_dwg import fill_one
 
         self._make_before([])
         spec = {"0": {"图号": {**_fspec(10.0, 20.0)}}}
@@ -142,7 +142,7 @@ class FillExistingTextTest(unittest.TestCase):
 
     def test_mtext_with_format_codes_same_text_skipped(self) -> None:
         """已有 MTEXT 含格式码（\\P 等）时，同值比较忽略格式码判定"已存在"。"""
-        from cadbatchassistant.core.fill_dwg import fill_one
+        from cadbatchassistant.core.fill.fill_dwg import fill_one
 
         doc = ezdxf.new("R2013")
         msp = doc.modelspace()
@@ -205,7 +205,7 @@ class FillAllSkippedTest(unittest.TestCase):
         return spec
 
     def test_missing_in_xlsx_counts_as_skipped(self) -> None:
-        from cadbatchassistant.core.fill_dwg import fill_all
+        from cadbatchassistant.core.fill.fill_dwg import fill_all
 
         failed, skipped = fill_all(
             str(self.before_dir),
@@ -221,7 +221,7 @@ class FillAllSkippedTest(unittest.TestCase):
         self.assertFalse((self.out_dir / "B1.dxf").is_file())
 
     def test_missing_before_dxf_counts_as_skipped(self) -> None:
-        from cadbatchassistant.core.fill_dwg import fill_all
+        from cadbatchassistant.core.fill.fill_dwg import fill_all
 
         # C1 在数据表中但没有 before DXF → skipped
         failed, skipped = fill_all(
@@ -256,7 +256,7 @@ class FillEntityDescTest(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def _template_desc(self) -> dict:
-        from cadbatchassistant.core.fill_dwg import entity_to_desc
+        from cadbatchassistant.core.fill.fill_dwg import entity_to_desc
 
         doc = ezdxf.new("R2013")
         # 注意：color/lineweight 必须经关键字参数（dxfattribs 会被默认值覆盖）
@@ -276,7 +276,7 @@ class FillEntityDescTest(unittest.TestCase):
         return entity_to_desc(t)
 
     def test_desc_rebuilds_entity_and_backfills_layer_style(self) -> None:
-        from cadbatchassistant.core.fill_dwg import fill_one
+        from cadbatchassistant.core.fill.fill_dwg import fill_one
 
         desc = self._template_desc()
         spec = {"GT_1": {"图号": {**_fspec(10.0, 20.0), "entity": desc}}}
@@ -313,7 +313,7 @@ class FillEntityDescTest(unittest.TestCase):
         self.assertEqual(desc2["style_attribs"]["font"], "simhei.ttf")
 
     def test_mtext_desc_rebuilds_mtext(self) -> None:
-        from cadbatchassistant.core.fill_dwg import entity_to_desc, fill_one
+        from cadbatchassistant.core.fill.fill_dwg import entity_to_desc, fill_one
 
         doc = ezdxf.new("R2013")
         mt = doc.modelspace().add_mtext(
@@ -369,7 +369,7 @@ class FillAllProgressMonotonicTest(unittest.TestCase):
         return {n: {"0": {"图号": _fspec(10.0, 20.0)}} for n in names}
 
     def test_progress_monotonic_including_skipped(self) -> None:
-        from cadbatchassistant.core.fill_dwg import fill_all
+        from cadbatchassistant.core.fill.fill_dwg import fill_all
 
         calls: list[tuple[int, int]] = []
         failed, skipped = fill_all(
@@ -386,7 +386,7 @@ class FillAllProgressMonotonicTest(unittest.TestCase):
         self.assertEqual(calls, [(1, 3), (2, 3), (3, 3)])
 
     def test_progress_monotonic_with_failure(self) -> None:
-        from cadbatchassistant.core.fill_dwg import fill_all
+        from cadbatchassistant.core.fill.fill_dwg import fill_all
 
         # A1 的 before DXF 损坏 → 处理失败；B1 skipped；C1 成功
         (self.before_dir / "A1.dxf").write_text("损坏", encoding="utf-8")

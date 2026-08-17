@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cadbatchassistant.core import fill_pipeline
+from cadbatchassistant.core.fill import fill_pipeline
 
 
 class OutputSameAsInputProtectionTest(unittest.TestCase):
@@ -210,7 +210,7 @@ class FillPipelineWriteBackSkipTest(unittest.TestCase):
         from unittest import mock
 
         from cadbatchassistant.core import dwg_converter as dc
-        from cadbatchassistant.core import fill_pipeline
+        from cadbatchassistant.core.fill import fill_pipeline
 
         conv = mock.Mock()
         conv.resolve.return_value = ""
@@ -243,7 +243,7 @@ class FillPipelineMetaPriorityTest(unittest.TestCase):
         import ezdxf
         import openpyxl
 
-        from cadbatchassistant.core.template_meta import save_template_meta
+        from cadbatchassistant.core.common.template_meta import save_template_meta
 
         self.tmp = Path(tempfile.mkdtemp(prefix="fill_pipe_meta_"))
         self.before_dir = self.tmp / "input"
@@ -299,7 +299,7 @@ class FillPipelineMetaPriorityTest(unittest.TestCase):
         from unittest import mock
 
         from cadbatchassistant.core import dwg_converter as dc
-        from cadbatchassistant.core import fill_pipeline
+        from cadbatchassistant.core.fill import fill_pipeline
 
         self.assertFalse(self.template.is_file())  # 模板库只有 meta JSON
         conv = mock.Mock()
@@ -324,8 +324,8 @@ class FillPipelineMetaPriorityTest(unittest.TestCase):
         from unittest import mock
 
         from cadbatchassistant.core import dwg_converter as dc
-        from cadbatchassistant.core import fill_pipeline
-        from cadbatchassistant.core.template_meta import save_template_meta
+        from cadbatchassistant.core.common.template_meta import save_template_meta
+        from cadbatchassistant.core.fill import fill_pipeline
 
         save_template_meta(self.template, {"placeholders": []})
         conv = mock.Mock()

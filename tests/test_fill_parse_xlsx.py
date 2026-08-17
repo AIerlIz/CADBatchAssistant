@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cadbatchassistant.core import fill_parse_xlsx
+from cadbatchassistant.core.fill import fill_parse_xlsx
 
 
 def _make_xlsx(path, header: list, rows: list) -> None:

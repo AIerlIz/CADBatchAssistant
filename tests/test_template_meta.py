@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 
-from cadbatchassistant.core.template_meta import (
+from cadbatchassistant.core.common.template_meta import (
     load_template_meta,
     meta_path_for,
     remove_template_meta,

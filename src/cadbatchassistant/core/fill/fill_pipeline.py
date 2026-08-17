@@ -15,12 +15,12 @@ import shutil
 import tempfile
 
 from cadbatchassistant.core import dwg_converter as dc
-from cadbatchassistant.core.dwg_workflow import (
+from cadbatchassistant.core.common.dwg_workflow import (
     stage_dxf_batch,
     write_back_dxf_batch,
 )
-from cadbatchassistant.core.fill_dwg import entity_to_desc, fill_all
-from cadbatchassistant.core.input_files import stage_inputs
+from cadbatchassistant.core.common.input_files import stage_inputs
+from cadbatchassistant.core.fill.fill_dwg import entity_to_desc, fill_all
 
 
 def _classify_by_ext(d: str) -> dict[str, str]:
@@ -167,12 +167,12 @@ def run_pipeline(
         specs_path = os.path.join(tmp, "specs.json")
         _check_cancel(cancel)
         emit("[2/4] 读取模板占位配置 ...")
-        from cadbatchassistant.core.fill_learn_spec import (
+        from cadbatchassistant.core.common.template_meta import load_template_meta
+        from cadbatchassistant.core.fill.fill_learn_spec import (
             scan_all_placeholders,
             value_rule_for,
         )
-        from cadbatchassistant.core.fill_parse_xlsx import get_headers
-        from cadbatchassistant.core.template_meta import load_template_meta
+        from cadbatchassistant.core.fill.fill_parse_xlsx import get_headers
 
         # 伴生 meta 优先（GUI 上传只存占位符 JSON，模板库无原文件）；
         # meta 缺失时（CLI / 命令行直接传模板路径）才要求模板文件存在并现场解析

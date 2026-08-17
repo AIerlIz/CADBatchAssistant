@@ -11,21 +11,21 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
-from cadbatchassistant.core import catalog_excel_writer
 from cadbatchassistant.core import dwg_converter as dc
-from cadbatchassistant.core.catalog_builder import (
+from cadbatchassistant.core.catalog import catalog_excel_writer
+from cadbatchassistant.core.catalog.catalog_builder import (
     FileEntry,
     build_file_catalog,
 )
-from cadbatchassistant.core.catalog_reader import extract_by_anchors
-from cadbatchassistant.core.catalog_template_reader import (
+from cadbatchassistant.core.catalog.catalog_reader import extract_by_anchors
+from cadbatchassistant.core.catalog.catalog_template_reader import (
     Anchor,
     collect_fields,
     parse_template,
 )
-from cadbatchassistant.core.filetypes import CAD_SUFFIXES, XLSX_SUFFIXES
-from cadbatchassistant.core.input_files import check_duplicate_names
-from cadbatchassistant.core.parallel import TaskFailed, map_files
+from cadbatchassistant.core.common.filetypes import CAD_SUFFIXES, XLSX_SUFFIXES
+from cadbatchassistant.core.common.input_files import check_duplicate_names
+from cadbatchassistant.core.common.parallel import TaskFailed, map_files
 
 # 回调：log(msg)，progress(0-100 整数)
 LogFn = Callable[[str], None]

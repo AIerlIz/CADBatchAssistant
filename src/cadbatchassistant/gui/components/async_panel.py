@@ -8,7 +8,7 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 
-from cadbatchassistant.gui.tk_util import apply_vista_theme
+from cadbatchassistant.gui.components.tk_util import apply_vista_theme
 
 
 class AsyncPanel:
@@ -68,7 +68,7 @@ class AsyncPanel:
             success = bool(self._work(*args))
         except Exception as ex:
             # 堆栈落日志文件（GUI 只显示一行，完整现场供排查）
-            logging.getLogger("cadbatchassistant.gui.async_panel").exception(
+            logging.getLogger("cadbatchassistant.gui.components.async_panel").exception(
                 "后台任务处理中断"
             )
             self._emit(f"处理中断：{ex}")

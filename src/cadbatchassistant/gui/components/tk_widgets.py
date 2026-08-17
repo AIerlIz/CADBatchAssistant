@@ -13,12 +13,12 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Literal
 
-from cadbatchassistant.core.dwg_converter import get_converter
-from cadbatchassistant.core.filetypes import CAD_SUFFIXES
-from cadbatchassistant.core.templates import (
+from cadbatchassistant.core.common.filetypes import CAD_SUFFIXES
+from cadbatchassistant.core.common.templates import (
     remove_template,
     templates_dir,
 )
+from cadbatchassistant.core.dwg_converter import get_converter
 
 # ---------------- ODA 选项助手 ----------------
 

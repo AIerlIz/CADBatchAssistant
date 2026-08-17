@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from cadbatchassistant.core import templates
+from cadbatchassistant.core.common import templates
 
 
 def _patch_templates_dir(monkeypatch, base: Path) -> None:

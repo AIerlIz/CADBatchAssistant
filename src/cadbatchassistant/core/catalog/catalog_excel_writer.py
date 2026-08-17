@@ -13,7 +13,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from cadbatchassistant.core.catalog_builder import (
+from cadbatchassistant.core.catalog.catalog_builder import (
     NA,
     Catalog,
     entry_rows,

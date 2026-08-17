@@ -9,7 +9,7 @@ from pathlib import Path
 import ezdxf
 import openpyxl
 
-from cadbatchassistant.core import fill_learn_spec
+from cadbatchassistant.core.fill import fill_learn_spec
 
 
 def _make_xlsx_multi(path, sheets: dict) -> None:

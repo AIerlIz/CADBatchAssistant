@@ -8,8 +8,8 @@
 
 import ezdxf
 
-from cadbatchassistant.core.catalog_reader import extract_by_anchors
-from cadbatchassistant.core.catalog_template_reader import Anchor
+from cadbatchassistant.core.catalog.catalog_reader import extract_by_anchors
+from cadbatchassistant.core.catalog.catalog_template_reader import Anchor
 
 
 def _make_dxf(path, texts: list[tuple[tuple[float, float], str]]) -> str:

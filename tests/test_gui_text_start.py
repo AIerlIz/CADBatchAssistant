@@ -10,7 +10,7 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
-import cadbatchassistant.gui.gui_text as gt
+import cadbatchassistant.gui.panels.gui_text as gt
 
 
 class TextStartCopyFailureTest(unittest.TestCase):

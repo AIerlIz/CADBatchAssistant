@@ -11,8 +11,8 @@ def test_run_with_meta_anchors_without_template_file(monkeypatch, tmp_path):
     """
     from unittest import mock
 
-    import cadbatchassistant.core.catalog_pipeline as cp
-    from cadbatchassistant.core.catalog_template_reader import Anchor
+    import cadbatchassistant.core.catalog.catalog_pipeline as cp
+    from cadbatchassistant.core.catalog.catalog_template_reader import Anchor
 
     template = tmp_path / "missing.dxf"  # 文件不存在（模板库只存 meta）
     assert not template.exists()
@@ -61,9 +61,9 @@ def test_on_done_progress_and_log_monotonic_when_out_of_order(monkeypatch, tmp_p
     """
     from unittest import mock
 
-    import cadbatchassistant.core.catalog_pipeline as cp
-    from cadbatchassistant.core.catalog_template_reader import Anchor
-    from cadbatchassistant.core.parallel import TaskFailed
+    import cadbatchassistant.core.catalog.catalog_pipeline as cp
+    from cadbatchassistant.core.catalog.catalog_template_reader import Anchor
+    from cadbatchassistant.core.common.parallel import TaskFailed
 
     template = tmp_path / "template.dxf"
     template.write_text("x", encoding="utf-8")

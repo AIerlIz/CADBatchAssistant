@@ -26,8 +26,8 @@ sys.path.insert(0, str(ROOT / "src"))
 import ezdxf  # noqa: E402
 from openpyxl import Workbook, load_workbook  # noqa: E402
 
-from cadbatchassistant.core import catalog_excel_writer  # noqa: E402
-from cadbatchassistant.core.catalog_pipeline import run_pipeline  # noqa: E402
+from cadbatchassistant.core.catalog import catalog_excel_writer  # noqa: E402
+from cadbatchassistant.core.catalog.catalog_pipeline import run_pipeline  # noqa: E402
 
 TMP = pathlib.Path(tempfile.mkdtemp(prefix="cad_verify_"))
 

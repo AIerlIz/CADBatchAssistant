@@ -12,7 +12,7 @@ from pathlib import Path
 
 import ezdxf
 
-from cadbatchassistant.core.text_replace import (
+from cadbatchassistant.core.common.text_replace import (
     decode_text,
     iter_text_entities,
 )

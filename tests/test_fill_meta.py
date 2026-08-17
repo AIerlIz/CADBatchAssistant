@@ -17,13 +17,13 @@ from unittest import mock
 import ezdxf
 import openpyxl
 
-from cadbatchassistant.core.fill_learn_spec import (
-    scan_all_placeholders,
-    value_rule_for,
-)
-from cadbatchassistant.core.template_meta import (
+from cadbatchassistant.core.common.template_meta import (
     load_template_meta,
     save_template_meta,
+)
+from cadbatchassistant.core.fill.fill_learn_spec import (
+    scan_all_placeholders,
+    value_rule_for,
 )
 
 
@@ -97,7 +97,7 @@ def test_meta_roundtrip_placeholders(tmp_path):
 
 def test_fill_pipeline_meta_path(tmp_path):
     """完整 meta 路径：读模板 meta（不转换模板）→ 按表头匹配 → 填表。"""
-    from cadbatchassistant.core.fill_pipeline import run_pipeline
+    from cadbatchassistant.core.fill.fill_pipeline import run_pipeline
 
     tpl = _make_tpl_dxf(tmp_path / "tpl.dxf", placeholders=("[图号]",))
     save_template_meta(tpl, {"placeholders": scan_all_placeholders(str(tpl))})
@@ -108,7 +108,7 @@ def test_fill_pipeline_meta_path(tmp_path):
     conv.resolve.return_value = ""
     conv.require_for_dwg.return_value = None
     with mock.patch(
-        "cadbatchassistant.core.fill_pipeline.dc.get_converter", return_value=conv
+        "cadbatchassistant.core.fill.fill_pipeline.dc.get_converter", return_value=conv
     ):
         summary = run_pipeline(
             str(xlsx),
@@ -128,7 +128,7 @@ def test_fill_pipeline_meta_path(tmp_path):
 
 def test_fill_pipeline_cli_fallback_without_meta(tmp_path):
     """CLI 兜底：模板无 meta 时现场转换 + 扫描（template_to_dxf 被调用）。"""
-    from cadbatchassistant.core.fill_pipeline import run_pipeline
+    from cadbatchassistant.core.fill.fill_pipeline import run_pipeline
 
     tpl = _make_tpl_dxf(tmp_path / "tpl.dxf", placeholders=("[图号]",))
     xlsx = _make_xlsx(tmp_path / "data.xlsx", [["图纸名", "图号"], ["A1", "ABC-001"]])
@@ -139,7 +139,7 @@ def test_fill_pipeline_cli_fallback_without_meta(tmp_path):
     conv.require_for_dwg.return_value = None
     conv.template_to_dxf.return_value = str(tpl)  # 模板已是 DXF，直接返回
     with mock.patch(
-        "cadbatchassistant.core.fill_pipeline.dc.get_converter", return_value=conv
+        "cadbatchassistant.core.fill.fill_pipeline.dc.get_converter", return_value=conv
     ):
         summary = run_pipeline(
             str(xlsx),

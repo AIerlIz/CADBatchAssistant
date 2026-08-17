@@ -10,7 +10,7 @@
 import ezdxf
 import pytest
 
-from cadbatchassistant.core.catalog_template_reader import (
+from cadbatchassistant.core.catalog.catalog_template_reader import (
     anchor_to_dict,
     anchors_from_dict,
     parse_template,
@@ -104,7 +104,7 @@ def test_no_placeholder_raises(tmp_path):
 
 def test_anchor_to_dict_roundtrip():
     """anchor_to_dict → anchors_from_dict 往返字段一致。"""
-    from cadbatchassistant.core.catalog_template_reader import Anchor
+    from cadbatchassistant.core.catalog.catalog_template_reader import Anchor
 
     src = [
         Anchor(field="图号", is_area=False, min_x=1.0, min_y=2.0,

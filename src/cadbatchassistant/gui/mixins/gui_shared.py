@@ -17,15 +17,15 @@ from tkinter import filedialog, messagebox, ttk
 
 from tkinterdnd2 import DND_FILES
 
-from cadbatchassistant.core.app_config import load_config, save_config
-from cadbatchassistant.core.filetypes import CAD_SUFFIXES
-from cadbatchassistant.core.template_meta import remove_template_meta
-from cadbatchassistant.core.templates import (
+from cadbatchassistant.core.common.app_config import load_config, save_config
+from cadbatchassistant.core.common.filetypes import CAD_SUFFIXES
+from cadbatchassistant.core.common.template_meta import remove_template_meta
+from cadbatchassistant.core.common.templates import (
     list_templates,
     template_path,
 )
-from cadbatchassistant.gui.tk_util import dedup_paths, parse_dnd_data
-from cadbatchassistant.gui.tk_widgets import (
+from cadbatchassistant.gui.components.tk_util import dedup_paths, parse_dnd_data
+from cadbatchassistant.gui.components.tk_widgets import (
     build_file_list,
     build_log_panel,
     build_output_row,
@@ -494,7 +494,7 @@ class RunStartMixin:
             self._after_begin_run(args)
             self._start_worker(args)
         except Exception as ex:
-            logging.getLogger("cadbatchassistant.gui.gui_shared").exception(
+            logging.getLogger("cadbatchassistant.gui.mixins.gui_shared").exception(
                 "启动后台任务失败"
             )
             self._reset_run_state()

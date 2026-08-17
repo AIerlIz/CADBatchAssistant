@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from cadbatchassistant.core.app_config import software_dir
+from cadbatchassistant.core.common.app_config import software_dir
 
 
 def templates_dir(category: str) -> Path:

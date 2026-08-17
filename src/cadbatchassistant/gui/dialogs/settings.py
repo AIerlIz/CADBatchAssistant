@@ -12,12 +12,12 @@ from tkinter import ttk
 
 from cadbatchassistant import __version__
 from cadbatchassistant.core import updater
-from cadbatchassistant.core.app_config import (
+from cadbatchassistant.core.common.app_config import (
     OUT_VERSION_CHOICES,
     load_app_config,
     save_app_config,
 )
-from cadbatchassistant.gui.tk_widgets import build_oda_row, check_oda
+from cadbatchassistant.gui.components.tk_widgets import build_oda_row, check_oda
 
 
 class SettingsPanel:
@@ -156,7 +156,7 @@ class SettingsPanel:
             if updater.is_ignored(tag, self._ignored_tag):
                 self.var_update_info.set(f"已忽略版本 {tag}（可在下方清除忽略）")
                 return
-            from cadbatchassistant.gui.updater_dialog import ask_update_choice
+            from cadbatchassistant.gui.dialogs.updater_dialog import ask_update_choice
 
             choice = ask_update_choice(self._parent, tag)
             if choice == "update":
@@ -173,7 +173,7 @@ class SettingsPanel:
 
     def _start_update(self, latest: dict) -> None:
         """进入下载更新流程（UpdaterDialog 展示进度，完成后替换重启）。"""
-        from cadbatchassistant.gui.updater_dialog import start_update_download
+        from cadbatchassistant.gui.dialogs.updater_dialog import start_update_download
 
         start_update_download(
             self._parent, latest, self.var_update_mirror.get().strip()

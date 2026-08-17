@@ -8,7 +8,7 @@ from pathlib import Path
 
 import ezdxf
 
-from cadbatchassistant.core.text_replace import (
+from cadbatchassistant.core.common.text_replace import (
     ReplaceRule,
     _has_undecoded_surrogates,
     apply_rules,

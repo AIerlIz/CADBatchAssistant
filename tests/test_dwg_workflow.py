@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from cadbatchassistant.core.dwg_workflow import write_back_dxf_batch
+from cadbatchassistant.core.common.dwg_workflow import write_back_dxf_batch
 
 
 class WriteBackSkipTest(unittest.TestCase):

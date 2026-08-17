@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from cadbatchassistant.core import app_config
+from cadbatchassistant.core.common import app_config
 
 
 def test_load_config_valid(tmp_path: Path) -> None:

@@ -14,8 +14,11 @@ from unittest import mock
 import ezdxf
 import pytest
 
-from cadbatchassistant.core.template_meta import meta_path_for, save_template_meta
-from cadbatchassistant.core.templates import template_path
+from cadbatchassistant.core.common.template_meta import (
+    meta_path_for,
+    save_template_meta,
+)
+from cadbatchassistant.core.common.templates import template_path
 
 
 def _make_root():
@@ -31,9 +34,9 @@ def _make_root():
 
 def _make_panel(root, monkeypatch, tmp_path):
     """构造 IsoFillApp，模板库目录与面板记忆配置全部隔离到 tmp。"""
-    import cadbatchassistant.core.templates as tpl_mod
-    from cadbatchassistant.gui import gui_fill as gf
-    from cadbatchassistant.gui import gui_shared as gs
+    import cadbatchassistant.core.common.templates as tpl_mod
+    from cadbatchassistant.gui.mixins import gui_shared as gs
+    from cadbatchassistant.gui.panels import gui_fill as gf
 
     monkeypatch.setattr(tpl_mod, "software_dir", lambda: tmp_path)
     monkeypatch.setattr(gs, "load_panel_config", lambda: {})

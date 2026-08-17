@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from logging.handlers import RotatingFileHandler
 
-from cadbatchassistant.core.app_config import software_dir
+from cadbatchassistant.core.common.app_config import software_dir
 
 _LOGGER_NAME = "cadbatchassistant"
 _LOG_MAX_BYTES = 1024 * 1024  # 单文件上限 1MB，超出后轮转

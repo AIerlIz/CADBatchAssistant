@@ -41,7 +41,7 @@ def is_ignored(latest_tag: str, ignored_tag: str | None) -> bool:
 
 def ignored_version() -> str | None:
     """读取用户忽略的版本 tag（配置 update_ignore）；无则返回 None。"""
-    from cadbatchassistant.core.app_config import load_app_config
+    from cadbatchassistant.core.common.app_config import load_app_config
 
     v = load_app_config().get(IGNORE_KEY, "")
     return str(v).strip() or None
@@ -52,6 +52,6 @@ def set_ignored_version(tag: str) -> None:
 
     合并写入配置，保留 update_mirror 等其他配置项。
     """
-    from cadbatchassistant.core.app_config import save_app_config
+    from cadbatchassistant.core.common.app_config import save_app_config
 
     save_app_config({IGNORE_KEY: tag})

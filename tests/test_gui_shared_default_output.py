@@ -11,7 +11,7 @@ import unittest
 from contextlib import contextmanager
 from unittest import mock
 
-from cadbatchassistant.gui.gui_shared import FilesPanelMixin
+from cadbatchassistant.gui.mixins.gui_shared import FilesPanelMixin
 
 
 class _FakePanel(FilesPanelMixin):
@@ -28,12 +28,12 @@ def _patch_deps(paths: list[str]):
     """mock 掉 GUI 依赖（拖放解析/文件存在性/弹窗），模拟导入 paths。"""
     with (
         mock.patch(
-            "cadbatchassistant.gui.gui_shared.parse_dnd_data", return_value=paths
+            "cadbatchassistant.gui.mixins.gui_shared.parse_dnd_data", return_value=paths
         ),
         mock.patch(
-            "cadbatchassistant.gui.gui_shared.os.path.isfile", return_value=True
+            "cadbatchassistant.gui.mixins.gui_shared.os.path.isfile", return_value=True
         ),
-        mock.patch("cadbatchassistant.gui.gui_shared.messagebox.showwarning"),
+        mock.patch("cadbatchassistant.gui.mixins.gui_shared.messagebox.showwarning"),
     ):
         yield
 
@@ -64,7 +64,7 @@ class DefaultOutputTest(unittest.TestCase):
         p = _FakePanel()
         p.var_out.get.return_value = r"D:\existing"
         with _patch_deps([r"D:\a\A1.dwg"]), mock.patch(
-            "cadbatchassistant.gui.gui_shared.filedialog.askopenfilenames",
+            "cadbatchassistant.gui.mixins.gui_shared.filedialog.askopenfilenames",
             return_value=[r"D:\a\A1.dwg"],
         ):
             p._browse_input_files()

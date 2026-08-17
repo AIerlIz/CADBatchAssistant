@@ -72,7 +72,10 @@ def test_find_oda_converter_via_env_dir(tmp_path, monkeypatch):
 
 def test_find_oda_converter_none(monkeypatch):
     monkeypatch.delenv("ODA_PATH", raising=False)
-    monkeypatch.setattr(dc, "_CANDIDATE_GLOBS", [])
+    # oda 子模块的探测 globs（find() 引用的是模块级名）
+    monkeypatch.setattr(
+        "cadbatchassistant.core.dwg_converter.oda._CANDIDATE_GLOBS", []
+    )
     assert CONV.find() is None
 
 

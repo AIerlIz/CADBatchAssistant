@@ -25,7 +25,7 @@ def _make_root():
 
 
 def test_text_panel_builds() -> None:
-    from cadbatchassistant.gui.gui_text import CadTextApp
+    from cadbatchassistant.gui.panels.gui_text import CadTextApp
 
     root = _make_root()
     try:
@@ -45,7 +45,7 @@ def test_text_panel_builds() -> None:
 
 
 def test_fill_panel_builds() -> None:
-    from cadbatchassistant.gui.gui_fill import IsoFillApp
+    from cadbatchassistant.gui.panels.gui_fill import IsoFillApp
 
     root = _make_root()
     try:
@@ -64,7 +64,7 @@ def test_fill_panel_builds() -> None:
 
 
 def test_catalog_panel_builds() -> None:
-    from cadbatchassistant.gui.gui_catalog import CatalogPanel
+    from cadbatchassistant.gui.panels.gui_catalog import CatalogPanel
 
     root = _make_root()
     try:

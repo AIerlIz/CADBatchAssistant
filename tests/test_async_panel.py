@@ -11,7 +11,7 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
-from cadbatchassistant.gui import async_panel as ap
+from cadbatchassistant.gui.components import async_panel as ap
 
 
 class _FakePanel(ap.AsyncPanel):

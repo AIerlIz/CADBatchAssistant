@@ -19,7 +19,7 @@ from tkinter import messagebox, ttk
 
 from cadbatchassistant import __version__
 from cadbatchassistant.core import updater
-from cadbatchassistant.gui.tk_util import center_window
+from cadbatchassistant.gui.components.tk_util import center_window
 
 _DOWNLOAD_DIR = Path(tempfile.gettempdir()) / "CADBatchAssistant_update"
 _NEW_EXE = "CADBatchAssistant_new.exe"

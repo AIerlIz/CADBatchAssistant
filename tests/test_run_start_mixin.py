@@ -10,7 +10,7 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
-from cadbatchassistant.gui.gui_shared import RunStartMixin
+from cadbatchassistant.gui.mixins.gui_shared import RunStartMixin
 
 
 class _FakePanel(RunStartMixin):
@@ -33,7 +33,7 @@ class RunStartMixinTest(unittest.TestCase):
         self.panel._after_begin_run = mock.Mock()
         self.panel._run_maximum = mock.Mock(return_value=5)
         # begin_run 与 messagebox 均来自 gui_shared 模块命名空间
-        self._pb = mock.patch("cadbatchassistant.gui.gui_shared.begin_run")
+        self._pb = mock.patch("cadbatchassistant.gui.mixins.gui_shared.begin_run")
         self.begin_run = self._pb.start()
         self.addCleanup(self._pb.stop)
 

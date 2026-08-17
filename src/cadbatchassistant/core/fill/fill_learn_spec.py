@@ -15,9 +15,9 @@ from __future__ import annotations
 import json
 import sys
 
-from cadbatchassistant.core.fill_dwg import entity_to_desc
-from cadbatchassistant.core.fill_parse_xlsx import get_headers
-from cadbatchassistant.core.text_replace import decode_text, read_doc
+from cadbatchassistant.core.common.text_replace import decode_text, read_doc
+from cadbatchassistant.core.fill.fill_dwg import entity_to_desc
+from cadbatchassistant.core.fill.fill_parse_xlsx import get_headers
 
 
 def _iter_placeholders(dxf_path: str):

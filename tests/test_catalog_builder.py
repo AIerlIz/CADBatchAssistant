@@ -1,6 +1,6 @@
 """catalog_builder 页码/NA/行数计算单测（目录助手）。"""
 
-from cadbatchassistant.core.catalog_builder import (
+from cadbatchassistant.core.catalog.catalog_builder import (
     FileEntry,
     build_file_catalog,
     entry_rows,

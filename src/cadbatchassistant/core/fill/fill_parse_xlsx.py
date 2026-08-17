@@ -11,7 +11,7 @@ from __future__ import annotations
 import datetime
 from pathlib import Path
 
-from cadbatchassistant.core.filetypes import CAD_SUFFIXES
+from cadbatchassistant.core.common.filetypes import CAD_SUFFIXES
 
 EXCEL_EPOCH = datetime.date(1899, 12, 30)
 

@@ -18,9 +18,9 @@ import os
 
 from ezdxf import const
 
-from cadbatchassistant.core.fill_parse_xlsx import load_xlsx
-from cadbatchassistant.core.parallel import TaskFailed, map_files
-from cadbatchassistant.core.text_replace import read_doc
+from cadbatchassistant.core.common.parallel import TaskFailed, map_files
+from cadbatchassistant.core.common.text_replace import read_doc
+from cadbatchassistant.core.fill.fill_parse_xlsx import load_xlsx
 
 
 def make_text(val: str) -> str:

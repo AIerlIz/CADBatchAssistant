@@ -2,8 +2,12 @@
 
 from openpyxl import Workbook, load_workbook
 
-from cadbatchassistant.core.catalog_builder import Catalog, FileEntry, is_fig_no_col
-from cadbatchassistant.core.catalog_excel_writer import (
+from cadbatchassistant.core.catalog.catalog_builder import (
+    Catalog,
+    FileEntry,
+    is_fig_no_col,
+)
+from cadbatchassistant.core.catalog.catalog_excel_writer import (
     detect_header_row,
     detect_sheet,
     detect_sheet_candidates,

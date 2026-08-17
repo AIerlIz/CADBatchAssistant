@@ -14,18 +14,18 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from cadbatchassistant.core import dwg_converter as dc
-from cadbatchassistant.core.app_config import get_oda, get_out_version
-from cadbatchassistant.core.filetypes import XLSX_SUFFIXES
-from cadbatchassistant.core.fill_learn_spec import scan_all_placeholders
-from cadbatchassistant.core.fill_pipeline import run_pipeline_files
-from cadbatchassistant.core.template_meta import (
+from cadbatchassistant.core.common.app_config import get_oda, get_out_version
+from cadbatchassistant.core.common.filetypes import XLSX_SUFFIXES
+from cadbatchassistant.core.common.template_meta import (
     load_template_meta,
     remove_template_meta,
     save_template_meta,
 )
-from cadbatchassistant.core.templates import template_path, templates_dir
-from cadbatchassistant.gui.async_panel import AsyncPanel
-from cadbatchassistant.gui.gui_shared import (
+from cadbatchassistant.core.common.templates import template_path, templates_dir
+from cadbatchassistant.core.fill.fill_learn_spec import scan_all_placeholders
+from cadbatchassistant.core.fill.fill_pipeline import run_pipeline_files
+from cadbatchassistant.gui.components.async_panel import AsyncPanel
+from cadbatchassistant.gui.mixins.gui_shared import (
     FilesPanelMixin,
     PanelLayoutMixin,
     RunStartMixin,
@@ -146,7 +146,7 @@ class IsoFillApp(
         headers: dict[str, list[str]] = {}
         if path and os.path.isfile(path):
             try:
-                from cadbatchassistant.core.fill_parse_xlsx import load_sheet_meta
+                from cadbatchassistant.core.fill.fill_parse_xlsx import load_sheet_meta
 
                 sheets, headers = load_sheet_meta(path)
             except Exception:  # noqa: BLE001 - 文件损坏/不可读时无工作表可选

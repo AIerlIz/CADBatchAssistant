@@ -12,7 +12,7 @@ import time
 
 import pytest
 
-from cadbatchassistant.core.parallel import (
+from cadbatchassistant.core.common.parallel import (
     AutoExecutor,
     TaskFailed,
     ThreadExecutor,

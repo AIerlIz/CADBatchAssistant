@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from unittest import mock
 
-from cadbatchassistant.gui import tk_widgets as tw
+from cadbatchassistant.gui.components import tk_widgets as tw
 
 
 def _make_vars(current: str = ""):

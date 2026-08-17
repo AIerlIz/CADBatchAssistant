@@ -17,30 +17,31 @@ from tkinter import filedialog, messagebox, ttk
 
 from openpyxl import load_workbook
 
-from cadbatchassistant.core.app_config import (
-    get_oda,
-    get_out_version,
-    load_catalog_rules,
-)
-from cadbatchassistant.core.catalog_excel_writer import detect_sheet_candidates
-from cadbatchassistant.core.catalog_pipeline import (
+from cadbatchassistant.core.catalog.catalog_excel_writer import detect_sheet_candidates
+from cadbatchassistant.core.catalog.catalog_pipeline import (
     PipelineResult,
     parse_template_anchors,
     run_pipeline,
 )
-from cadbatchassistant.core.catalog_template_reader import (
+from cadbatchassistant.core.catalog.catalog_template_reader import (
     anchor_to_dict,
     anchors_from_dict,
     collect_fields,
 )
-from cadbatchassistant.core.template_meta import (
+from cadbatchassistant.core.common.app_config import (
+    get_oda,
+    get_out_version,
+    load_catalog_rules,
+)
+from cadbatchassistant.core.common.template_meta import (
     load_template_meta,
     remove_template_meta,
     save_template_meta,
 )
-from cadbatchassistant.core.templates import template_path, templates_dir
-from cadbatchassistant.gui.async_panel import AsyncPanel
-from cadbatchassistant.gui.gui_shared import (
+from cadbatchassistant.core.common.templates import template_path, templates_dir
+from cadbatchassistant.gui.components.async_panel import AsyncPanel
+from cadbatchassistant.gui.components.tk_util import center_window
+from cadbatchassistant.gui.mixins.gui_shared import (
     FilesPanelMixin,
     PanelLayoutMixin,
     RunStartMixin,
@@ -50,7 +51,6 @@ from cadbatchassistant.gui.gui_shared import (
     save_panel_config,
     warn_require,
 )
-from cadbatchassistant.gui.tk_util import center_window
 
 
 class CatalogPanel(

@@ -13,8 +13,8 @@ from unittest import mock
 
 import pytest
 
-from cadbatchassistant.core.catalog_template_reader import Anchor
-from cadbatchassistant.core.template_meta import (
+from cadbatchassistant.core.catalog.catalog_template_reader import Anchor
+from cadbatchassistant.core.common.template_meta import (
     meta_path_for,
     save_template_meta,
 )
@@ -33,9 +33,9 @@ def _make_root():
 
 def _make_panel(root, monkeypatch, tmp_path):
     """构造 CatalogPanel，模板库目录与面板记忆配置全部隔离到 tmp。"""
-    import cadbatchassistant.core.templates as tpl_mod
-    from cadbatchassistant.gui import gui_catalog as gc
-    from cadbatchassistant.gui import gui_shared as gs
+    import cadbatchassistant.core.common.templates as tpl_mod
+    from cadbatchassistant.gui.mixins import gui_shared as gs
+    from cadbatchassistant.gui.panels import gui_catalog as gc
 
     monkeypatch.setattr(tpl_mod, "software_dir", lambda: tmp_path)
     monkeypatch.setattr(gc, "load_panel_config", lambda: {})

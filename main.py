@@ -37,25 +37,26 @@ from tkinterdnd2 import TkinterDnD
 
 from cadbatchassistant import __version__
 from cadbatchassistant.core import updater
-from cadbatchassistant.core.app_config import (
+from cadbatchassistant.core.common.app_config import (
     APP_CONFIG_FILE,
     load_config,
     resource_path,
 )
-from cadbatchassistant.gui import gui_catalog, gui_fill, gui_text, settings
-from cadbatchassistant.gui.tk_util import center_window, default_font_family
+from cadbatchassistant.gui.components.tk_util import center_window, default_font_family
+from cadbatchassistant.gui.dialogs import settings
+from cadbatchassistant.gui.panels import gui_catalog, gui_fill, gui_text
 
 APP_TITLE = "CAD批处理助手"
 
 
 def _selftest(template_dwg: str, dwg_files: list[str]) -> int:
     """诊断模式：图纸模板 + 图纸 → 完整目录流程，把日志/异常写入 selftest_log.txt。"""
-    from cadbatchassistant.core import catalog_excel_writer
-    from cadbatchassistant.core.app_config import get_oda
-    from cadbatchassistant.core.catalog_pipeline import (
+    from cadbatchassistant.core.catalog import catalog_excel_writer
+    from cadbatchassistant.core.catalog.catalog_pipeline import (
         parse_template_fields,
         run_pipeline,
     )
+    from cadbatchassistant.core.common.app_config import get_oda
 
     log_path = Path(__file__).resolve().parent / "selftest_log.txt"
     if getattr(sys, "frozen", False):
@@ -138,7 +139,7 @@ def main(argv: list[str] | None = None) -> int:
     center_window(root)  # 主窗口屏幕居中
     root.option_add("*Font", (default_font_family(), 10))
 
-    from cadbatchassistant.core.app_log import setup_logging
+    from cadbatchassistant.core.common.app_log import setup_logging
 
     setup_logging()  # 统一日志文件（软件目录/logs/app.log），异常排查用
 
@@ -184,7 +185,7 @@ def _auto_check_update(root: tk.Tk) -> None:
     def _work() -> None:
         try:
             result = updater.check_latest()
-        except Exception:  # noqa: BLE001 - 意外异常静默失败，不打扰
+        except Exception:
             logging.getLogger("cadbatchassistant.main").exception(
                 "启动更新检查失败（静默）"
             )
@@ -203,7 +204,7 @@ def _auto_check_update(root: tk.Tk) -> None:
 
 def _prompt_update(root: tk.Tk, latest: dict, mirror: str) -> None:
     """主线程弹窗：有新版本时三选（立即更新 / 忽略此版本 / 取消）。"""
-    from cadbatchassistant.gui.updater_dialog import (
+    from cadbatchassistant.gui.dialogs.updater_dialog import (
         ask_update_choice,
         start_update_download,
     )

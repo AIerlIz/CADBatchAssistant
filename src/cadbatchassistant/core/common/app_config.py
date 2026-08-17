@@ -92,8 +92,15 @@ DEFAULT_CATALOG_RULES = {
 }
 
 
-# 源码运行时的项目根目录（本文件位于 src/cadbatchassistant/core/ 下，向上 4 层）
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+# 源码运行时的项目根目录（向上查找 pyproject.toml，不再依赖固定目录层级）
+def _find_project_root(start: Path) -> Path:
+    for p in (start, *start.parents):
+        if (p / "pyproject.toml").is_file():
+            return p
+    return start
+
+
+_PROJECT_ROOT = _find_project_root(Path(__file__).resolve())
 
 
 def software_dir() -> Path:

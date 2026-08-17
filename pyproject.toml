@@ -72,8 +72,8 @@ ignore_missing_imports = true
 # tkinterdnd2 对 tkinter 控件的运行时 monkey-patch（drop_target_register/dnd_bind）
 # 均无法静态声明，禁用 attr-defined 检查（其余检查保留）。
 module = [
-    "cadbatchassistant.gui.async_panel",
-    "cadbatchassistant.gui.gui_shared",
+    "cadbatchassistant.gui.components.async_panel",
+    "cadbatchassistant.gui.mixins.gui_shared",
 ]
 disable_error_code = ["attr-defined"]
 

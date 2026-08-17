@@ -5,10 +5,10 @@
 
 | Tab | 功能 | 核心模块 |
 |---|---|---|
-| **改字助手** | 批量修改 DWG/DXF 图纸文字（TEXT/MTEXT/块属性），支持正则查找替换 | `gui/gui_text.py` + `core/text_replace.py` |
-| **填表助手** | 把数据表（.xlsx/.xls）按「图纸模板占位」填入图纸标题栏 | `gui/gui_fill.py` + `core/fill_pipeline.py` |
-| **目录助手** | 按「图纸模板」从一批图纸取值，生成图纸目录 Excel | `gui/gui_catalog.py` + `core/catalog_pipeline.py` |
-| **设置** | ODA File Converter 路径、DWG 输出版本、软件更新（全局共享） | `gui/settings.py` |
+| **改字助手** | 批量修改 DWG/DXF 图纸文字（TEXT/MTEXT/块属性），支持正则查找替换 | `gui/panels/gui_text.py` + `core/common/text_replace.py` |
+| **填表助手** | 把数据表（.xlsx/.xls）按「图纸模板占位」填入图纸标题栏 | `gui/panels/gui_fill.py` + `core/fill/fill_pipeline.py` |
+| **目录助手** | 按「图纸模板」从一批图纸取值，生成图纸目录 Excel | `gui/panels/gui_catalog.py` + `core/catalog/catalog_pipeline.py` |
+| **设置** | ODA File Converter 路径、DWG 输出版本、软件更新（全局共享） | `gui/dialogs/settings.py` |
 
 > 前身：CADBatchText、CadFill、CADCatalogAssistant 三个独立工具，现已整合为统一应用。
 
@@ -94,34 +94,43 @@ CADBatchAssistant.exe --selftest <图纸模板DWG> <图纸文件...>
 main.py                    # 入口：Notebook 窗口 + --selftest
 src/cadbatchassistant/
   core/
-    app_config.py          # 全局配置：JSON 读写、软件目录、目录助手规则、输出版本
-    templates.py           # 模板库纯文件操作（枚举/删除，只存占位配置 JSON，无 GUI 依赖）
-    filetypes.py           # 共享文件扩展名常量（CAD_SUFFIXES / XLSX_SUFFIXES）
-    text_replace.py        # 改字：DXF 文字查找替换
-    dwg_converter.py       # 转换引擎抽象：Converter 接口 + ODA 实现（三功能共用）
-    dwg_workflow.py        # DWG 批处理工作流（统一成 DXF 批 / 处理后写回）
-    parallel.py            # 并行执行器（串行/进程/线程可切换）
-    input_files.py         # 输入文件公共工具（重名检测 + 复制暂存）
-    fill_pipeline.py       # 填表：一键流程
-    fill_learn_spec.py     # 填表：模板占位扫描
-    fill_dwg.py            # 填表：按规格填充
-    fill_parse_xlsx.py     # 填表：读取数据表
-    catalog_pipeline.py    # 目录：一键流程
-    catalog_template_reader.py  # 目录：模板解析
-    catalog_reader.py      # 目录：按锚点取值
-    catalog_builder.py     # 目录：目录数据构建
-    catalog_excel_writer.py     # 目录：Excel 输出
-    updater.py             # 在线更新
+    common/                # 跨功能域共享
+      app_config.py        # 全局配置：JSON 读写、软件目录、目录助手规则、输出版本
+      templates.py         # 模板库纯文件操作（枚举/删除，只存占位配置 JSON，无 GUI 依赖）
+      filetypes.py         # 共享文件扩展名常量（CAD_SUFFIXES / XLSX_SUFFIXES）
+      text_replace.py      # 改字：DXF 文字查找替换
+      parallel.py          # 并行执行器（串行/进程/线程可切换）
+      input_files.py       # 输入文件公共工具（重名检测 + 复制暂存）
+      template_meta.py     # 占位符 meta 读写（填表/目录模板共用）
+      dwg_workflow.py      # DWG 批处理工作流（统一成 DXF 批 / 处理后写回）
+      app_log.py           # 统一日志
+    dwg_converter/         # 转换引擎抽象：Converter 接口 + ODA 实现（三功能共用）
+    fill/                  # 填表
+      fill_pipeline.py     # 一键流程
+      fill_learn_spec.py   # 模板占位扫描
+      fill_dwg.py          # 按规格填充
+      fill_parse_xlsx.py   # 读取数据表
+    catalog/               # 目录
+      catalog_pipeline.py  # 一键流程
+      catalog_template_reader.py  # 模板解析
+      catalog_reader.py    # 按锚点取值
+      catalog_builder.py   # 目录数据构建
+      catalog_excel_writer.py     # Excel 输出
+    updater/               # 在线更新（版本/检查/下载/替换）
   gui/
-    async_panel.py         # 后台任务骨架：后台线程 + 消息队列 + after 轮询
-    tk_util.py             # GUI 通用工具：字体/主题/居中/去重/拖放解析
-    tk_widgets.py          # 通用控件构建 + ODA 助手 + 模板库弹窗包装
-    gui_shared.py          # 三个面板共享组件（FilesPanel/TemplateLibrary/PanelLayout/RunStart Mixin）
-    gui_text.py            # 改字助手面板
-    gui_fill.py            # 填表助手面板
-    gui_catalog.py         # 目录助手面板
-    settings.py            # 设置面板
-    updater_dialog.py      # 更新对话框
+    components/            # 通用组件
+      async_panel.py       # 后台任务骨架：后台线程 + 消息队列 + after 轮询
+      tk_util.py           # GUI 通用工具：字体/主题/居中/去重/拖放解析
+      tk_widgets.py        # 通用控件构建 + ODA 助手 + 模板库弹窗包装
+    mixins/                # 面板共享 Mixin
+      gui_shared.py        # FilesPanel/TemplateLibrary/PanelLayout/RunStart Mixin
+    panels/                # 三个功能面板
+      gui_text.py          # 改字助手面板
+      gui_fill.py          # 填表助手面板
+      gui_catalog.py       # 目录助手面板
+    dialogs/               # 对话框
+      settings.py          # 设置面板
+      updater_dialog.py    # 更新对话框
 scripts/
   inject_version.py        # 打包版本注入
   verify_end_to_end.py     # 目录助手端到端验证

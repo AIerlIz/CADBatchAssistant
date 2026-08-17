@@ -17,16 +17,16 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 
 from cadbatchassistant.core import dwg_converter as dc
-from cadbatchassistant.core.app_config import get_oda, get_out_version
-from cadbatchassistant.core.dwg_workflow import (
+from cadbatchassistant.core.common.app_config import get_oda, get_out_version
+from cadbatchassistant.core.common.dwg_workflow import (
     stage_dxf_batch,
     write_back_dxf_batch,
 )
-from cadbatchassistant.core.input_files import check_duplicate_names
-from cadbatchassistant.core.parallel import TaskFailed, map_files
-from cadbatchassistant.core.text_replace import ReplaceRule, process_dxf_file
-from cadbatchassistant.gui.async_panel import AsyncPanel
-from cadbatchassistant.gui.gui_shared import (
+from cadbatchassistant.core.common.input_files import check_duplicate_names
+from cadbatchassistant.core.common.parallel import TaskFailed, map_files
+from cadbatchassistant.core.common.text_replace import ReplaceRule, process_dxf_file
+from cadbatchassistant.gui.components.async_panel import AsyncPanel
+from cadbatchassistant.gui.mixins.gui_shared import (
     FilesPanelMixin,
     PanelLayoutMixin,
     RunStartMixin,

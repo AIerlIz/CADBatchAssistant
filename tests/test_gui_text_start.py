@@ -57,7 +57,12 @@ class TextStartCopyFailureTest(unittest.TestCase):
         按钮无需复位（从未被禁用），不存在卡死运行态的可能。
         """
         self._patch_work_chain()
-        with mock.patch.object(gt.messagebox, "showwarning"):
+        # mock 弹窗：_prepare_run 里缺 ODA 时会 showerror（本地桌面会弹窗，
+        # CI 无交互会话则模态框无人点击→挂起→120s 超时）。必须 mock 掉。
+        with (
+            mock.patch.object(gt.messagebox, "showwarning"),
+            mock.patch.object(gt.messagebox, "showerror"),
+        ):
             self.app._start()
         self.assertFalse(self.app.running)
         self.app.btn_start.config.assert_not_called()  # 从未禁用，无需恢复

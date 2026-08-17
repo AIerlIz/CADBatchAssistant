@@ -32,17 +32,6 @@ LogFn = Callable[[str], None]
 ProgressFn = Callable[[int], None]
 
 
-def _point_tolerance(rules: dict | None) -> float:
-    """安全解析 point_tolerance 配置；缺失/非法值时回退默认 5.0。
-
-    配置来自用户可编辑的 config.json，非法值不应让整个流程中断。
-    """
-    try:
-        return float((rules or {}).get("point_tolerance", 5))
-    except (TypeError, ValueError):
-        return 5.0
-
-
 class PipelineResult:
     """一次流程的结果。"""
 
@@ -77,13 +66,13 @@ def parse_template_fields(template_dwg: str | Path, oda: str = "") -> list[str]:
 
 
 def _extract_task(item: tuple) -> dict:
-    """并行 worker：解包 (dxf_path, anchors, point_tolerance) 取值。
+    """并行 worker：解包 (dxf_path, anchors) 取值。
 
     顶层函数（Windows spawn 可 pickle）；单文件异常由 map_files 包装为
     TaskFailed，调用方统一容错。
     """
-    f, anchors, point_tol = item
-    return extract_by_anchors(f, anchors, point_tolerance=point_tol)
+    f, anchors = item
+    return extract_by_anchors(f, anchors)
 
 
 def run_pipeline(
@@ -228,11 +217,9 @@ def run_pipeline(
             result.error = "没有任何 DXF 产物，无法继续"
             return result
 
-        # 6. 逐文件按锚点取值（图号列判定已并入取值/输出层，此处不再重复计算）
-        #    锚点一律按覆盖矩形取值，point_tolerance 仅为历史配置兼容保留
-        point_tol = _point_tolerance(rules)
+        # 6. 逐文件按锚点取值（所有锚点一律按覆盖矩形取值）
         total = len(dxf_files)
-        tasks = [(f, anchors, point_tol) for f in dxf_files]
+        tasks = [(f, anchors) for f in dxf_files]
         results: list[dict[str, list[str]] | None] = [None] * total
         cancelled = {"v": False}
 

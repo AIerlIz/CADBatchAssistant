@@ -36,7 +36,7 @@ def _text_bounds(e) -> tuple[float, float, float, float]:
     MTEXT 优先用 ezdxf 的 get_bounding_box；TEXT/回退按字符数估算
     （中文字符宽 ≈ 字高，ASCII 宽 ≈ 0.6×字高），以插入点为中心扩展。
     覆盖区域完全由占位符文字在模板中的大小决定——把占位符文字调大
-    即可覆盖更大的取值范围，不再依赖 point_tolerance。
+    即可覆盖更大的取值范围（不使用坐标容差）。
     """
     x, y = _entity_insert_point(e)
     if e.dxftype() == "MTEXT":

@@ -107,7 +107,6 @@ def main() -> int:
         "",
         [f1],
         TMP / "x.xlsx",
-        rules={"figure_field": "图号"},
         log=logs.append,
         progress=lambda p: None,
     )
@@ -120,7 +119,6 @@ def main() -> int:
         xlsx_tpl,
         [f1, f2, f3],
         out,
-        rules={"figure_field": "图号"},
         log=logs.append,
         progress=lambda p: None,
     )
@@ -171,7 +169,6 @@ def main() -> int:
         xlsx_tpl3,
         [f1, f2, f3],
         out3,
-        rules={"figure_field": "图号"},
         log=logs.append,
         progress=lambda p: None,
     )
@@ -202,7 +199,6 @@ def main() -> int:
         bad,
         [f1],
         TMP / "bad.xlsx",
-        rules={"figure_field": "图号"},
         log=logs.append,
         progress=lambda p: None,
     )
@@ -225,7 +221,6 @@ def main() -> int:
         multi,
         [f1],
         out_m,
-        rules={"figure_field": "图号"},
         log=logs.append,
         progress=lambda p: None,
     )
@@ -257,7 +252,6 @@ def main() -> int:
         tie,
         [f1],
         TMP / "目录_tie.xlsx",
-        rules={"figure_field": "图号"},
         log=logs.append,
         progress=lambda p: None,
     )
@@ -274,7 +268,6 @@ def main() -> int:
         tie,
         [f1],
         TMP / "目录_tieB.xlsx",
-        rules={"figure_field": "图号"},
         sheet_name="目录B",
         log=logs.append,
         progress=lambda p: None,

@@ -62,6 +62,7 @@ class OutputSameAsInputProtectionTest(unittest.TestCase):
 
         conv = mock.Mock()
         conv.resolve.return_value = ""
+        conv.require_for_dwg.return_value = None
         conv.template_to_dxf.side_effect = dc.ODAError("mock oda 失败")
         with (
             mock.patch.object(dc, "get_converter", return_value=conv),
@@ -115,13 +116,10 @@ class OutputSameAsInputProtectionTest(unittest.TestCase):
         self.before_dir.joinpath("A1.dwg").write_bytes(b"MOCK-DWG")
         conv = mock.Mock()
         conv.resolve.return_value = ""
+        conv.require_for_dwg.return_value = None
+        conv.require_for_dwg.return_value = None
         conv.dwg_to_dxf.side_effect = dc.ODAError("mock oda 失败")
         with (
-            mock.patch.object(
-                dc,
-                "require_oda_for_dwg",
-                return_value=None,
-            ),
             mock.patch.object(
                 dc,
                 "get_converter",
@@ -148,6 +146,7 @@ class OutputSameAsInputProtectionTest(unittest.TestCase):
         before = list(Path(tempfile.gettempdir()).glob("iso_fill_*"))
         conv = mock.Mock()
         conv.resolve.return_value = ""
+        conv.require_for_dwg.return_value = None
         conv.template_to_dxf.side_effect = dc.ODAError("mock oda 失败")
         with (
             mock.patch.object(dc, "get_converter", return_value=conv),
@@ -215,10 +214,11 @@ class FillPipelineWriteBackSkipTest(unittest.TestCase):
 
         conv = mock.Mock()
         conv.resolve.return_value = ""
+        conv.require_for_dwg.return_value = None
+        conv.require_for_dwg.return_value = None
         conv.template_to_dxf.return_value = str(self.template)
         with (
             mock.patch.object(dc, "get_converter", return_value=conv),
-            mock.patch.object(dc, "require_oda_for_dwg", return_value=None),
         ):
             summary = fill_pipeline.run_pipeline(
                 str(self.xlsx),
@@ -304,9 +304,10 @@ class FillPipelineMetaPriorityTest(unittest.TestCase):
         self.assertFalse(self.template.is_file())  # 模板库只有 meta JSON
         conv = mock.Mock()
         conv.resolve.return_value = ""
+        conv.require_for_dwg.return_value = None
+        conv.require_for_dwg.return_value = None
         with (
             mock.patch.object(dc, "get_converter", return_value=conv),
-            mock.patch.object(dc, "require_oda_for_dwg", return_value=None),
         ):
             summary = fill_pipeline.run_pipeline(
                 str(self.xlsx),
@@ -329,9 +330,10 @@ class FillPipelineMetaPriorityTest(unittest.TestCase):
         save_template_meta(self.template, {"placeholders": []})
         conv = mock.Mock()
         conv.resolve.return_value = ""
+        conv.require_for_dwg.return_value = None
+        conv.require_for_dwg.return_value = None
         with (
             mock.patch.object(dc, "get_converter", return_value=conv),
-            mock.patch.object(dc, "require_oda_for_dwg", return_value=None),
             self.assertRaises(ValueError) as ctx,
         ):
             fill_pipeline.run_pipeline(

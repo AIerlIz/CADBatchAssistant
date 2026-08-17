@@ -13,9 +13,9 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Literal
 
-from cadbatchassistant.core.dwg_converter import find_oda_converter
+from cadbatchassistant.core.dwg_converter import get_converter
+from cadbatchassistant.core.filetypes import CAD_SUFFIXES
 from cadbatchassistant.core.templates import (
-    CAD_SUFFIXES,
     remove_template,
     templates_dir,
 )
@@ -36,7 +36,7 @@ def check_oda(
     - 已配置且有效 → 保留用户路径，仅刷新状态提示
     - 探测不到 → 保留当前值，仅显示未检测提示
     """
-    found = find_oda_converter()
+    found = get_converter().find()
     # 用户粘贴的路径可能带引号（Windows 常见），先去引号再判断有效性
     current = var_oda.get().strip().strip('"\'')
     if found:
@@ -119,10 +119,9 @@ def upload_template_file(
     name = os.path.basename(src)
     d = templates_dir(category)
     target = d / (name + ".json")
-    legacy = d / name  # 兼容旧库：同名遗留原文件也提示覆盖
-    if ((target.exists() or legacy.exists())
-            and not messagebox.askyesno(
-                "覆盖", f"模板库已存在 {name}，是否覆盖？")):
+    if target.exists() and not messagebox.askyesno(
+        "覆盖", f"模板库已存在 {name}，是否覆盖？"
+    ):
         return None
     return name, src
 

@@ -15,7 +15,6 @@ from tkinter import filedialog, messagebox, ttk
 
 from cadbatchassistant.core import dwg_converter as dc
 from cadbatchassistant.core.app_config import get_oda, get_out_version
-from cadbatchassistant.core.dwg_converter import require_oda_for_dwg
 from cadbatchassistant.core.filetypes import XLSX_SUFFIXES
 from cadbatchassistant.core.fill_learn_spec import scan_all_placeholders
 from cadbatchassistant.core.fill_pipeline import run_pipeline_files
@@ -254,7 +253,7 @@ class IsoFillApp(
             return None
         # 模板只读 meta（不再转换模板），仅处理图纸为 DWG 时才需要 ODA
         has_dwg = any(f.lower().endswith(".dwg") for f in files)
-        err = require_oda_for_dwg(has_dwg, oda)
+        err = dc.get_converter().require_for_dwg(has_dwg, oda)
         if err:
             messagebox.showerror("缺少 ODA File Converter", err)
             return None

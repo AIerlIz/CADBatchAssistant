@@ -333,7 +333,7 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
         out_version = get_out_version()
         has_dwg = any(p.lower().endswith(".dwg") for p in self.scanned_files)
         if has_dwg and not self.var_dry.get():
-            err = dc.require_oda_for_dwg(True, oda)
+            err = dc.get_converter().require_for_dwg(True, oda)
             if err:
                 messagebox.showerror("缺少 ODA File Converter", err)
                 return None

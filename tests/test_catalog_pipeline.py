@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from cadbatchassistant.core.catalog_pipeline import _point_tolerance
-
 
 def test_run_with_meta_anchors_without_template_file(monkeypatch, tmp_path):
     """模板库只存 meta 时不要求原文件：template_anchors 提供且模板文件不存在也能运行。
@@ -33,6 +31,7 @@ def test_run_with_meta_anchors_without_template_file(monkeypatch, tmp_path):
     conv = mock.Mock()
     conv.resolve.return_value = ""
     conv.require_for_dwg.return_value = None
+    conv.require_for_dwg.return_value = None
     anchors = [Anchor(field="图号", is_area=False, point_x=1.0, point_y=2.0)]
     with (
         mock.patch.object(cp.dc, "get_converter", return_value=conv),
@@ -51,24 +50,6 @@ def test_run_with_meta_anchors_without_template_file(monkeypatch, tmp_path):
 
     assert result.ok
     assert not result.error
-
-
-def test_point_tolerance_default():
-    """未配置时回退默认 5.0。"""
-    assert _point_tolerance(None) == 5.0
-    assert _point_tolerance({}) == 5.0
-
-
-def test_point_tolerance_valid():
-    """合法数字配置正常解析。"""
-    assert _point_tolerance({"point_tolerance": "3.5"}) == 3.5
-    assert _point_tolerance({"point_tolerance": 8}) == 8.0
-
-
-def test_point_tolerance_invalid_falls_back():
-    """M5：非数字配置（用户可编辑 config.json 写坏）回退默认，不抛异常。"""
-    assert _point_tolerance({"point_tolerance": "abc"}) == 5.0
-    assert _point_tolerance({"point_tolerance": None}) == 5.0
 
 
 def test_on_done_progress_and_log_monotonic_when_out_of_order(monkeypatch, tmp_path):
@@ -106,6 +87,7 @@ def test_on_done_progress_and_log_monotonic_when_out_of_order(monkeypatch, tmp_p
     progs: list[int] = []
     conv = mock.Mock()
     conv.resolve.return_value = ""
+    conv.require_for_dwg.return_value = None
     conv.require_for_dwg.return_value = None
     anchors = [Anchor(field="图号", is_area=False, point_x=1.0, point_y=2.0)]
     with (

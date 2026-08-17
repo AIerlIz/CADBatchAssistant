@@ -1,7 +1,7 @@
 """三个功能面板共享的 GUI 组件（文件列表 / 图纸模板库 / 启动样板）。
 
 - load_panel_config / save_panel_config : 面板记忆配置（填表与目录助手共用
-  CadFill/config.json，catalog_ 前缀键互不干扰）
+  %APPDATA%/CADBatchAssistant/panel_config.json，catalog_ 前缀键互不干扰）
 - FilesPanelMixin : 图纸文件列表公共实现（多选/追加/右键与 Delete 删除/拖放/输出目录）
 - TemplateLibraryMixin : 图纸模板库公共实现（下拉/上传/删除/拖放）
 - begin_run / finish_popup : 启动后台任务前的按钮/进度/日志样板 与 完成弹窗
@@ -33,9 +33,9 @@ from cadbatchassistant.gui.tk_widgets import (
     upload_template_file,
 )
 
-# 「填表助手」与「目录助手」共用的面板记忆配置（与旧版 CadFill/config.json 路径一致）
-PANEL_CONFIG_DIR = Path(os.environ.get("APPDATA") or Path.home()) / "CadFill"
-PANEL_CONFIG_FILE = PANEL_CONFIG_DIR / "config.json"
+# 「填表助手」与「目录助手」共用的面板记忆配置（应用配置目录下，与全局设置同目录）
+PANEL_CONFIG_DIR = Path(os.environ.get("APPDATA") or Path.home()) / "CADBatchAssistant"
+PANEL_CONFIG_FILE = PANEL_CONFIG_DIR / "panel_config.json"
 
 
 def load_panel_config() -> dict:

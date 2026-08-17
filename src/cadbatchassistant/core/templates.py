@@ -2,8 +2,7 @@
 
 模板库条目 = 占位符 meta JSON（`<模板名>.json`，如 `图框.dwg.json`）：
 上传时只把解析出的占位符配置写入 JSON，不保存原始 dwg/dxf 文件，
-运行时全部只读 meta。历史版本入库的原文件（.dwg/.dxf 无对应 meta）
-仍可枚举与删除（兼容旧库）。弹窗提示由 gui 层包装
+运行时全部只读 meta。弹窗提示由 gui 层包装
 （gui.tk_widgets.upload_template_file / delete_template_file），
 以便本模块可独立单测。
 """
@@ -14,7 +13,6 @@ import json
 from pathlib import Path
 
 from cadbatchassistant.core.app_config import software_dir
-from cadbatchassistant.core.filetypes import CAD_SUFFIXES
 
 
 def templates_dir(category: str) -> Path:
@@ -45,20 +43,16 @@ def _meta_source(f: Path) -> str:
 def list_templates(category: str) -> list[str]:
     """返回模板库（category 子目录）中的模板名（排序、去重）。
 
-    条目优先取 meta JSON 的 source（原模板文件名，如 `图框.dwg`）；
-    历史版本直接入库的 .dwg/.dxf 原文件（无对应 meta）也一并列出。
+    条目取 meta JSON 的 source（原模板文件名，如 `图框.dwg`）；
+    模板库只存占位符配置 JSON，不保存原文件。
     """
     d = templates_dir(category)
     if not d.is_dir():
         return []
     names: list[str] = []
     for f in d.iterdir():
-        if not f.is_file():
-            continue
-        if f.suffix.lower() == ".json":
+        if f.is_file() and f.suffix.lower() == ".json":
             names.append(_meta_source(f))
-        elif f.suffix.lower() in CAD_SUFFIXES:
-            names.append(f.name)
     return sorted(set(names))
 
 
@@ -73,14 +67,13 @@ def _validate_template_name(name: str) -> None:
 
 
 def remove_template(category: str, name: str) -> None:
-    """删除模板库（category 子目录）中的模板条目（meta JSON + 同名遗留原文件）。
+    """删除模板库（category 子目录）中的模板条目（meta JSON）。
 
     条目不存在时抛 FileNotFoundError（由调用方处理）；name 含路径分隔符或
     越界（被篡改的 source 字段）时抛 ValueError，不做任何删除。
     """
     _validate_template_name(name)
     d = templates_dir(category)
-    removed = False
     # meta：优先 <name>.json；source 与文件名脱钩时按枚举名（source）扫目录匹配
     meta: Path | None = d / (name + ".json")
     if meta is not None and not meta.is_file():
@@ -88,12 +81,6 @@ def remove_template(category: str, name: str) -> None:
             (f for f in d.glob("*.json") if f.is_file() and _meta_source(f) == name),
             None,
         )
-    if meta is not None:
-        meta.unlink()
-        removed = True
-    legacy = d / name
-    if legacy.is_file() and legacy.suffix.lower() in CAD_SUFFIXES:
-        legacy.unlink()
-        removed = True
-    if not removed:
+    if meta is None:
         raise FileNotFoundError(f"模板不存在: {name}")
+    meta.unlink()

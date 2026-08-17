@@ -106,6 +106,7 @@ def test_fill_pipeline_meta_path(tmp_path):
     out = tmp_path / "out"
     conv = mock.Mock()
     conv.resolve.return_value = ""
+    conv.require_for_dwg.return_value = None
     with mock.patch(
         "cadbatchassistant.core.fill_pipeline.dc.get_converter", return_value=conv
     ):
@@ -135,6 +136,7 @@ def test_fill_pipeline_cli_fallback_without_meta(tmp_path):
     out = tmp_path / "out"
     conv = mock.Mock()
     conv.resolve.return_value = ""
+    conv.require_for_dwg.return_value = None
     conv.template_to_dxf.return_value = str(tpl)  # 模板已是 DXF，直接返回
     with mock.patch(
         "cadbatchassistant.core.fill_pipeline.dc.get_converter", return_value=conv

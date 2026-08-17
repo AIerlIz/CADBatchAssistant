@@ -87,8 +87,6 @@ def get_out_version() -> str:
 
 # 目录助手（catalog）规则默认值：软件目录 config.json 的 rules 段可覆盖
 DEFAULT_CATALOG_RULES = {
-    "point_tolerance": 5,
-    "figure_field": "图号",
     "data_rows_per_page": 50,
     "cover_pages": 1,
 }

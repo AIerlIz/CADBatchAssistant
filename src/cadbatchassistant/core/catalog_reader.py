@@ -49,8 +49,6 @@ def _is_id_chars(s: str) -> bool:
 def extract_by_anchors(
     dxf_path: str | Path,
     anchors,
-    point_tolerance: float = 5.0,
-    fig_fields: frozenset[str] = frozenset(),
 ) -> dict[str, list[str]]:
     """按模板锚点从单个 DXF 提取每字段值列表。
 
@@ -59,8 +57,6 @@ def extract_by_anchors(
     - 矩形内仅保留编号型字符（字母/数字/中文/连字符/下划线）
     - 同一字段多个锚点（候选位置）的值合并，保序去重；无值锚点忽略
 
-    point_tolerance / fig_fields 参数为历史兼容保留（单点锚点已改由
-    占位符覆盖区域取值，不再使用坐标容差与「最近 1 个」逻辑）。
     返回 {字段名: [值, ...]}（按锚点出现顺序）。
     """
     doc = ezdxf.readfile(str(dxf_path))

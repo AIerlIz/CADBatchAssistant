@@ -63,22 +63,21 @@ def test_get_out_version_default(tmp_path: Path, monkeypatch) -> None:
 def test_load_catalog_rules_default(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(app_config, "rules_file", lambda: tmp_path / "rules.json")
     rules = app_config.load_catalog_rules()
-    assert rules["figure_field"] == "图号"
-    assert rules["point_tolerance"] == 5
     assert rules["data_rows_per_page"] == 50
+    assert rules["cover_pages"] == 1
 
 
 def test_load_catalog_rules_override_and_filter(tmp_path: Path, monkeypatch) -> None:
     f = tmp_path / "rules.json"
     f.write_text(
-        json.dumps({"rules": {"point_tolerance": 8, "figure_field": ""}}),
+        json.dumps({"rules": {"data_rows_per_page": 60, "cover_pages": None}}),
         encoding="utf-8",
     )
     monkeypatch.setattr(app_config, "rules_file", lambda: f)
     rules = app_config.load_catalog_rules()
-    assert rules["point_tolerance"] == 8
+    assert rules["data_rows_per_page"] == 60
     # 空值被过滤，回退默认
-    assert rules["figure_field"] == "图号"
+    assert rules["cover_pages"] == 1
 
 
 def test_software_dir_is_project_root() -> None:

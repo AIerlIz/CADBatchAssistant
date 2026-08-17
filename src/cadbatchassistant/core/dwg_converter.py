@@ -16,9 +16,7 @@ OutputVersion:
     ACAD2010|ACAD2013|ACAD2018
 OutputType: DWG|DXF|DXF_B|DXF_A
 
-模块级函数（find_oda_converter / require_oda_for_dwg / convert_batch）为兼容保留的
-薄包装，委托给默认的 ODA 实现（_DEFAULT）；新代码建议经 get_converter() 取实现后
-调用方法，以便引擎可切换。
+业务层统一经 get_converter() 获取 Converter 实现后调用方法。
 """
 
 from __future__ import annotations
@@ -387,41 +385,3 @@ def get_converter(kind: str = "oda") -> Converter:
     if kind == "oda":
         return OdaConverter()
     raise ValueError(f"未知的 DWG 转换引擎: {kind}")
-
-
-# ---------------- 模块级便捷函数（兼容保留：仍有调用方） ----------------
-
-_DEFAULT = OdaConverter()
-
-
-def find_oda_converter() -> Path | None:
-    """探测 ODAFileConverter.exe 的路径；未找到返回 None。"""
-    return _DEFAULT.find()
-
-
-def require_oda_for_dwg(has_dwg: bool, oda: str) -> str | None:
-    """需处理 DWG 但未配置有效 ODAFileConverter 时，返回错误文案；否则返回 None。"""
-    return _DEFAULT.require_for_dwg(has_dwg, oda)
-
-
-def convert_batch(
-    oda_exe: str | Path,
-    in_dir: str | Path,
-    out_dir: str | Path,
-    out_version: str = DEFAULT_OUT_VERSION,
-    out_type: str = "DXF",
-    recursive: int = 0,
-    timeout: float = 900,
-    input_filter: str | None = None,
-) -> None:
-    """调用 ODAFileConverter 批量转换，阻塞直至进程退出。"""
-    return _DEFAULT.convert_batch(
-        oda_exe,
-        in_dir,
-        out_dir,
-        out_version=out_version,
-        out_type=out_type,
-        recursive=recursive,
-        timeout=timeout,
-        input_filter=input_filter,
-    )

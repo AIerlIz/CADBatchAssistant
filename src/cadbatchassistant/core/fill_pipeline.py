@@ -121,8 +121,9 @@ def run_pipeline(
         raise ValueError(f"以下图纸在目录中找不到文件：{', '.join(missing)}")
     need_oda = bool(dwg_names)
 
-    oda_exe = dc.get_converter().resolve(oda)
-    err = dc.require_oda_for_dwg(need_oda, str(oda_exe) if oda_exe else "")
+    converter = dc.get_converter()
+    oda_exe = converter.resolve(oda)
+    err = converter.require_for_dwg(need_oda, str(oda_exe) if oda_exe else "")
     if err:
         raise FileNotFoundError(err)
 
@@ -152,7 +153,7 @@ def run_pipeline(
         _check_cancel(cancel)
         emit("[1/4] 准备 DXF（DWG 经 ODA 转换，DXF 直接复制） ...")
         stage_dxf_batch(
-            dc.get_converter(),
+            converter,
             oda_exe,
             before_dir,
             before_dxf,
@@ -184,7 +185,7 @@ def run_pipeline(
             if not template or not os.path.isfile(str(template)):
                 raise ValueError("缺少图纸模板文件（值格填 [字段名] 占位的 .dwg/.dxf）")
             # CLI / 命令行等直接传模板路径：现场转换并扫描（历史行为兜底）
-            t_dxf = dc.get_converter().template_to_dxf(
+            t_dxf = converter.template_to_dxf(
                 template, tmp, oda_exe, out_version
             )
             placeholders = scan_all_placeholders(t_dxf)
@@ -282,7 +283,7 @@ def run_pipeline(
         _check_cancel(cancel)
         emit(f"[4/4] 输出 → {out_dir} ...")
         write_back_dxf_batch(
-            dc.get_converter(),
+            converter,
             oda_exe,
             filled_dxf,
             out_dir,

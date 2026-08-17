@@ -18,11 +18,19 @@ def _make_vars(current: str = ""):
     return var_oda, var_info
 
 
+def _patch_converter(monkeypatch, find_result):
+    """mock get_converter 返回带 .find() 的 converter。"""
+    conv = mock.Mock()
+    conv.find.return_value = find_result
+    monkeypatch.setattr(tw, "get_converter", lambda: conv)
+    return conv
+
+
 def test_check_oda_fills_empty(tmp_path, monkeypatch):
     """未配置 → 启动探测到 ODA 时自动填入。"""
     exe = tmp_path / "ODAFileConverter.exe"
     exe.write_text("x", encoding="utf-8")
-    monkeypatch.setattr(tw, "find_oda_converter", lambda: exe)
+    _patch_converter(monkeypatch, exe)
     var_oda, var_info = _make_vars()
     tw.check_oda(var_oda, var_info)
     var_oda.set.assert_called_once_with(str(exe))
@@ -34,7 +42,7 @@ def test_check_oda_replaces_invalid_config(tmp_path, monkeypatch):
     exe = tmp_path / "ODAFileConverter.exe"
     exe.write_text("x", encoding="utf-8")
     stale = tmp_path / "old" / "ODAFileConverter.exe"
-    monkeypatch.setattr(tw, "find_oda_converter", lambda: exe)
+    _patch_converter(monkeypatch, exe)
     var_oda, var_info = _make_vars(current=str(stale))
     tw.check_oda(var_oda, var_info)
     var_oda.set.assert_called_once_with(str(exe))
@@ -44,7 +52,7 @@ def test_check_oda_keeps_valid_config(tmp_path, monkeypatch):
     """已配置且路径有效 → 保留用户路径，不覆盖。"""
     exe = tmp_path / "ODAFileConverter.exe"
     exe.write_text("x", encoding="utf-8")
-    monkeypatch.setattr(tw, "find_oda_converter", lambda: exe)
+    _patch_converter(monkeypatch, exe)
     var_oda, var_info = _make_vars(current=str(exe))
     tw.check_oda(var_oda, var_info)
     var_oda.set.assert_not_called()
@@ -53,7 +61,7 @@ def test_check_oda_keeps_valid_config(tmp_path, monkeypatch):
 
 def test_check_oda_not_found_keeps_value(tmp_path, monkeypatch):
     """探测不到 → 保留当前值，仅提示未检测。"""
-    monkeypatch.setattr(tw, "find_oda_converter", lambda: None)
+    _patch_converter(monkeypatch, None)
     var_oda, var_info = _make_vars(current=r"D:\some\oda.exe")
     tw.check_oda(var_oda, var_info)
     var_oda.set.assert_not_called()

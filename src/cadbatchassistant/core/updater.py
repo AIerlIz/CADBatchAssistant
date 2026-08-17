@@ -159,6 +159,9 @@ def check_latest(repo: str = GITHUB_REPO, timeout: int = API_TIMEOUT) -> dict:
             break
     if not url:
         return {"ok": False, "error": f"最新版本未包含安装包 {ASSET_NAME}"}
+    if not sha256_url:
+        # 更新强制 sha256 强校验：缺少校验和资产的 Release 视为不可安全更新
+        return {"ok": False, "error": f"最新版本未包含校验和资产 {SHA256_ASSET_NAME}"}
 
     return {
         "ok": True,
@@ -166,7 +169,7 @@ def check_latest(repo: str = GITHUB_REPO, timeout: int = API_TIMEOUT) -> dict:
         "version": version,
         "url": str(url),
         "size": int(size) if size else None,
-        "sha256_url": str(sha256_url) if sha256_url else None,
+        "sha256_url": str(sha256_url),
     }
 
 
@@ -254,14 +257,14 @@ def _download_once(
     progress_cb,
     size: int | None,
     expect_exe: bool,
-    expected_sha256: str | None = None,
+    expected_sha256: str,
 ) -> str:
     """单次下载 + 校验（不做重试）。
 
     - 网络 / 协议错误（含 IncompleteRead 等 HTTPException）转 UpdateError 并清理；
     - progress_cb 抛出的 UpdateError（用户取消）原样传播，不清理、不重试；
-    - 下载完成后校验 size（提供时）、PE 头（expect_exe 时）与
-      sha256（expected_sha256 提供时，M9 强校验）。
+    - 下载完成后必做 sha256 强校验（M9），另校验 size（提供时）与
+      PE 头（expect_exe 时）作为纵深防御。
     """
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
@@ -298,22 +301,21 @@ def _download_once(
         if actual != size:
             _cleanup(dest)
             raise UpdateError(f"{source}下载文件不完整（{actual} / {size} 字节）")
-    if expected_sha256 is not None:
-        # M9：sha256 强校验——镜像/服务器内容被篡改（即使凑齐 size 与 MZ 头）也会被拦截
-        hasher = hashlib.sha256()
-        try:
-            with open(dest, "rb") as f:
-                for chunk in iter(lambda: f.read(64 * 1024), b""):
-                    hasher.update(chunk)
-        except OSError as e:
-            _cleanup(dest)
-            raise UpdateError(f"读取下载文件失败：{e}") from e
-        if hasher.hexdigest() != expected_sha256.lower():
-            _cleanup(dest)
-            raise UpdateError(
-                f"{source}下载文件校验失败（SHA-256 不匹配），"
-                "文件可能被篡改，请检查网络或更换下载镜像"
-            )
+    # M9：sha256 强校验——镜像/服务器内容被篡改（即使凑齐 size 与 MZ 头）也会被拦截
+    hasher = hashlib.sha256()
+    try:
+        with open(dest, "rb") as f:
+            for chunk in iter(lambda: f.read(64 * 1024), b""):
+                hasher.update(chunk)
+    except OSError as e:
+        _cleanup(dest)
+        raise UpdateError(f"读取下载文件失败：{e}") from e
+    if hasher.hexdigest() != expected_sha256.lower():
+        _cleanup(dest)
+        raise UpdateError(
+            f"{source}下载文件校验失败（SHA-256 不匹配），"
+            "文件可能被篡改，请检查网络或更换下载镜像"
+        )
     if expect_exe:
         try:
             with open(dest, "rb") as f:
@@ -346,9 +348,11 @@ def download_asset(
     """分块下载更新包到 dest，返回 dest 路径。
 
     progress_cb(downloaded, total) 在主线程之外的调用线程执行。
-    下载完成后校验（M9）：提供 sha256_url 时先获取校验和，下载后强校验
-    SHA-256（内容被篡改即失败）；无 sha256_url（旧 Release 未发布校验和）
-    时回退 size + PE 头（MZ）校验。mirror 为明文 http:// 时直接拒绝。
+    下载强校验（M9）：sha256_url 必填，先获取校验和（始终直连 GitHub，
+    不走镜像，确保镜像被攻破时强校验仍有效），下载后校验 SHA-256
+    （内容被篡改即失败），另校验 size（提供时）与 PE 头（expect_exe 时）。
+    缺少 sha256_url 或校验和获取失败一律视为异常中断，不做弱校验回退。
+    mirror 为明文 http:// 时直接拒绝。
     网络错误与校验失败自动重试 retries 次（指数退避，起始 retry_delay 秒）；
     配置了镜像且失败时（fallback_to_direct）自动改用原始 URL 直连再试。
     用户取消（progress_cb 抛 UpdateError(CANCEL_MSG)）或 abort_event 被置位
@@ -359,12 +363,14 @@ def download_asset(
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     _validate_mirror_scheme(mirror)
+    if not sha256_url:
+        raise UpdateError(
+            f"缺少 sha256 校验和资产地址（{SHA256_ASSET_NAME}），无法安全更新"
+        )
 
     # M9：取 sha256 校验和——始终直连 GitHub（不走镜像），确保镜像被攻破时
-    # 强校验仍有效；获取失败视为异常中断，避免在"应可强校验"的场景降级为弱校验。
-    expected_sha256: str | None = None
-    if sha256_url:
-        expected_sha256 = _fetch_sha256(sha256_url)
+    # 强校验仍有效；获取失败视为异常中断，不做弱校验回退。
+    expected_sha256 = _fetch_sha256(sha256_url)
 
     direct_url = url
     mirror_url = _mirror_url(url, mirror)

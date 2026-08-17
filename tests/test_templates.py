@@ -1,6 +1,6 @@
 """core.templates 纯文件操作单测（模板库只存占位符 meta JSON）。
 
-覆盖模板库目录定位、枚举（meta JSON + 兼容遗留原文件）与删除；
+覆盖模板库目录定位、枚举（仅 meta JSON 条目）与删除；
 templates_dir 用 monkeypatch 隔离到 tmp_path，不触碰真实软件目录 templates/。
 """
 
@@ -48,27 +48,6 @@ def test_list_templates_from_meta(monkeypatch, tmp_path: Path) -> None:
     assert templates.list_templates("fill") == ["tpl.dxf", "图框.dwg"]
 
 
-def test_list_templates_legacy_files(monkeypatch, tmp_path: Path) -> None:
-    """历史版本直接入库的原文件（无对应 meta）仍可枚举。"""
-    d = tmp_path / "templates" / "fill"
-    d.mkdir(parents=True)
-    (d / "a.dwg").write_text("x")
-    (d / "b.dxf").write_text("x")
-    (d / "c.txt").write_text("x")
-    _patch_templates_dir(monkeypatch, tmp_path)
-    assert templates.list_templates("fill") == ["a.dwg", "b.dxf"]
-
-
-def test_list_templates_meta_and_legacy_dedup(monkeypatch, tmp_path: Path) -> None:
-    """同一模板同时存在 meta 与遗留原文件时只列一次。"""
-    d = tmp_path / "templates" / "fill"
-    d.mkdir(parents=True)
-    (d / "a.dwg").write_text("x")  # 遗留原文件
-    _write_meta(d, "a.dwg", source="a.dwg")  # 新 meta 条目
-    _patch_templates_dir(monkeypatch, tmp_path)
-    assert templates.list_templates("fill") == ["a.dwg"]
-
-
 def test_list_templates_bad_meta_falls_back_to_name(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -95,17 +74,19 @@ def test_remove_template_removes_meta(monkeypatch, tmp_path: Path) -> None:
     assert not (d / "a.dwg.json").exists()
 
 
-def test_remove_template_removes_meta_and_legacy(monkeypatch, tmp_path: Path) -> None:
-    """新 meta + 遗留原文件一并删除。"""
+def test_remove_template_leaves_legacy_files_untouched(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """移除 meta 时不再触碰旧库遗留的原始文件（模板库只管理 meta 条目）。"""
     d = tmp_path / "templates" / "fill"
     d.mkdir(parents=True)
     f = d / "a.dwg"
-    f.write_text("x")
+    f.write_text("x")  # 旧库遗留原文件（无 meta 对应，不再枚举）
     _write_meta(d, "a.dwg", source="a.dwg")
     _patch_templates_dir(monkeypatch, tmp_path)
     templates.remove_template("fill", "a.dwg")
-    assert not f.exists()
     assert not (d / "a.dwg.json").exists()
+    assert f.exists()  # 原文件不在管理范围内，保留
 
 
 def test_remove_template_by_source_when_filename_detached(monkeypatch, tmp_path):

@@ -43,7 +43,22 @@ jobs:
         # 防止失败用例混入 Release（本地用同样命令验证）。
         # --timeout 依赖 dev 组 pytest-timeout：防 runner 上某个测试无限挂起
         # （如 GUI 冒烟在会话环境下卡住），超时即失败并输出挂起测试名，便于定位。
-        run: uv run pytest -q --timeout=120
+        # 失败时用 ::error 把 FAILED 测试名转成 GitHub annotation（匿名可读），
+        # 避免依赖受限的 job 日志下载。
+        shell: pwsh
+        run: |
+          $out = uv run pytest -q --timeout=120 2>&1
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            # 把 pytest 失败摘要（含测试名的行）输出为 annotation
+            $out | Select-String -Pattern 'FAILED|pytest-timeout|Timeout|AssertionError|Error' `
+              | Select-Object -First 20 | ForEach-Object {
+                $line = $_.Line.Substring(0, [Math]::Min(200, $_.Line.Length))
+                Write-Output "::error file=tests::$line"
+              }
+          }
+          $out | Select-Object -Last 5
+          exit $code
 
       - name: Inject version from tag
         # 发版 tag（如 v1.0.1）自动写入 __version__，无需手动同步版本号；

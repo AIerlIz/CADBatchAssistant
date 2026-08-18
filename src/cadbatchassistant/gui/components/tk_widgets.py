@@ -19,7 +19,6 @@ from cadbatchassistant.core.common.templates import (
     templates_dir,
 )
 from cadbatchassistant.core.dwg_converter import get_converter
-from cadbatchassistant.gui.components.tk_util import default_font_family
 
 # ---------------- ODA 选项助手 ----------------
 
@@ -72,27 +71,17 @@ def build_oda_row(
 ) -> tuple[tk.StringVar, tk.StringVar]:
     """在 parent 的 row=0 构建 ODA 路径选择行，返回 (var_oda, var_info)。
 
-    布局（单行微调）：Label(定宽 19，与版本/并行度行对齐) | Entry(列 1 伸展)
-    | 浏览 | 状态提示（灰小字、列 3 伸展右对齐——长提示文案不挤压输入框）。
-    浏览与 _check_oda 由调用方绑定（命令复用 browse_oda / check_oda）。
+    布局：Label | Entry(伸展) | 浏览按钮 | 状态提示；浏览与 _check_oda
+    由调用方绑定（命令复用 browse_oda / check_oda）。
     """
     var_oda = tk.StringVar(value=initial)
     var_info = tk.StringVar()
-    ttk.Label(parent, text=label, width=19).grid(row=0, column=0, sticky="w")
-    ttk.Entry(parent, textvariable=var_oda).grid(
-        row=0, column=1, sticky="ew", padx=(4, 4)
-    )
+    ttk.Label(parent, text=label).grid(row=0, column=0, sticky="w")
+    ttk.Entry(parent, textvariable=var_oda).grid(row=0, column=1, sticky="ew", padx=4)
     ttk.Button(
         parent, text=browse_text, command=lambda: browse_oda(var_oda, var_info)
-    ).grid(row=0, column=2, padx=(0, 4))
-    ttk.Label(
-        parent,
-        textvariable=var_info,
-        foreground="#666",
-        font=(default_font_family(), 9),
-    ).grid(row=0, column=3, sticky="e", padx=(4, 0))
-    parent.columnconfigure(1, weight=1)  # 输入框伸展
-    parent.columnconfigure(3, weight=1)  # 状态区域伸展（右对齐）
+    ).grid(row=0, column=2, padx=4)
+    ttk.Label(parent, textvariable=var_info).grid(row=0, column=3, sticky="w", padx=4)
     return var_oda, var_info
 
 

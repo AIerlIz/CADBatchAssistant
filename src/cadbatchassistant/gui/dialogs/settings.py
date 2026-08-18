@@ -52,8 +52,7 @@ class SettingsPanel:
 
         self.var_oda, self.var_oda_info = build_oda_row(cfg_frame)
 
-        # 标签定宽 19 与 ODA 行对齐（build_oda_row 的 label width）
-        ttk.Label(cfg_frame, text="DWG 输出版本:", width=19).grid(
+        ttk.Label(cfg_frame, text="DWG 输出版本:").grid(
             row=1, column=0, sticky="w", pady=(6, 0)
         )
         self.var_version = tk.StringVar()
@@ -67,7 +66,7 @@ class SettingsPanel:
         version_cb.grid(row=1, column=1, sticky="w", padx=4, pady=(6, 0))
         cfg_frame.columnconfigure(1, weight=1)
 
-        ttk.Label(cfg_frame, text="并行进程数:", width=19).grid(
+        ttk.Label(cfg_frame, text="并行进程数:").grid(
             row=2, column=0, sticky="w", pady=(6, 0)
         )
         self.var_max_workers = tk.StringVar()
@@ -84,6 +83,7 @@ class SettingsPanel:
             text="同时处理的图纸数（自动 = 按 CPU 数 ≤4；多核大批量可调大）",
             foreground="#555",
         ).grid(row=2, column=2, sticky="w", padx=(4, 0), pady=(6, 0))
+        cfg_frame.columnconfigure(2, weight=1)
 
         # ---- 软件更新 ----
         upd_frame = ttk.LabelFrame(main, text="软件更新", padding=8)

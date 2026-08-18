@@ -66,6 +66,7 @@ class SettingsPanel:
         version_cb.grid(row=1, column=1, sticky="w", padx=4, pady=(6, 0))
         cfg_frame.columnconfigure(1, weight=1)
 
+        # 与 v2.4.0 风格一致：标签用自然宽度（不强行定宽对齐），下拉贴左侧
         ttk.Label(cfg_frame, text="并行进程数:").grid(
             row=2, column=0, sticky="w", pady=(6, 0)
         )
@@ -83,7 +84,6 @@ class SettingsPanel:
             text="同时处理的图纸数（自动 = 按 CPU 数 ≤4；多核大批量可调大）",
             foreground="#555",
         ).grid(row=2, column=2, sticky="w", padx=(4, 0), pady=(6, 0))
-        cfg_frame.columnconfigure(2, weight=1)
 
         # ---- 软件更新 ----
         upd_frame = ttk.LabelFrame(main, text="软件更新", padding=8)

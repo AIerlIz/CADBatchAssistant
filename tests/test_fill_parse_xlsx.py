@@ -215,5 +215,51 @@ class LoadSheetMetaTest(unittest.TestCase):
         self.assertEqual(headers["Sheet"], ["REV", "REV_2"])
 
 
+class LoadXlsxWithHeadersTest(unittest.TestCase):
+    """load_xlsx_with_headers：一次读取同时返回数据与表头（流水线单次解析）。"""
+
+    def setUp(self):
+        self._tmp = Path(tempfile.mkdtemp(prefix="px_headers_"))
+
+    def tearDown(self):
+        for f in self._tmp.iterdir():
+            f.unlink(missing_ok=True)
+        self._tmp.rmdir()
+
+    def test_data_and_headers_consistent(self):
+        p = self._tmp / "d.xlsx"
+        _make_xlsx(p, ["图纸", "图号", "名称"], [["A1", "D-001", "舱段"], ["A2", "D-002", ""]])
+        data, headers = fill_parse_xlsx.load_xlsx_with_headers(str(p))
+        # 表头与 get_headers 一致
+        self.assertEqual(headers, fill_parse_xlsx.get_headers(str(p)))
+        # 数据与 load_xlsx 一致（单次读取不改变语义）
+        self.assertEqual(data, fill_parse_xlsx.load_xlsx(str(p)))
+        self.assertEqual(data["A1"]["图号"], "D-001")
+
+    def test_match_col_and_sheet_respected(self):
+        p = self._tmp / "m.xlsx"
+        _make_xlsx_multi(
+            p,
+            {
+                "主表": (["序号", "图号", "名称"], [["1", "A-1", "图1"]]),
+                "副表": (["X"], [["y"]]),
+            },
+        )
+        data, headers = fill_parse_xlsx.load_xlsx_with_headers(
+            str(p), match_col="图号", sheet="主表"
+        )
+        self.assertEqual(headers, ["序号", "图号", "名称"])
+        self.assertEqual(set(data), {"A-1"})
+        self.assertEqual(data["A-1"]["序号"], "1")
+
+    def test_empty_sheet_raises(self):
+        p = self._tmp / "empty.xlsx"
+        _make_xlsx(p, ["图纸"], [])
+        # 无数据行但表头存在：headers 正常返回，data 为空（与 load_xlsx 一致）
+        data, headers = fill_parse_xlsx.load_xlsx_with_headers(str(p))
+        self.assertEqual(headers, ["图纸"])
+        self.assertEqual(data, {})
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -60,6 +60,36 @@ def test_get_out_version_default(tmp_path: Path, monkeypatch) -> None:
     assert app_config.get_out_version() == "ACAD2018"
 
 
+def test_get_max_workers_default(tmp_path: Path, monkeypatch) -> None:
+    """无配置/无环境变量：默认 4。"""
+    monkeypatch.setattr(app_config, "APP_CONFIG_FILE", tmp_path / "cfg.json")
+    app_config.save_app_config({})
+    assert app_config.get_max_workers() == 4
+
+
+def test_get_max_workers_from_config(tmp_path: Path, monkeypatch) -> None:
+    """config.json 的 max_workers 键生效。"""
+    monkeypatch.setattr(app_config, "APP_CONFIG_FILE", tmp_path / "cfg.json")
+    app_config.save_app_config({"max_workers": 8})
+    assert app_config.get_max_workers() == 8
+
+
+def test_get_max_workers_env_override(tmp_path: Path, monkeypatch) -> None:
+    """环境变量 CADBATCH_MAX_WORKERS 优先于配置。"""
+    monkeypatch.setattr(app_config, "APP_CONFIG_FILE", tmp_path / "cfg.json")
+    app_config.save_app_config({"max_workers": 8})
+    monkeypatch.setenv("CADBATCH_MAX_WORKERS", "12")
+    assert app_config.get_max_workers() == 12
+
+
+def test_get_max_workers_invalid_falls_back(tmp_path: Path, monkeypatch) -> None:
+    """非法值（非数字/越界/布尔）回退默认 4。"""
+    monkeypatch.setattr(app_config, "APP_CONFIG_FILE", tmp_path / "cfg.json")
+    for bad in ("abc", 0, 99, True):
+        app_config.save_app_config({"max_workers": bad})
+        assert app_config.get_max_workers() == 4
+
+
 def test_load_catalog_rules_default(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(app_config, "rules_file", lambda: tmp_path / "rules.json")
     rules = app_config.load_catalog_rules()

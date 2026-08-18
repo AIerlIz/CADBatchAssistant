@@ -151,8 +151,12 @@ def run_pipeline(
     with tempfile.TemporaryDirectory(prefix="cad_catalog_") as tmp:
         tmp_dir = Path(tmp)
         try:
+            # 只把 DWG 复制到临时目录（ODA 转换要求输入为目录）：DXF 图纸
+            # 直接读取原始路径、模板由 template_to_dxf 自行复制——纯 DXF 批
+            # 不再整批白复制（旧实现把模板+全部图纸 copy2 一遍）。
             for src in all_inputs:
-                shutil.copy2(src, tmp_dir / src.name)
+                if Path(str(src)).suffix.lower() == ".dwg":
+                    shutil.copy2(src, tmp_dir / src.name)
         except OSError as ex:
             result.error = f"复制输入文件失败: {ex}"
             return result
@@ -195,14 +199,16 @@ def run_pipeline(
             except dc.ODAError as ex:
                 result.error = f"DWG 转换失败: {ex}"
                 return result
-        # 图纸产物：DWG 转换到 dxf_out，DXF 源文件直接复制在 tmp_dir
+        # 图纸产物：DWG 转换到 dxf_out；DXF 源文件直接读取原始路径（不再复制）。
+        # 注：非 dwg 的候选直接用原文件本身，同时修复旧实现把大写 .DXF 源
+        # 误判为「无产物」（旧逻辑按小写 .dxf 拼接候选名，与复制名大小写不符）。
         dxf_files: list[Path] = []
         failed_files: list[str] = []
         for p in files:
             if p.suffix.lower() == ".dwg":
                 cand = dxf_out / (p.stem + ".dxf")
             else:
-                cand = tmp_dir / (p.stem + ".dxf")
+                cand = p
             if cand.is_file():
                 dxf_files.append(cand)
             else:
@@ -243,7 +249,13 @@ def run_pipeline(
             else:
                 results[idx] = result
 
-        map_files(_extract_task, tasks, is_cancelled=_is_cancelled, on_done=_on_done)
+        map_files(
+            _extract_task,
+            tasks,
+            is_cancelled=_is_cancelled,
+            on_done=_on_done,
+            reuse_pool=True,
+        )
         if cancelled["v"]:
             result.error = "已取消"
             return result

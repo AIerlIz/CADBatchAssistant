@@ -92,16 +92,16 @@ class FileResult:
     per_type: dict[str, int] = field(default_factory=dict)
 
 
-def apply_rules(text: str, rules: list[ReplaceRule]) -> tuple[str, int]:
-    """对单个文本依次应用所有替换规则，返回 (新文本, 替换次数)。
+def _compile_rule_patterns(
+    rules: list[ReplaceRule],
+) -> list[tuple[ReplaceRule, re.Pattern]]:
+    """预编译规则：每文件一次，避免对每个文本实体重复 re.compile。
 
-    - rule.regex=False（默认）：find/replace 按普通文本字面处理（自动转义
-      正则元字符，如半角括号、点、星号；替换文本中的 \\1、反斜杠原样输出）
-    - rule.regex=True：find 按正则表达式解释，replace 支持 \\1 反向引用
-    - 非法正则跳过该规则（GUI 已提前拦截，此处兜底）
+    普通文本模式的 find 也在此转义编译（语义与 apply_rules 完全一致）；
+    非法正则在编译期跳过（与逐实体应用时的行为一致）。
+    返回 [(rule, pattern)]：apply_compiled_patterns 按规则顺序应用。
     """
-    new_text = text
-    total = 0
+    compiled: list[tuple[ReplaceRule, re.Pattern]] = []
     for rule in rules:
         if not rule.find:
             continue  # 空模式会匹配任意位置，必须排除
@@ -113,6 +113,21 @@ def apply_rules(text: str, rules: list[ReplaceRule]) -> tuple[str, int]:
                 pattern = re.compile(re.escape(rule.find), flags)
         except re.error:
             continue  # 非法正则：跳过该规则，不中断批次
+        compiled.append((rule, pattern))
+    return compiled
+
+
+def apply_compiled_patterns(
+    text: str, compiled: list[tuple[ReplaceRule, re.Pattern]]
+) -> tuple[str, int]:
+    """对预编译规则应用替换，返回 (新文本, 替换次数)。
+
+    语义与 apply_rules 逐文本调用完全一致，仅把 re.compile 从每个文本
+    实体上移到编译期（R 规则 × N 实体 → R 次编译）。
+    """
+    new_text = text
+    total = 0
+    for rule, pattern in compiled:
         try:
             if rule.regex:
                 new_text, count = pattern.subn(rule.replace, new_text)
@@ -125,6 +140,20 @@ def apply_rules(text: str, rules: list[ReplaceRule]) -> tuple[str, int]:
             continue  # 替换模板引用无效组（如 \\1 无对应捕获组）：跳过该规则
         total += count
     return new_text, total
+
+
+def apply_rules(text: str, rules: list[ReplaceRule]) -> tuple[str, int]:
+    """对单个文本依次应用所有替换规则，返回 (新文本, 替换次数)。
+
+    - rule.regex=False（默认）：find/replace 按普通文本字面处理（自动转义
+      正则元字符，如半角括号、点、星号；替换文本中的 \\1、反斜杠原样输出）
+    - rule.regex=True：find 按正则表达式解释，replace 支持 \\1 反向引用
+    - 非法正则跳过该规则（GUI 已提前拦截，此处兜底）
+
+    实现：内部先整体预编译再应用（对单个文本调用时编译成本可忽略；
+    批量场景直接用 apply_compiled_patterns 复用编译结果）。
+    """
+    return apply_compiled_patterns(text, _compile_rule_patterns(rules))
 
 
 def _get_text(e) -> str:
@@ -213,11 +242,14 @@ def process_dxf_file(
         result.error = f"读取失败: {ex}"
         return result
 
+    # 规则预编译一次，供全部文字实体复用（避免每个实体重复 re.compile）
+    compiled = _compile_rule_patterns(rules)
+
     for e in iter_text_entities(doc):
         t = e.dxftype()
         raw = _get_text(e)
         decoded = decode_text(raw)
-        new_text, count = apply_rules(decoded, rules)
+        new_text, count = apply_compiled_patterns(decoded, compiled)
         if count:
             result.replaced_total += count
             result.per_type[t] = result.per_type.get(t, 0) + count

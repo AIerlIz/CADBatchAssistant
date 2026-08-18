@@ -158,3 +158,76 @@ def test_map_files_empty():
 def test_create_executor_unknown_mode():
     with pytest.raises(ValueError):
         create_executor("bogus")
+
+
+# ---------------------------------------------------------------------------
+# 共享进程池（reuse_pool=True）：生命周期用线程池打桩验证（环境无关），
+# 覆盖「健康池跨调用复用 / 取消后报废重建 / 少文件回退串行」。
+# ---------------------------------------------------------------------------
+
+
+def test_shared_pool_reuse_across_calls(monkeypatch):
+    """健康池在多次调用间保留复用：用户归零不销毁，第二次调用复用同一池。"""
+    from cadbatchassistant.core.common import parallel as pl
+
+    monkeypatch.setattr(pl, "ProcessPoolExecutor", pl.ThreadPoolExecutor)
+    try:
+        a = map_files(_identity, [1, 2, 3, 4, 5], reuse_pool=True)
+        b = map_files(_identity, [6, 7, 8, 9, 10], reuse_pool=True)
+        assert a == [1, 2, 3, 4, 5]
+        assert b == [6, 7, 8, 9, 10]
+        # 健康池保留且未报废（用户归零不销毁，供下次复用）
+        assert pl._shared_pools, "健康池应在调用间保留"
+        assert all(not st[1] for st in pl._shared_pools.values())
+    finally:
+        pl.shutdown_shared_pools()
+    assert not pl._shared_pools
+
+
+def test_shared_pool_small_batch_serial(monkeypatch):
+    """共享池：文件数少（<4）回退串行，不创建池（与 AutoExecutor 一致）。"""
+    from cadbatchassistant.core.common import parallel as pl
+
+    monkeypatch.setattr(pl, "ProcessPoolExecutor", pl.ThreadPoolExecutor)
+    try:
+        res = map_files(_identity, [1, 2], reuse_pool=True)
+        assert res == [1, 2]
+        assert not pl._shared_pools, "少文件不应创建共享池"
+    finally:
+        pl.shutdown_shared_pools()
+
+
+def test_shared_pool_cancel_tears_down_and_rebuilds(monkeypatch):
+    """取消后池报废销毁（不残留后台任务），后续调用重建新池正常工作。"""
+    from cadbatchassistant.core.common import parallel as pl
+
+    monkeypatch.setattr(pl, "ProcessPoolExecutor", pl.ThreadPoolExecutor)
+    flag = {"cancel": False}
+
+    def slow(x):
+        time.sleep(0.05 if x > 1 else 0)
+        return x
+
+    def is_cancelled():
+        return flag["cancel"]
+
+    def after_first(result, idx, item):
+        flag["cancel"] = True
+
+    try:
+        res = map_files(
+            slow,
+            list(range(5)),
+            reuse_pool=True,
+            is_cancelled=is_cancelled,
+            on_done=after_first,
+        )
+        assert any(r is not None for r in res)
+        # 取消：池已报废并销毁（用户归零 + broken → shutdown + 移除）
+        assert not pl._shared_pools, "取消后池应销毁（不残留后台任务）"
+        # 后续调用重建新池并正常工作
+        res2 = map_files(_identity, [1, 2, 3, 4], reuse_pool=True)
+        assert res2 == [1, 2, 3, 4]
+    finally:
+        pl.shutdown_shared_pools()
+    assert not pl._shared_pools

@@ -231,6 +231,24 @@ def load_xlsx(
     return _load_xlsx(p, match_col, sheet)
 
 
+def load_xlsx_with_headers(
+    path: str | Path, match_col: str | None = None, sheet: str | None = None
+) -> tuple[dict[str, dict[str, str]], list[str]]:
+    """一次读取数据表，同时返回 (数据, 表头列名列表)。
+
+    流水线同时需要「占位符与表头匹配」（取列名）与「按图取行」（取数据）；
+    分开调用 get_headers + load_xlsx 会整表解析两次，大表成本翻倍。
+    本函数底部一次 _read_raw_rows 同时产出两者，列名与 _make_cols 完全一致
+    （record 的键即列名），保证两处语义不漂移。
+    """
+    raw_rows, _ = _read_raw_rows(path, sheet)
+    if not raw_rows:
+        raise ValueError(f"空表: {path}")
+    headers = _make_cols(raw_rows[0])
+    data = _build_records(raw_rows, path, match_col)
+    return data, headers
+
+
 if __name__ == "__main__":
     import json
     import sys

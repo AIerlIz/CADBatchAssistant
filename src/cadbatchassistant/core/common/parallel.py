@@ -21,7 +21,9 @@
 from __future__ import annotations
 
 import os
-from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, ThreadPoolExecutor
+import threading
+from concurrent.futures import ALL_COMPLETED, FIRST_COMPLETED, ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait as _wait
 from typing import Protocol
 
@@ -179,12 +181,37 @@ class AutoExecutor:
         if n == 0:
             return []
         cpus = os.cpu_count() or 1
-        workers = max_workers or self.max_workers or max(1, min(cpus, 4))
+        workers = (
+            max_workers
+            or self.max_workers
+            or get_default_max_workers()
+            or max(1, min(cpus, 4))
+        )
         if n < 4 or workers <= 1:
             return _run_serial(worker, items, is_cancelled, on_done)
         return _run_pool(
             ProcessPoolExecutor, worker, items, is_cancelled, on_done, workers
         )
+
+
+# 全局默认并行度：应用启动时按配置注入（set_default_max_workers）；
+# None 时保持历史行为（CPU 数 ≤4 自动）。
+_DEFAULT_MAX_WORKERS: int | None = None
+
+
+def set_default_max_workers(n: int | None) -> None:
+    """设置全局默认并行 worker 数（>0 生效；None 恢复自动）。
+
+    供应用层启动时按 config.json/env 注入（app_config.get_max_workers），
+    三功能共享；防止各面板每次运行新建进程池时各自 hardcode 上限。
+    """
+    global _DEFAULT_MAX_WORKERS
+    _DEFAULT_MAX_WORKERS = n if (n is not None and int(n) > 0) else None
+
+
+def get_default_max_workers() -> int | None:
+    """当前全局默认并行 worker 数（None 表示自动：CPU 数 ≤4）。"""
+    return _DEFAULT_MAX_WORKERS
 
 
 def create_executor(mode: str = "auto", max_workers: int | None = None) -> Executor:
@@ -195,7 +222,8 @@ def create_executor(mode: str = "auto", max_workers: int | None = None) -> Execu
         "serial" - 串行（调试 / 行为可预期）
         "process"- 固定多进程
         "thread" - 固定多线程（I/O 密集或 worker 不可 pickle）
-    max_workers: 池大小上限（process/thread/auto 生效；None 按 CPU 数 ≤4 自动）。
+    max_workers: 池大小上限（process/thread/auto 生效；None 依次取
+                 set_default_max_workers 的全局默认、CPU 数 ≤4 自动）。
     """
     if mode == "auto":
         return AutoExecutor(max_workers=max_workers)
@@ -208,6 +236,94 @@ def create_executor(mode: str = "auto", max_workers: int | None = None) -> Execu
     raise ValueError(f"未知的并行模式: {mode}")
 
 
+# ---------------------------------------------------------------------------
+# 共享进程池（跨 map_files 调用复用）
+#
+# Windows spawn 下每次新建进程池都有 ~1s+ 的启动开销；同一批处理内的多
+# 个阶段（改字 DXF 批 → DWG 批、填表/目录的分块取值）复用同一池可省掉
+# 中间各次的 spawn。池按「健康/报废」状态注册：
+# - 健康池（无取消发生）在用户退出后保留，供后续调用复用；
+# - 任一调用取消后该池标记报废，等其最后一位用户退出即销毁重建——运行中
+#   的任务仍等其完成（与 _run_pool 的 shutdown(wait=True, cancel_futures=True)
+#   一致），不残留后台子进程空转；不影响其他并发用户（其 fut 仍在跑）。
+# 应用退出时调用 shutdown_shared_pools() 回收剩余健康池。
+# ---------------------------------------------------------------------------
+_shared_lock = threading.Lock()
+# pool → [当前用户数, 是否报废]；健康且无用户的池保留复用
+_shared_pools: dict[ProcessPoolExecutor, list[int, bool]] = {}
+
+
+def _acquire_shared_pool(max_workers: int) -> ProcessPoolExecutor:
+    with _shared_lock:
+        usable = next(
+            (p for p, st in _shared_pools.items() if not st[1]), None
+        )
+        if usable is None:
+            usable = ProcessPoolExecutor(max_workers=max_workers)
+            _shared_pools[usable] = [0, False]
+        _shared_pools[usable][0] += 1
+        return usable
+
+
+def _release_shared_pool(pool: ProcessPoolExecutor, broken: bool) -> None:
+    with _shared_lock:
+        st = _shared_pools.get(pool)
+        if st is None:
+            return
+        st[0] -= 1
+        if broken:
+            st[1] = True
+        if st[0] <= 0 and st[1]:
+            pool.shutdown(wait=True, cancel_futures=True)
+            _shared_pools.pop(pool, None)
+
+
+def shutdown_shared_pools() -> None:
+    """回收全部共享进程池（应用退出时调用；运行中的任务等其完成）。"""
+    with _shared_lock:
+        for pool, st in list(_shared_pools.items()):
+            st[1] = True
+            if st[0] <= 0:
+                pool.shutdown(wait=True, cancel_futures=True)
+                _shared_pools.pop(pool, None)
+
+
+def _run_shared_pool(worker, items, is_cancelled, on_done, max_workers) -> list:
+    """共享进程池执行：同一批内多次 map_files 复用池；取消语义与 _run_pool 一致。"""
+    n = len(items)
+    results: list = [None] * n
+    pool = _acquire_shared_pool(max_workers)
+    cancelled = {"v": False}
+    try:
+        fut_map = {pool.submit(worker, item): i for i, item in enumerate(items)}
+        pending = set(fut_map)
+        while pending:
+            if is_cancelled is not None and is_cancelled():
+                cancelled["v"] = True
+                break
+            done, pending = _wait(pending, timeout=0.2, return_when=FIRST_COMPLETED)
+            for fut in done:
+                i = fut_map[fut]
+                try:
+                    result = fut.result()
+                except Exception as ex2:  # noqa: BLE001 - 单文件容错
+                    result = TaskFailed(ex2)
+                results[i] = result
+                if on_done is not None:
+                    on_done(result, i, items[i])
+        if cancelled["v"]:
+            # 未开始的任务取消；运行中的任务等其完成——与 _run_pool 的
+            # shutdown(wait=True, cancel_futures=True) 语义一致（池的报废/重建
+            # 由 _release_shared_pool 在最后用户退出时进行）
+            for fut in pending:
+                fut.cancel()
+            if pending:
+                _wait(pending, timeout=None, return_when=ALL_COMPLETED)
+    finally:
+        _release_shared_pool(pool, broken=cancelled["v"])
+    return results
+
+
 def map_files(
     worker,
     items: list,
@@ -215,17 +331,34 @@ def map_files(
     is_cancelled=None,
     on_done=None,
     executor: Executor | None = None,
+    reuse_pool: bool = False,
 ) -> list:
     """并行执行 worker(item)，返回与提交顺序一致的结果列表（兼容入口）。
 
     worker  : 模块级顶层函数，接收单个 item（可 pickle 的元组/对象）
     items   : 任务参数列表
-    max_workers : 并行进程数上限；None 时按 CPU 数（≤4）自动决定
+    max_workers : 并行进程数上限；None 时取全局默认（set_default_max_workers）
+                  或按 CPU 数（≤4）自动决定
     is_cancelled : 取消回调（主进程调用，不传给子进程）
     on_done  : on_done(result, index, item)，每完成一个任务回调
     executor : 指定执行器（默认 None → auto，等价于原 map_files 行为）；
                需要固定串行/线程时传 create_executor(...) 的结果。
+    reuse_pool : True 且未指定 executor 时使用共享进程池（同批多次调用
+                 复用，省 spawn 开销）；取消后池自动报废重建，语义不变。
     """
+    if reuse_pool and executor is None:
+        n = len(items)
+        if n == 0:
+            return []
+        workers = (
+            max_workers
+            or get_default_max_workers()
+            or max(1, min(os.cpu_count() or 1, 4))
+        )
+        # 与 AutoExecutor 一致：文件数少或单核时回退串行，避免进程启动开销
+        if n < 4 or workers <= 1:
+            return _run_serial(worker, items, is_cancelled, on_done)
+        return _run_shared_pool(worker, items, is_cancelled, on_done, workers)
     if executor is not None:
         return executor.map(
             worker,

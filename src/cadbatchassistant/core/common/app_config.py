@@ -83,6 +83,25 @@ def get_out_version() -> str:
     )
 
 
+def get_max_workers() -> int:
+    """全局并行 worker 数：环境变量 CADBATCH_MAX_WORKERS 优先，其次
+    config.json 的 max_workers 键；缺失/非法时默认 4（合法范围 1-64）。
+
+    三功能面板的批量并行共用该值（AutoExecutor 的上限）；老机器/大批量
+    可在「设置」页调整或直接改 config.json。
+    """
+    raw = os.environ.get("CADBATCH_MAX_WORKERS")
+    if raw is None:
+        raw = load_app_config().get("max_workers", 4)
+    if isinstance(raw, bool):  # bool 是 int 子类，但 True/False 不是合法 worker 数
+        return 4
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return 4
+    return n if 1 <= n <= 64 else 4
+
+
 # ---------------- 软件目录 / 模板库 / 目录助手规则 ----------------
 
 # 目录助手（catalog）规则默认值：软件目录 config.json 的 rules 段可覆盖

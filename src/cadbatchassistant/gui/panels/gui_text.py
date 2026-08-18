@@ -18,10 +18,7 @@ from tkinter import messagebox, ttk
 
 from cadbatchassistant.core import dwg_converter as dc
 from cadbatchassistant.core.common.app_config import get_oda, get_out_version
-from cadbatchassistant.core.common.dwg_workflow import (
-    stage_dxf_batch,
-    write_back_dxf_batch,
-)
+from cadbatchassistant.core.common.dwg_workflow import run_dwg_roundtrip_chunks
 from cadbatchassistant.core.common.input_files import check_duplicate_names
 from cadbatchassistant.core.common.parallel import TaskFailed, map_files
 from cadbatchassistant.core.common.text_replace import ReplaceRule, process_dxf_file
@@ -350,15 +347,23 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
             messagebox.showerror("输入文件重名", str(ex))
             return None
 
-        # 文件模式下：把所选文件复制到临时输入目录（DWG 转换需要目录），处理完清理。
-        # 复制在 begin_run 之前执行（失败即不启动，无需复位运行态）。
+        # 文件模式下：仅 DWG 需要把所选文件复制到临时输入目录（ODA 转换要求
+        # 输入为目录）；纯 DXF 批直接读原路径处理（_run_batch 的 dxf_tasks 用
+        # 原始路径），跳过复制避免整批白拷贝。复制在 begin_run 之前执行
+        # （失败即不启动，无需复位运行态）。
         work_in = None
         inp = ""
+        need_stage = (not self.var_dry.get()) and any(
+            p.lower().endswith(".dwg") for p in snapshot
+        )
         try:
-            if not self.var_dry.get():
+            if need_stage:
                 work_in = tempfile.mkdtemp(prefix="cad_text_input_")
+                # 仅复制 DWG：DXF 直接读原路径处理（_run_batch 的 dxf_tasks
+                # 用原始路径；DWG 分块经 run_dwg_roundtrip_chunks 转换）
                 for p in snapshot:
-                    shutil.copy2(str(p), os.path.join(work_in, os.path.basename(p)))
+                    if p.lower().endswith(".dwg"):
+                        shutil.copy2(str(p), os.path.join(work_in, os.path.basename(p)))
                 inp = work_in
         except Exception as ex:  # noqa: BLE001 - 复制失败（如文件被占用）不启动
             if work_in:
@@ -445,7 +450,8 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
             self._progress(done)
 
         map_files(
-            _text_task, dxf_tasks, is_cancelled=self._is_cancelled, on_done=_on_dxf_done
+            _text_task, dxf_tasks, is_cancelled=self._is_cancelled, on_done=_on_dxf_done,
+            reuse_pool=True,
         )
         if self._is_cancelled():
             self._emit("已停止。")
@@ -468,74 +474,82 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
                 converter = dc.get_converter()
                 work = tempfile.mkdtemp(prefix="cad_text_tool_")
                 try:
-                    mid1 = Path(work) / "dxf_from_dwg"
-                    mid2 = Path(work) / "dxf_processed"
-                    mid1.mkdir()
-                    mid2.mkdir()
                     dwg_names = [p.name for p in dwg_files]
-                    self._emit(f"正在用 ODA 转换 {len(dwg_files)} 个 DWG → DXF ...")
-                    stage_dxf_batch(
-                        converter, oda, inp, mid1, dwg_names, [], out_version
-                    )
-                    dwg_tasks = [
-                        (f, mid2 / f.name, rules, False)
-                        for f in sorted(mid1.glob("*.dxf"))
-                    ]
+                    dwg_stems = [p.stem for p in dwg_files]
+                    chunks_dir = Path(work) / "chunks"
 
-                    def _on_dwg_done(result, _idx, item) -> None:
+                    def _process_dwg_chunk(
+                        before_dir, filled_dir, stems
+                    ) -> tuple[list[str], list[str]]:
+                        """处理一个分块（并行替换），返回 (failed, skipped)。
+
+                        failed 含「无转换产物」与「替换失败」的图纸：helper
+                        据此跳过写回（否则 ODA 转回会因缺产物挂起等待）。
+                        """
                         nonlocal done, total_ok, total_fail, total_replaced
-                        f = item[0]
-                        done += 1
-                        if isinstance(result, TaskFailed):
-                            total_fail += 1
-                            self._emit(f"[DWG] {f.stem}.dwg: 错误 - {result.error}")
-                        else:
-                            total_ok += 1
-                            total_replaced += result.replaced_total
-                            per_type = ", ".join(
-                                f"{k}:{v}" for k, v in result.per_type.items()
+                        tasks: list[tuple] = []
+                        failed_here: list[str] = []
+                        for s in stems:
+                            src = Path(before_dir) / f"{s}.dxf"
+                            if not src.is_file():
+                                total_fail += 1
+                                failed_here.append(s)
+                                self._emit(f"[DWG] {s}.dwg: 转换失败（无产物）")
+                                continue
+                            tasks.append(
+                                (
+                                    str(src),
+                                    str(Path(filled_dir) / f"{s}.dxf"),
+                                    rules,
+                                    False,
+                                )
                             )
-                            self._emit(
-                                f"[DWG] {f.stem}.dwg: 转换+替换完成，"
-                                f"替换 {result.replaced_total} 处 ({per_type})"
-                            )
-                        self._progress(done)
 
-                    map_files(
-                        _text_task,
-                        dwg_tasks,
-                        is_cancelled=self._is_cancelled,
-                        on_done=_on_dwg_done,
+                        def _on_dwg_done(result, _idx, item) -> None:
+                            nonlocal done, total_ok, total_fail, total_replaced
+                            f = Path(item[0])
+                            done += 1
+                            if isinstance(result, TaskFailed):
+                                total_fail += 1
+                                failed_here.append(f.stem)  # 替换失败：不写回
+                                self._emit(f"[DWG] {f.stem}.dwg: 错误 - {result.error}")
+                            else:
+                                total_ok += 1
+                                total_replaced += result.replaced_total
+                                per_type = ", ".join(
+                                    f"{k}:{v}" for k, v in result.per_type.items()
+                                )
+                                self._emit(
+                                    f"[DWG] {f.stem}.dwg: 转换+替换完成，"
+                                    f"替换 {result.replaced_total} 处 ({per_type})"
+                                )
+                            self._progress(done)
+
+                        map_files(
+                            _text_task,
+                            tasks,
+                            is_cancelled=self._is_cancelled,
+                            on_done=_on_dwg_done,
+                            reuse_pool=True,
+                        )
+                        return failed_here, []
+
+                    # DWG 分块「转换→替换→转回」+ 块间转换重叠（ODA 与进程池并行）
+                    run_dwg_roundtrip_chunks(
+                        converter,
+                        oda,
+                        inp,
+                        out_dir,
+                        dwg_stems,
+                        out_version,
+                        process_batch=_process_dwg_chunk,
+                        emit=self._emit,
+                        cancel=self._cancel_event,
+                        workdir=chunks_dir,
                     )
                     if self._is_cancelled():
-                        self._emit("已停止。")
+                        self._emit("已停止。（已写回的分块保留在输出目录）")
                         return
-                    if not self._is_cancelled() and total_fail == 0:
-                        # ODA 批量转换可能个别失败（不抛错但缺产物）：这些 DWG
-                        # 不进 dwg_tasks，写回时 mid2 无对应 filled DXF，
-                        # dxf_to_dwg 会挂起等待输出（900s 超时）→ 跳过写回
-                        converted = {task[0].stem for task in dwg_tasks}
-                        missing = {Path(n).stem for n in dwg_names} - converted
-                        if missing:
-                            names = sorted(missing)
-                            self._emit(
-                                "[WARN] 以下 DWG 无转换产物，跳过写回："
-                                + "、".join(names)
-                            )
-                            for n in names:
-                                self._emit(f"[DWG] {n}.dwg: 转换失败（无产物）")
-                                total_fail += 1
-                        self._emit("正在用 ODA 转换处理后的 DXF → DWG ...")
-                        write_back_dxf_batch(
-                            converter,
-                            oda,
-                            mid2,
-                            out_dir,
-                            dwg_names,
-                            [],
-                            out_version,
-                            skip=missing,
-                        )
                 except dc.ODAError as ex:
                     total_fail += len(dwg_files)
                     self._emit(f"[ODA] 转换失败：{ex}")

@@ -56,7 +56,12 @@ def _selftest(template_dwg: str, dwg_files: list[str]) -> int:
         parse_template_fields,
         run_pipeline,
     )
-    from cadbatchassistant.core.common.app_config import get_oda
+    from cadbatchassistant.core.common.app_config import get_max_workers, get_oda
+
+    # 诊断模式同样注入并行度配置
+    from cadbatchassistant.core.common import parallel as _parallel
+
+    _parallel.set_default_max_workers(get_max_workers())
 
     log_path = Path(__file__).resolve().parent / "selftest_log.txt"
     if getattr(sys, "frozen", False):
@@ -114,6 +119,7 @@ def _selftest(template_dwg: str, dwg_files: list[str]) -> int:
     except OSError as ex:
         print(f"[selftest] 无法写日志: {ex}")
         failed = True
+    _parallel.shutdown_shared_pools()  # 回收诊断期间复用中的共享进程池
     return 1 if failed else 0
 
 
@@ -140,8 +146,12 @@ def main(argv: list[str] | None = None) -> int:
     root.option_add("*Font", (default_font_family(), 10))
 
     from cadbatchassistant.core.common.app_log import setup_logging
+    from cadbatchassistant.core.common.app_config import get_max_workers
+    from cadbatchassistant.core.common import parallel
 
     setup_logging()  # 统一日志文件（软件目录/logs/app.log），异常排查用
+    # 注入全局并行度（config.json 的 max_workers / 环境变量），三功能面板共用
+    parallel.set_default_max_workers(get_max_workers())
 
     notebook = ttk.Notebook(root)
     notebook.pack(fill="both", expand=True)
@@ -171,6 +181,9 @@ def main(argv: list[str] | None = None) -> int:
     root.on_close = _on_close  # 供更新流程替换前调用（停止后台线程后再销毁）
     root.after(2000, lambda: _auto_check_update(root))
     root.mainloop()
+    from cadbatchassistant.core.common import parallel as _parallel
+
+    _parallel.shutdown_shared_pools()  # 退出时回收复用中的共享进程池
     return 0
 
 

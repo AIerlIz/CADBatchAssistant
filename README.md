@@ -8,7 +8,7 @@
 | **改字助手** | 批量修改 DWG/DXF 图纸文字（TEXT/MTEXT/块属性），支持正则查找替换 | `gui/panels/gui_text.py` + `core/common/text_replace.py` |
 | **填表助手** | 把数据表（.xlsx/.xls）按「图纸模板占位」填入图纸标题栏 | `gui/panels/gui_fill.py` + `core/fill/fill_pipeline.py` |
 | **目录助手** | 按「图纸模板」从一批图纸取值，生成图纸目录 Excel | `gui/panels/gui_catalog.py` + `core/catalog/catalog_pipeline.py` |
-| **设置** | ODA File Converter 路径、DWG 输出版本、软件更新（全局共享） | `gui/dialogs/settings.py` |
+| **设置** | ODA File Converter 路径、DWG 输出版本、并行进程数、软件更新（全局共享） | `gui/dialogs/settings.py` |
 
 > 前身：CADBatchText、CadFill、CADCatalogAssistant 三个独立工具，现已整合为统一应用。
 
@@ -45,6 +45,15 @@ uv run python main.py
 |---|---|---|
 | `data_rows_per_page` | `50` | 目录每页数据行数 |
 | `cover_pages` | `1` | 封皮页数 |
+
+**并行度**（全局配置 `%APPDATA%\CADBatchAssistant\config.json` 的 `max_workers` 键，「设置」页下拉可改；环境变量 `CADBATCH_MAX_WORKERS` 优先）：
+
+| 值 | 说明 |
+|---|---|
+| `auto`（缺省） | 按 CPU 数 ≤4 自动决定，少文件回退串行 |
+| 数字（1-64） | 同时处理的图纸数（多核大批量可调大；注意 spawn 子进程内存翻倍） |
+
+三个功能页的批量处理共用该值；DWG 批处理按块「转换→处理→转回」（默认块大小 8，块间转换与 ezdxf 处理重叠），进程池在同批多阶段间复用。
 
 ## 模板库存放约定
 

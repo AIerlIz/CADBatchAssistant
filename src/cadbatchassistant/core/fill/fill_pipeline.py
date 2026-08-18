@@ -3,8 +3,10 @@
 - 支持目录输入（before_dir 内全部图纸）或文件列表输入（run_pipeline_files）。
 - DWG 输入：经 ODA 转 DXF 处理，输出转回 DWG；DXF 输入：直接处理，输出保持 DXF。
 - 纯 DXF 流程无需 ODAFileConverter。
-- progress 回调：转换完成 25%、规格完成 50%、填表阶段 50%→75%（按图纸推进）、
-  转回完成 100%。
+- DWG 存在时分块「转换→填表→转回」（run_dwg_roundtrip_chunks）：块 k+1 的
+  转换与块 k 的填表重叠（ODA 与进程池并行），进度按图纸数推进。
+- progress 回调：25%（[1/4] DXF 准备 + DWG 首块转换）→ 50%（规格）→
+  50%-75%（填表按图纸推进，DWG 分块转回在其中完成）→ 100%（DXF 输出）。
 """
 
 from __future__ import annotations
@@ -16,9 +18,13 @@ import tempfile
 
 from cadbatchassistant.core import dwg_converter as dc
 from cadbatchassistant.core.common.dwg_workflow import (
+    CHUNK_SIZE_DEFAULT,
+    chunk_stems,
+    run_dwg_roundtrip_chunks,
     stage_dxf_batch,
     write_back_dxf_batch,
 )
+from cadbatchassistant.core.common.input_files import check_duplicate_names
 from cadbatchassistant.core.common.input_files import stage_inputs
 from cadbatchassistant.core.fill.fill_dwg import entity_to_desc, fill_all
 
@@ -72,6 +78,7 @@ def run_pipeline(
     template: str | None = None,
     match_col: str | None = None,
     sheet: str | None = None,
+    src_files: list[str] | None = None,
 ) -> dict:
     """执行完整流程，返回摘要 dict。
 
@@ -89,36 +96,59 @@ def run_pipeline(
                   任取一张处理图纸作"修改前"与之 diff 学习规格并广播到全部图纸
     match_col   : 数据表中图纸名列（None 默认第一列）
     sheet       : 数据表中工作表名（None 默认第一个）
+    src_files   : 文件模式的总源文件绝对路径列表（run_pipeline_files 传入）：
+                  提供时按文件自身扩展名分类（DWG 优先），DXF 直接从原始路径
+                  复制进 DXF 批（省一次临时目录复制），不再扫描 before_dir。
 
     注意：workdir 为 None 时，本函数自建的临时目录在返回前已清理
     （finally 中 rmtree），返回 dict 中的 "workdir"/"specs" 路径已不存在，
     仅供日志/排查看，不可再读文件；调用方如需保留中间产物请传入 workdir。
     """
-    names = sorted(inputs) if inputs else _names_from_dir(before_dir)
-    if not names:
-        raise ValueError(f"没有可处理的图纸：{before_dir}")
-    emit(f"待处理图纸 {len(names)} 张: {', '.join(names)}")
+    if src_files is not None:
+        src_map = {
+            os.path.splitext(os.path.basename(f))[0]: os.path.abspath(f)
+            for f in src_files
+        }
+        names = sorted(src_map)
+        by_ext: dict[str, str] = {}
+        for f in src_files:
+            low = f.lower()
+            stem = os.path.splitext(os.path.basename(f))[0]
+            if low.endswith(".dwg"):
+                by_ext.setdefault(stem, "dwg")
+            elif low.endswith(".dxf"):
+                by_ext.setdefault(stem, "dxf")
+        if names != sorted(by_ext):
+            raise ValueError("输入文件列表与图纸名不一致（存在无法识别的扩展名）")
+        emit(f"待处理图纸 {len(names)} 张: {', '.join(names)}")
+    else:
+        names = sorted(inputs) if inputs else _names_from_dir(before_dir)
+        if not names:
+            raise ValueError(f"没有可处理的图纸：{before_dir}")
+        emit(f"待处理图纸 {len(names)} 张: {', '.join(names)}")
 
-    # 输出目录与输入目录重合时，清理旧输出会误删源文件 → 跳过清理并整体拒绝
-    # （输出阶段会把处理结果覆盖到源文件所在位置，同样危险）。
-    # 提前校验，避免已创建临时目录/输出目录后再失败。
-    same_dir = os.path.normcase(os.path.abspath(out_dir)) == os.path.normcase(
-        os.path.abspath(before_dir)
-    )
-    if same_dir:
-        raise ValueError(
-            f"输出目录不能与输入图纸目录相同：{out_dir}。"
-            "请选择其他输出目录，避免覆盖源文件。"
+        # 输出目录与输入目录重合时，清理旧输出会误删源文件 → 跳过清理并整体拒绝
+        # （输出阶段会把处理结果覆盖到源文件所在位置，同样危险）。
+        # 提前校验，避免已创建临时目录/输出目录后再失败。
+        same_dir = os.path.normcase(os.path.abspath(out_dir)) == os.path.normcase(
+            os.path.abspath(before_dir)
         )
+        if same_dir:
+            raise ValueError(
+                f"输出目录不能与输入图纸目录相同：{out_dir}。"
+                "请选择其他输出目录，避免覆盖源文件。"
+            )
 
-    # 判断哪些是 DWG（需 ODA 转换），哪些是 DXF（直接处理）——大小写不敏感；
-    # 同名 .dwg 与 .dxf 共存时显式优先按 DWG 处理（见 _classify_by_ext）。
-    by_ext = _classify_by_ext(before_dir)
+        # 判断哪些是 DWG（需 ODA 转换），哪些是 DXF（直接处理）——大小写不敏感；
+        # 同名 .dwg 与 .dxf 共存时显式优先按 DWG 处理（见 _classify_by_ext）。
+        by_ext = _classify_by_ext(before_dir)
+        missing = [n for n in names if n not in by_ext]
+        if missing:
+            raise ValueError(f"以下图纸在目录中找不到文件：{', '.join(missing)}")
+
+    # src_files 模式的输出目录重合防护由 run_pipeline_files 完成（out vs 各源目录）
     dwg_names = [n for n in names if by_ext.get(n) == "dwg"]
     dxf_names = [n for n in names if by_ext.get(n) == "dxf"]
-    missing = [n for n in names if n not in by_ext]
-    if missing:
-        raise ValueError(f"以下图纸在目录中找不到文件：{', '.join(missing)}")
     need_oda = bool(dwg_names)
 
     converter = dc.get_converter()
@@ -149,18 +179,43 @@ def run_pipeline(
                             f"{p} ({ex})"
                         )
 
-        # [1/4] DWG → DXF；DXF 直接复制（统一成 DXF 批，供后续处理）
+        # [1/4] 准备 DXF 批：DXF 直接复制（目录模式从 before_dir、文件模式从
+        # 原始路径）；DWG 首块在此经 ODA 预转（保持旧流程
+        # 「先转换、后解析模板」的顺序，剩余块在分块阶段与填表重叠转换）。
         _check_cancel(cancel)
-        emit("[1/4] 准备 DXF（DWG 经 ODA 转换，DXF 直接复制） ...")
-        stage_dxf_batch(
-            converter,
-            oda_exe,
-            before_dir,
-            before_dxf,
-            [n + ".DWG" for n in dwg_names],
-            [n + ".dxf" for n in dxf_names],
-            out_version,
+        emit(
+            "[1/4] 准备 DXF（DXF 直接复制"
+            + (f"，{len(dwg_names)} 个 DWG 分块经 ODA 转换" if dwg_names else "")
+            + "） ..."
         )
+        # 分块与 run_dwg_roundtrip_chunks 使用同一块大小（测试可 patch
+        # CHUNK_SIZE_DEFAULT 调小块大小验证多块路径，两侧必须一致）
+        dwg_chunks = (
+            chunk_stems(dwg_names, CHUNK_SIZE_DEFAULT) if dwg_names else []
+        )
+        chunks_dir = os.path.join(tmp, "dwg_chunks")
+        first_before_dir: str | None = None
+        if dwg_names:
+            os.makedirs(chunks_dir, exist_ok=True)
+            first_before_dir = os.path.join(chunks_dir, "c0", "before")
+            os.makedirs(first_before_dir, exist_ok=True)
+        for n in dxf_names:
+            src = (
+                os.path.join(before_dir, n + ".dxf")
+                if src_files is None
+                else src_map[n]
+            )
+            shutil.copy2(src, os.path.join(before_dxf, n + ".dxf"))
+        if dwg_names:
+            stage_dxf_batch(
+                converter,
+                oda_exe,
+                before_dir,
+                first_before_dir,
+                [n + ".DWG" for n in dwg_chunks[0]],
+                [],
+                out_version,
+            )
         _report(progress, 25)
 
         # [2/4] 图纸模板占位规格 → 广播到全部图纸（伴生 meta 优先，CLI 兜底现场解析）
@@ -172,7 +227,7 @@ def run_pipeline(
             scan_all_placeholders,
             value_rule_for,
         )
-        from cadbatchassistant.core.fill.fill_parse_xlsx import get_headers
+        from cadbatchassistant.core.fill.fill_parse_xlsx import load_xlsx_with_headers
 
         # 伴生 meta 优先（GUI 上传只存占位符 JSON，模板库无原文件）；
         # meta 缺失时（CLI / 命令行直接传模板路径）才要求模板文件存在并现场解析
@@ -190,8 +245,10 @@ def run_pipeline(
             )
             placeholders = scan_all_placeholders(t_dxf)
         # 按本次数据表表头精确匹配（占位符文字去空白后与表头相同），
-        # value_rule/sep 运行时按列名重算（与历史 scan_placeholders 行为一致）
-        headers = get_headers(xlsx, sheet)
+        # value_rule/sep 运行时按列名重算（与历史 scan_placeholders 行为一致）。
+        # 一次读取同时取数据与表头（load_xlsx_with_headers），避免
+        # get_headers + 后续 fill_all.load_xlsx 的整表二次解析（大表翻倍）。
+        data, headers = load_xlsx_with_headers(xlsx, match_col, sheet)
         header_map = {h.strip(): h for h in headers}
         one_spec: dict = {}
         for ph in placeholders:
@@ -256,42 +313,91 @@ def run_pipeline(
 
         _report(progress, 50)
 
-        # [3/4] 填表（50%→75% 按图纸推进）
+        # [3/4] 填表（50%→75% 按图纸推进）：DWG 存在时分块执行，
+        # 每块「转换→填表→转回」推进；DXF 名一次填表。
         _check_cancel(cancel)
         emit("[3/4] 按 xlsx 填充标题栏值格 ...")
 
-        def _fill_progress(done: int, total: int) -> None:
-            _report(progress, 50 + int(done / max(total, 1) * 25))
+        # 全局图纸进度：每次 fill_all 的 progress 回调计数一次（含被跳过者），
+        # 跨分块单调推进，避免并行完成序导致进度条来回跳动
+        fill_done = {"v": 0}
+        total_all = len(names)
 
-        failed, skipped = fill_all(
-            before_dxf,
-            filled_dxf,
-            xlsx,
-            specs,
-            emit=emit,
-            progress=_fill_progress,
-            match_col=match_col,
-            sheet=sheet,
-            cancel=cancel,
-        )
-        _check_cancel(cancel)  # 填表阶段被取消：中断整批，避免把未填充的图当作输出
-        _report(progress, 75)
+        def _track_fill(_done: int, _total: int) -> None:
+            fill_done["v"] += 1
+            _report(progress, 50 + int(fill_done["v"] / max(total_all, 1) * 25))
 
-        # [4/4] 输出：DWG 输入转回 DWG；DXF 输入直接复制
+        failed: list[str] = []
+        skipped: list[str] = []
+        if dxf_names:
+            f_dxf, s_dxf = fill_all(
+                before_dxf,
+                filled_dxf,
+                xlsx,
+                {n: specs[n] for n in dxf_names},
+                emit=emit,
+                progress=_track_fill,
+                match_col=match_col,
+                sheet=sheet,
+                cancel=cancel,
+                data=data,  # 复用 [2/4] 的一次读取，不再整表二次解析
+            )
+            failed.extend(f_dxf)
+            skipped.extend(s_dxf)
+        if dwg_names:
+            # chunks_dir 与首块 before 目录已在 [1/4] 创建/预转
+
+            def _fill_chunk(before_c: str, filled_c: str, stems: list[str]):
+                return fill_all(
+                    before_c,
+                    filled_c,
+                    xlsx,
+                    {s: specs[s] for s in stems},
+                    emit=emit,
+                    progress=_track_fill,
+                    match_col=match_col,
+                    sheet=sheet,
+                    cancel=cancel,
+                    data=data,
+                )
+
+            # DWG 分块「转换→填表→转回」+ 块间转换重叠（ODA 与进程池并行）；
+            # 首块已在 [1/4] 预转；写回在块内完成 → 已在输出目录落盘，
+            # 进度不再重复上报
+            res = run_dwg_roundtrip_chunks(
+                converter,
+                oda_exe,
+                before_dir,
+                out_dir,
+                dwg_names,
+                out_version,
+                process_batch=_fill_chunk,
+                emit=emit,
+                cancel=cancel,
+                workdir=chunks_dir,
+                chunk_size=CHUNK_SIZE_DEFAULT,
+                pre_staged_chunks=1,
+            )
+            _check_cancel(cancel)
+            failed.extend(res["failed"])
+            skipped.extend(res["skipped"])
+
+        # [4/4] 输出：DXF 输入直接复制（DWG 转回已在分块阶段完成）
         # 失败的图跳过；skipped（无产物：不在数据表/缺 before DXF）同样不算成功，
-        # 否则输出阶段会因产物缺失报错（DXF）或挂起等待转换（DWG 900s 超时）。
+        # 否则输出阶段会因产物缺失报错或挂起等待转换。
         _check_cancel(cancel)
-        emit(f"[4/4] 输出 → {out_dir} ...")
-        write_back_dxf_batch(
-            converter,
-            oda_exe,
-            filled_dxf,
-            out_dir,
-            [n + ".DWG" for n in dwg_names],
-            [n + ".dxf" for n in dxf_names],
-            out_version,
-            skip=set(failed) | set(skipped),
-        )
+        emit(f"[4/4] 输出 DXF → {out_dir} ...")
+        if dxf_names:
+            write_back_dxf_batch(
+                converter,
+                oda_exe,
+                filled_dxf,
+                out_dir,
+                [],
+                [n + ".dxf" for n in dxf_names],
+                out_version,
+                skip=set(failed) | set(skipped),
+            )
         _report(progress, 100)
 
         return {
@@ -330,6 +436,16 @@ def run_pipeline_files(
     """
     if not files:
         raise ValueError("未选择任何图纸文件")
+    # 只处理 DWG/DXF（与目录助手一致）；非 CAD 文件早期拒绝（旧实现会
+    # 在 stage/目录扫描阶段以「找不到文件」报错，提前报错更清晰）
+    from cadbatchassistant.core.common.filetypes import CAD_SUFFIXES
+
+    bad_ext = [f for f in files if not f.lower().endswith(CAD_SUFFIXES)]
+    if bad_ext:
+        raise ValueError("仅支持 DWG/DXF 图纸文件：" + "、".join(bad_ext))
+    # 重名检测（大小写不敏感）：纯 DXF 分支不再走 stage_inputs（那里自带检测），
+    # 这里对全部输入先统一检测，防止跨目录同名文件被后续直接复制/处理时互相覆盖
+    check_duplicate_names(files)
     # 输出目录与任一源文件所在目录重合时，处理结果会直接覆盖源文件 → 拒绝
     src_dirs = {os.path.normcase(os.path.abspath(os.path.dirname(f))) for f in files}
     if os.path.normcase(os.path.abspath(out_dir)) in src_dirs:
@@ -337,25 +453,44 @@ def run_pipeline_files(
             f"输出目录不能与输入图纸所在目录相同：{out_dir}。"
             "请选择其他输出目录，避免覆盖源文件。"
         )
-    # 重名检测（大小写不敏感）+ 复制到临时输入目录（input_files.stage_inputs）
+    # 重名检测（大小写不敏感）+ 复制到临时输入目录（input_files.stage_inputs）。
+    # 仅含 DWG 时复制（ODA 转换需要统一目录）；纯 DXF 直接以原始路径处理，
+    # 省掉整批复制（复制减半，run_pipeline 的 src_files 分支直读源文件）。
     tmp_created = workdir is None  # 本函数自建临时目录时，结束后清理
     tmp = workdir or tempfile.mkdtemp(prefix="iso_fill_files_")
     try:
-        before_dir, stems = stage_inputs(files, tmp, prefix="iso_fill_files_")
+        has_dwg = any(f.lower().endswith(".dwg") for f in files)
+        if has_dwg:
+            before_dir, stems = stage_inputs(files, tmp, prefix="iso_fill_files_")
+            return run_pipeline(
+                xlsx,
+                before_dir,
+                out_dir,
+                oda=oda,
+                out_version=out_version,
+                workdir=tmp,
+                emit=emit,
+                cancel=cancel,
+                inputs=stems,
+                progress=progress,
+                template=template,
+                match_col=match_col,
+                sheet=sheet,
+            )
         return run_pipeline(
             xlsx,
-            before_dir,
+            tmp,
             out_dir,
             oda=oda,
             out_version=out_version,
             workdir=tmp,
             emit=emit,
             cancel=cancel,
-            inputs=stems,
             progress=progress,
             template=template,
             match_col=match_col,
             sheet=sheet,
+            src_files=[os.path.abspath(f) for f in files],
         )
     finally:
         if tmp_created:

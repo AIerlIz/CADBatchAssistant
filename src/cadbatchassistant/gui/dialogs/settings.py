@@ -1,7 +1,7 @@
-"""「设置」面板：全局配置（ODA File Converter 路径、DWG 输出版本、软件更新）。
+"""「设置」面板：全局配置（ODA File Converter 路径、DWG 输出版本、并行度、软件更新）。
 
 放在统一窗口第三个 tab；配置自动保存到 APP_CONFIG_FILE，
-「改字助手」与「填表助手」两个处理面板共用。
+「改字助手」「填表助手」「目录助手」三个处理面板共用。
 """
 
 from __future__ import annotations
@@ -19,6 +19,9 @@ from cadbatchassistant.core.common.app_config import (
 )
 from cadbatchassistant.gui.components.tk_widgets import build_oda_row, check_oda
 
+# 并行进程数下拉（"自动" = 按 CPU 数 ≤4 决定，仅大批量/多核场景建议调大）
+WORKERS_CHOICES = ("自动", "2", "4", "8", "12", "16", "32", "64")
+
 
 class SettingsPanel:
     """全局设置面板：ODA 路径、DWG 输出版本与软件更新，改动自动保存。"""
@@ -29,6 +32,7 @@ class SettingsPanel:
         self.var_oda: tk.StringVar
         self.var_oda_info: tk.StringVar
         self.var_version: tk.StringVar
+        self.var_max_workers: tk.StringVar
         self.var_update_info: tk.StringVar
         self.var_update_mirror: tk.StringVar
         self.var_ignore_info: tk.StringVar
@@ -61,6 +65,25 @@ class SettingsPanel:
         )
         version_cb.grid(row=1, column=1, sticky="w", padx=4, pady=(6, 0))
         cfg_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(cfg_frame, text="并行进程数:").grid(
+            row=2, column=0, sticky="w", pady=(6, 0)
+        )
+        self.var_max_workers = tk.StringVar()
+        workers_cb = ttk.Combobox(
+            cfg_frame,
+            textvariable=self.var_max_workers,
+            values=WORKERS_CHOICES,
+            state="readonly",
+            width=14,
+        )
+        workers_cb.grid(row=2, column=1, sticky="w", padx=4, pady=(6, 0))
+        ttk.Label(
+            cfg_frame,
+            text="同时处理的图纸数（自动 = 按 CPU 数 ≤4；多核大批量可调大）",
+            foreground="#555",
+        ).grid(row=2, column=2, sticky="w", padx=(4, 0), pady=(6, 0))
+        cfg_frame.columnconfigure(2, weight=1)
 
         # ---- 软件更新 ----
         upd_frame = ttk.LabelFrame(main, text="软件更新", padding=8)
@@ -109,21 +132,26 @@ class SettingsPanel:
             self.var_oda.set(cfg["oda"])
         self.var_version.set(cfg.get("version", OUT_VERSION_CHOICES[0]))
         self.var_update_mirror.set(cfg.get("update_mirror", ""))
+        mw = str(cfg.get("max_workers", "auto")).strip()
+        self.var_max_workers.set(mw if mw in WORKERS_CHOICES else "自动")
         self._ignored_tag = updater.ignored_version()
         self._refresh_ignore_ui()
         # 输入框后续任何写入（手动输入 / 浏览选择 / 版本下拉）自动保存
         self.var_oda.trace_add("write", lambda *a: self._on_change())
         self.var_version.trace_add("write", lambda *a: self._on_change())
         self.var_update_mirror.trace_add("write", lambda *a: self._on_change())
+        self.var_max_workers.trace_add("write", lambda *a: self._on_change())
         check_oda(self.var_oda, self.var_oda_info)  # 探测并刷新状态提示
 
     def _on_change(self, _event=None) -> None:
         """自动保存到全局配置（合并写入，保留 update_ignore 等其他配置项）。"""
+        mw = self.var_max_workers.get()
         save_app_config(
             {
                 "oda": self.var_oda.get().strip(),
                 "version": self.var_version.get(),
                 "update_mirror": self.var_update_mirror.get().strip(),
+                "max_workers": "auto" if mw in ("", "自动") else mw,
             }
         )
 

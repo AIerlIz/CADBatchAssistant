@@ -116,3 +116,58 @@ def test_multiple_anchors_merge_dedup(tmp_path):
     ]
     out = extract_by_anchors(dxf, anchors)
     assert out["管段"] == ["PS-1", "PS-2"]
+
+
+def test_area_rect_spanning_grid_cells_negative_coords(tmp_path):
+    """网格分桶：矩形跨多个网格单元 + 负坐标时取值正确（O(A×T) 优化回归）。
+
+    旧实现逐锚点线性扫全部文字；网格化后按单元探测，跨单元矩形必须
+    仍取到落在矩形内的全部文字，且保持文档顺序（插入顺序）。
+    """
+    dxf = _make_dxf(
+        tmp_path / "grid.dxf",
+        [
+            ((-4.0, -4.0), "NEG-1"),
+            ((-1.0, 2.0), "SPAN-2"),
+            ((3.0, -1.0), "SPAN-3"),
+            ((4.0, 3.0), "SPAN-4"),
+            ((30.0, 30.0), "OUT-5"),
+        ],
+    )
+    anchors = [
+        Anchor(
+            field="区域",
+            is_area=True,
+            min_x=-5.0,
+            min_y=-5.0,
+            max_x=5.0,
+            max_y=5.0,
+            point_x=0.0,
+            point_y=0.0,
+        )
+    ]
+    out = extract_by_anchors(dxf, anchors)
+    # 矩形 (-5..5, -5..5) 跨多个 5×5 网格单元：取到内部全部、忽略外部
+    assert out["区域"] == ["NEG-1", "SPAN-2", "SPAN-3", "SPAN-4"]
+
+
+def test_large_area_rect_many_texts_order_preserved(tmp_path):
+    """大面积区域 + 多文字：结果按文档顺序返回（网格探测不改变取值顺序）。"""
+    texts = [((i * 1.0, i // 5 * 1.0), f"V-{i:03d}") for i in range(40)]
+    dxf = _make_dxf(tmp_path / "big.dxf", texts)
+    anchors = [
+        Anchor(
+            field="编号",
+            is_area=True,
+            min_x=-1.0,
+            min_y=-1.0,
+            max_x=10.0,
+            max_y=10.0,
+            point_x=0.0,
+            point_y=0.0,
+        )
+    ]
+    out = extract_by_anchors(dxf, anchors)
+    # 前 11 个点落在矩形内（x<10 或 y<10 的约束下按序保留）
+    expect = [t for (x, y), t in texts if -1 <= x <= 10 and -1 <= y <= 10]
+    assert out["编号"] == expect

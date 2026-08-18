@@ -218,6 +218,7 @@ def fill_all(
     match_col: str | None = None,
     sheet: str | None = None,
     cancel=None,
+    data: dict | None = None,
 ) -> tuple[list[str], list[str]]:
     """批量填充：对 specs 中每张图执行 fill_one。
 
@@ -229,11 +230,14 @@ def fill_all(
                index 为图纸在全部图纸中的顺序号（含被跳过者），与串行实现一致。
     match_col: 数据表中图纸名列（None 默认第一列）。
     sheet    : 数据表中工作表名（None 默认第一个）。
+    data     : 已读取的数据 {图纸名: {列名: 值}}（调用方已 load 一次时传入，
+               避免流水线整表二次解析）；None 时按 xlsx 现场读取。
     返回 (failed, skipped)：failed 为处理失败的图纸名；
     skipped 为"没有产出"的图纸名（不在数据表中 / 缺少 before DXF），
     调用方不得把它们当作成功（否则输出阶段会因产物缺失报错或挂起等待）。
     """
-    data = load_xlsx(xlsx, match_col, sheet)
+    if data is None:
+        data = load_xlsx(xlsx, match_col, sheet)
     stems = sorted(specs)
     failed: list[str] = []
     skipped: list[str] = []
@@ -292,7 +296,13 @@ def fill_all(
         done_flags[order[stem]] = True
         _advance_progress()
 
-    map_files(_fill_one_task, tasks, is_cancelled=_is_cancelled, on_done=_on_done)
+    map_files(
+        _fill_one_task,
+        tasks,
+        is_cancelled=_is_cancelled,
+        on_done=_on_done,
+        reuse_pool=True,  # 跨块/跨阶段复用共享进程池（省 spawn 开销）
+    )
     ok = len(stems) - len(failed) - len(skipped)
     emit(
         f"      完成 {ok}/{len(stems)} 张，"

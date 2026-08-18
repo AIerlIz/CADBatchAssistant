@@ -228,7 +228,9 @@ class LoadXlsxWithHeadersTest(unittest.TestCase):
 
     def test_data_and_headers_consistent(self):
         p = self._tmp / "d.xlsx"
-        _make_xlsx(p, ["图纸", "图号", "名称"], [["A1", "D-001", "舱段"], ["A2", "D-002", ""]])
+        _make_xlsx(
+            p, ["图纸", "图号", "名称"], [["A1", "D-001", "舱段"], ["A2", "D-002", ""]]
+        )
         data, headers = fill_parse_xlsx.load_xlsx_with_headers(str(p))
         # 表头与 get_headers 一致
         self.assertEqual(headers, fill_parse_xlsx.get_headers(str(p)))

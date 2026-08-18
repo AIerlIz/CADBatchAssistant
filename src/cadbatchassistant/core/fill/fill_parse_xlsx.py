@@ -245,7 +245,7 @@ def load_xlsx_with_headers(
     if not raw_rows:
         raise ValueError(f"空表: {path}")
     headers = _make_cols(raw_rows[0])
-    data = _build_records(raw_rows, path, match_col)
+    data = _build_records(raw_rows, str(path), match_col)
     return data, headers
 
 

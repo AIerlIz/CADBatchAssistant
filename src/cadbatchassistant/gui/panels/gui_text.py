@@ -450,7 +450,10 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
             self._progress(done)
 
         map_files(
-            _text_task, dxf_tasks, is_cancelled=self._is_cancelled, on_done=_on_dxf_done,
+            _text_task,
+            dxf_tasks,
+            is_cancelled=self._is_cancelled,
+            on_done=_on_dxf_done,
             reuse_pool=True,
         )
         if self._is_cancelled():
@@ -474,7 +477,6 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
                 converter = dc.get_converter()
                 work = tempfile.mkdtemp(prefix="cad_text_tool_")
                 try:
-                    dwg_names = [p.name for p in dwg_files]
                     dwg_stems = [p.stem for p in dwg_files]
                     chunks_dir = Path(work) / "chunks"
 

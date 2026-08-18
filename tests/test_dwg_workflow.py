@@ -154,7 +154,7 @@ class RoundtripChunksTest(unittest.TestCase):
         self.assertEqual(len(calls), 2)  # 两个分块都进入处理
 
     def test_failed_and_skipped_not_written_back(self) -> None:
-        """process_batch 返回 (failed, skipped)：这些图纸不进写回（dxf_to_dwg 缺参）。"""
+        """process_batch 返回 (failed, skipped)：这些图纸不进写回。"""
         from cadbatchassistant.core.common.dwg_workflow import (
             run_dwg_roundtrip_chunks,
         )
@@ -205,7 +205,7 @@ class RoundtripChunksTest(unittest.TestCase):
             return [], []
 
         with tempfile.TemporaryDirectory(prefix="chunk_work_") as td:
-            res = run_dwg_roundtrip_chunks(
+            run_dwg_roundtrip_chunks(
                 conv,
                 "oda.exe",
                 self.in_dir,

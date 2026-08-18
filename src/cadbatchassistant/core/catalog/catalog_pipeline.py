@@ -205,10 +205,7 @@ def run_pipeline(
         dxf_files: list[Path] = []
         failed_files: list[str] = []
         for p in files:
-            if p.suffix.lower() == ".dwg":
-                cand = dxf_out / (p.stem + ".dxf")
-            else:
-                cand = p
+            cand = dxf_out / (p.stem + ".dxf") if p.suffix.lower() == ".dwg" else p
             if cand.is_file():
                 dxf_files.append(cand)
             else:

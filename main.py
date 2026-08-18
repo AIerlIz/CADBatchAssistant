@@ -56,10 +56,10 @@ def _selftest(template_dwg: str, dwg_files: list[str]) -> int:
         parse_template_fields,
         run_pipeline,
     )
-    from cadbatchassistant.core.common.app_config import get_max_workers, get_oda
 
     # 诊断模式同样注入并行度配置
     from cadbatchassistant.core.common import parallel as _parallel
+    from cadbatchassistant.core.common.app_config import get_max_workers, get_oda
 
     _parallel.set_default_max_workers(get_max_workers())
 
@@ -145,9 +145,9 @@ def main(argv: list[str] | None = None) -> int:
     center_window(root)  # 主窗口屏幕居中
     root.option_add("*Font", (default_font_family(), 10))
 
-    from cadbatchassistant.core.common.app_log import setup_logging
-    from cadbatchassistant.core.common.app_config import get_max_workers
     from cadbatchassistant.core.common import parallel
+    from cadbatchassistant.core.common.app_config import get_max_workers
+    from cadbatchassistant.core.common.app_log import setup_logging
 
     setup_logging()  # 统一日志文件（软件目录/logs/app.log），异常排查用
     # 注入全局并行度（config.json 的 max_workers / 环境变量），三功能面板共用

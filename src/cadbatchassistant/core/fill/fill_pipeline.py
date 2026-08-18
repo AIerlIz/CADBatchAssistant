@@ -24,8 +24,10 @@ from cadbatchassistant.core.common.dwg_workflow import (
     stage_dxf_batch,
     write_back_dxf_batch,
 )
-from cadbatchassistant.core.common.input_files import check_duplicate_names
-from cadbatchassistant.core.common.input_files import stage_inputs
+from cadbatchassistant.core.common.input_files import (
+    check_duplicate_names,
+    stage_inputs,
+)
 from cadbatchassistant.core.fill.fill_dwg import entity_to_desc, fill_all
 
 
@@ -207,11 +209,14 @@ def run_pipeline(
             )
             shutil.copy2(src, os.path.join(before_dxf, n + ".dxf"))
         if dwg_names:
+            first_before: str = first_before_dir or os.path.join(
+                chunks_dir, "c0", "before"
+            )
             stage_dxf_batch(
                 converter,
                 oda_exe,
                 before_dir,
-                first_before_dir,
+                first_before,
                 [n + ".DWG" for n in dwg_chunks[0]],
                 [],
                 out_version,

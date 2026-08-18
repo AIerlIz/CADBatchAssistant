@@ -22,8 +22,12 @@ from __future__ import annotations
 
 import os
 import threading
-from concurrent.futures import ALL_COMPLETED, FIRST_COMPLETED, ProcessPoolExecutor
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import (
+    ALL_COMPLETED,
+    FIRST_COMPLETED,
+    ProcessPoolExecutor,
+    ThreadPoolExecutor,
+)
 from concurrent.futures import wait as _wait
 from typing import Protocol
 
@@ -195,8 +199,8 @@ class AutoExecutor:
 
 
 # 全局默认并行度：应用启动时按配置注入（set_default_max_workers）；
-# None 时保持历史行为（CPU 数 ≤4 自动）。
-_DEFAULT_MAX_WORKERS: int | None = None
+# None 时保持历史行为（CPU 数 ≤4 自动）。用单元素容器避免 global 语句。
+_DEFAULT_MAX_WORKERS: list[int | None] = [None]
 
 
 def set_default_max_workers(n: int | None) -> None:
@@ -205,13 +209,12 @@ def set_default_max_workers(n: int | None) -> None:
     供应用层启动时按 config.json/env 注入（app_config.get_max_workers），
     三功能共享；防止各面板每次运行新建进程池时各自 hardcode 上限。
     """
-    global _DEFAULT_MAX_WORKERS
-    _DEFAULT_MAX_WORKERS = n if (n is not None and int(n) > 0) else None
+    _DEFAULT_MAX_WORKERS[0] = n if (n is not None and int(n) > 0) else None
 
 
 def get_default_max_workers() -> int | None:
     """当前全局默认并行 worker 数（None 表示自动：CPU 数 ≤4）。"""
-    return _DEFAULT_MAX_WORKERS
+    return _DEFAULT_MAX_WORKERS[0]
 
 
 def create_executor(mode: str = "auto", max_workers: int | None = None) -> Executor:
@@ -250,7 +253,8 @@ def create_executor(mode: str = "auto", max_workers: int | None = None) -> Execu
 # ---------------------------------------------------------------------------
 _shared_lock = threading.Lock()
 # pool → [当前用户数, 是否报废]；健康且无用户的池保留复用
-_shared_pools: dict[ProcessPoolExecutor, list[int, bool]] = {}
+_PoolState = list  # [用户数:int, 是否报废:bool]（list 便于原地修改）
+_shared_pools: dict[ProcessPoolExecutor, _PoolState] = {}
 
 
 def _acquire_shared_pool(max_workers: int) -> ProcessPoolExecutor:

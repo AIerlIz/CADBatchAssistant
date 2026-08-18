@@ -51,6 +51,8 @@ class SettingsPanel:
         cfg_frame.pack(fill="x", padx=8, pady=4)
 
         self.var_oda, self.var_oda_info = build_oda_row(cfg_frame)
+        # build_oda_row 把 OdaStatusView attach 到 var_info，供实时状态更新
+        self._oda_view = getattr(self.var_oda_info, "_oda_view", None)
 
         ttk.Label(cfg_frame, text="DWG 输出版本:").grid(
             row=1, column=0, sticky="w", pady=(6, 0)
@@ -138,10 +140,27 @@ class SettingsPanel:
         self._refresh_ignore_ui()
         # 输入框后续任何写入（手动输入 / 浏览选择 / 版本下拉）自动保存
         self.var_oda.trace_add("write", lambda *a: self._on_change())
+        self.var_oda.trace_add("write", lambda *a: self._recheck_oda_input())
         self.var_version.trace_add("write", lambda *a: self._on_change())
         self.var_update_mirror.trace_add("write", lambda *a: self._on_change())
         self.var_max_workers.trace_add("write", lambda *a: self._on_change())
-        check_oda(self.var_oda, self.var_oda_info)  # 探测并刷新状态提示
+        check_oda(self.var_oda, self.var_oda_info, view=self._oda_view)
+
+    def _recheck_oda_input(self, _event=None) -> None:
+        """输入路径变动时实时校验状态（手动改合法路径→已验证；改坏→路径无效）。
+
+        空串保留起点探测结论不覆盖；非空且是有效 .exe → found；否则 invalid。
+        供 trace 触发：用户粘贴/手改后状态即时反映，无需额外按钮。
+        """
+        if self._oda_view is None:
+            return
+        current = self.var_oda.get().strip().strip('"\'')
+        if not current:
+            return  # 空：保留探测/上次结论，避免闪烁
+        import os as _os
+
+        files_ok = _os.path.isfile(current) and current.lower().endswith(".exe")
+        self._oda_view.set_state("found" if files_ok else "invalid")
 
     def _on_change(self, _event=None) -> None:
         """自动保存到全局配置（合并写入，保留 update_ignore 等其他配置项）。"""

@@ -19,35 +19,96 @@ from cadbatchassistant.core.common.templates import (
     templates_dir,
 )
 from cadbatchassistant.core.dwg_converter import get_converter
+from cadbatchassistant.gui.components.tk_util import Tooltip
 
 # ---------------- ODA 选项助手 ----------------
 
 
+# ODA 状态枚举：短文案（同行显示）/ 前景色 / tooltip 明细文案
+_ODA_STATES = {
+    # key -> (short, color, detail)
+    "found": (
+        "● 已验证",
+        "#2e7d32",
+        "已检测到 ODAFileConverter，路径有效。",
+    ),
+    "missing": (
+        "● 未检测",
+        "#e65100",
+        "未检测到 ODAFileConverter（处理 DWG 需要；纯 DXF 无需）。"
+        "可点击「浏览」手动选择 ODAFileConverter.exe。",
+    ),
+    "invalid": (
+        "● 路径无效",
+        "#c62828",
+        "配置的路径不是有效的 ODAFileConverter.exe，请点击「浏览」重新选择。",
+    ),
+    "chosen": (
+        "● 已指定",
+        "#1565c0",
+        "已手动指定 ODAFileConverter 路径。",
+    ),
+    "probing": ("● 检测中", "#757575", "正在探测 ODAFileConverter..."),
+}
+
+
+class OdaStatusView:
+    """ODA 状态展示（单行内）：短文案 + 颜色 + 悬停明细 tooltip。
+
+    set_state(key) 按 _ODA_STATES 更新可见短文案/颜色与 tooltip 明细；
+    状态列固定宽、不伸展，不挤压输入框（严格单行、不换行）。
+    """
+
+    def __init__(self, parent, var_out: tk.StringVar, width: int = 12) -> None:
+        self._var_out = var_out
+        self._label = ttk.Label(
+            parent,
+            textvariable=var_out,
+            width=width,
+            anchor="w",
+        )
+        self._label.grid(row=0, column=3, sticky="w", padx=(6, 0))
+        self._tip = Tooltip(self._label)
+
+    def set_state(self, key: str) -> None:
+        short, color, detail = _ODA_STATES.get(key, ("● ?", "#666", ""))
+        self._var_out.set(short)
+        self._label.configure(foreground=color)
+        self._tip.set_text(detail)
+
+
 def check_oda(
-    var_oda, var_info, hint: str = "未检测到（处理 DWG 需要；纯 DXF 无需）"
+    var_oda,
+    var_info,
+    hint: str = "未检测到（处理 DWG 需要；纯 DXF 无需）",
+    view: OdaStatusView | None = None,
 ) -> None:
-    """探测 ODAFileConverter 并刷新选项行显示。
+    """探测 ODAFileConverter 并刷新状态显示。
 
     var_oda  : 路径输入框的 StringVar
-    var_info : 状态提示的 StringVar
-    hint     : 未检测到时的提示文案（两面板文案不同）
-    软件启动（设置页构建）与点击「检测」时自动执行：
-    - 未配置（空）或配置路径已失效 → 自动填入探测结果并自动保存
-    - 已配置且有效 → 保留用户路径，仅刷新状态提示
-    - 探测不到 → 保留当前值，仅显示未检测提示
+    var_info : 状态 StringVar（保留兼容写入）
+    view     : OdaStatusView（推荐）；提供时按多状态更新（颜色/tooltip）
+    软件启动（设置页构建）时自动执行：
+    - 未配置（空）或配置路径已失效 → 自动填入探测结果
+    - 已配置且有效 → 保留用户路径
+    - 探测不到 → 保留当前值
     """
     found = get_converter().find()
-    # 用户粘贴的路径可能带引号（Windows 常见），先去引号再判断有效性
     current = var_oda.get().strip().strip('"\'')
     if found:
         if not current or not os.path.isfile(current):
             var_oda.set(str(found))
-        var_info.set("✓ 已检测到")
+        state, msg = "found", "✓ 已检测到"
     else:
-        var_info.set(hint)
+        state, msg = "missing", hint
+    var_info.set(msg)
+    if view is not None:
+        view.set_state(state)
 
 
-def browse_oda(var_oda, var_info) -> None:
+def browse_oda(
+    var_oda, var_info, view: OdaStatusView | None = None
+) -> None:
     """弹出文件对话框选择 ODAFileConverter.exe。"""
     from tkinter import filedialog
 
@@ -61,6 +122,8 @@ def browse_oda(var_oda, var_info) -> None:
     if f:
         var_oda.set(f)
         var_info.set("已指定")
+        if view is not None:
+            view.set_state("chosen")
 
 
 def build_oda_row(
@@ -71,17 +134,26 @@ def build_oda_row(
 ) -> tuple[tk.StringVar, tk.StringVar]:
     """在 parent 的 row=0 构建 ODA 路径选择行，返回 (var_oda, var_info)。
 
-    布局：Label | Entry(伸展) | 浏览按钮 | 状态提示；浏览与 _check_oda
-    由调用方绑定（命令复用 browse_oda / check_oda）。
+    布局（严格单行）：Label | Entry(列1伸展) | 浏览(列2) | 状态短文案(列3)。
+    状态为短文案 + 颜色 + 悬停明细 tooltip（OdaStatusView）：长说明不挤压
+    输入框；状态列固定宽、不伸展，输入框占满剩余宽度。
     """
     var_oda = tk.StringVar(value=initial)
     var_info = tk.StringVar()
+    view = OdaStatusView(parent, var_info)
+    # 记录 view 供调用方 state 更新复用（attach 到返回的 var_info）
+    var_info._oda_view = view  # type: ignore[attr-defined]
     ttk.Label(parent, text=label).grid(row=0, column=0, sticky="w")
-    ttk.Entry(parent, textvariable=var_oda).grid(row=0, column=1, sticky="ew", padx=4)
+    ttk.Entry(parent, textvariable=var_oda).grid(
+        row=0, column=1, sticky="ew", padx=4
+    )
     ttk.Button(
-        parent, text=browse_text, command=lambda: browse_oda(var_oda, var_info)
+        parent,
+        text=browse_text,
+        command=lambda: browse_oda(var_oda, var_info, view),
     ).grid(row=0, column=2, padx=4)
-    ttk.Label(parent, textvariable=var_info).grid(row=0, column=3, sticky="w", padx=4)
+    parent.columnconfigure(1, weight=1)  # 输入框伸展；状态列不伸展
+    view.set_state("probing")  # 初始为探测中，等待 check_oda 更新
     return var_oda, var_info
 
 

@@ -85,3 +85,82 @@ def parse_dnd_data(data: str) -> list[str]:
                 out.append(data[i:j])
                 i = j + 1
         return [p for p in out if p.strip()]
+
+
+class Tooltip:
+    """通用的鼠标悬停提示（tooltip）：绑定到任意 widget，悬停延迟弹出。
+
+    用法：
+        Tooltip(widget, text="说明文案")
+        tip = Tooltip(widget)          # 之后 tip.set_text("更新文案")
+        tip.set_text("...")            # 可传任意值；动态更新已显示的提示
+    悬停经 delay 毫秒后显示带边框的小窗口，移出/点击即隐藏。
+    仅新增 <Enter>/<Leave>/<ButtonPress> 绑定（add="+"），不覆盖 widget
+    原绑定。全屏坐标取 winfo_pointerx/y 以支持多屏。
+    """
+
+    def __init__(
+        self,
+        widget: tk.Misc,
+        text: str = "",
+        delay: int = 500,
+        bg: str = "#FFFDE7",
+        fg: str = "#333333",
+        wrap: int = 480,
+    ) -> None:
+        self.widget = widget
+        self._text = str(text)
+        self._delay = delay
+        self._bg = bg
+        self._fg = fg
+        self._wrap = wrap
+        self._after: str | None = None
+        self._tip: tk.Toplevel | None = None
+        widget.bind("<Enter>", self._on_enter, add="+")
+        widget.bind("<Leave>", self._on_leave, add="+")
+        widget.bind("<ButtonPress>", self._on_leave, add="+")
+
+    def set_text(self, text) -> None:
+        """更新提示文案（任意值转 str；动态更新已显示的 tip 文案）。"""
+        self._text = str(text)
+
+    def _on_enter(self, _event) -> None:
+        if not self._text:
+            return
+        if self._after is not None:
+            self.widget.after_cancel(self._after)
+        self._after = self.widget.after(self._delay, self._show)
+
+    def _on_leave(self, _event=None) -> None:
+        if self._after is not None:
+            self.widget.after_cancel(self._after)
+            self._after = None
+        self._hide()
+
+    def _show(self) -> None:
+        if self._tip is not None:
+            self._tip.destroy()
+        x = self.widget.winfo_pointerx() + 12
+        y = self.widget.winfo_pointery() + 12
+        tip = tk.Toplevel(self.widget)
+        tip.wm_overrideredirect(True)
+        tip.wm_geometry(f"+{x}+{y}")
+        tk.Label(
+            tip,
+            text=self._text,
+            justify="left",
+            background=self._bg,
+            foreground=self._fg,
+            relief="solid",
+            borderwidth=1,
+            wraplength=self._wrap,
+            anchor="w",
+            padx=6,
+            pady=4,
+        ).pack()
+        self._tip = tip
+
+    def _hide(self) -> None:
+        if self._tip is not None:
+            self._tip.destroy()
+            self._tip = None

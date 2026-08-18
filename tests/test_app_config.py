@@ -40,6 +40,14 @@ def test_save_config_roundtrip(tmp_path: Path) -> None:
     assert app_config.load_config(f) == {"a": 1, "b": "中文"}
 
 
+def test_save_config_returns_true_and_no_tmp_leftover(tmp_path: Path) -> None:
+    """save_config 返回 True 且不残留 .tmp 临时文件（原子替换的副作用检查）。"""
+    f = tmp_path / "out.json"
+    assert app_config.save_config(f, {"a": 1}) is True
+    assert not (tmp_path / "out.json.tmp").exists()
+    assert app_config.load_config(f) == {"a": 1}
+
+
 def test_save_app_config_merges(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(app_config, "APP_CONFIG_FILE", tmp_path / "cfg.json")
     app_config.save_config(app_config.APP_CONFIG_FILE, {"keep": 1})
@@ -86,6 +94,14 @@ def test_get_max_workers_invalid_falls_back(tmp_path: Path, monkeypatch) -> None
     """非法值（非数字/越界/布尔）回退默认 4。"""
     monkeypatch.setattr(app_config, "APP_CONFIG_FILE", tmp_path / "cfg.json")
     for bad in ("abc", 0, 99, True):
+        app_config.save_app_config({"max_workers": bad})
+        assert app_config.get_max_workers() == 4
+
+
+def test_get_max_workers_rejects_float(tmp_path: Path, monkeypatch) -> None:
+    """浮点 worker 数回退默认 4（不被 int() 静默截断成误导值）。"""
+    monkeypatch.setattr(app_config, "APP_CONFIG_FILE", tmp_path / "cfg.json")
+    for bad in (4.5, "4.5", "-4"):
         app_config.save_app_config({"max_workers": bad})
         assert app_config.get_max_workers() == 4
 

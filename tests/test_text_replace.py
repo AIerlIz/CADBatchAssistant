@@ -24,6 +24,21 @@ class DecodeTextTest(unittest.TestCase):
     def test_plain_text_unchanged(self):
         self.assertEqual(decode_text("普通中文"), "普通中文")
 
+    def test_invalid_surrogate_kept_as_escape(self):
+        """孤立代理（\\U+D800）无对应字符 → 保留原始转义，不产生孤立代理字符。"""
+        self.assertEqual(decode_text(r"\U+D800"), r"\U+D800")
+
+    def test_max_valid_codepoint_decodes(self):
+        """合法最大 4 位十六进制码点（\\U+FFFF）照常解码。"""
+        self.assertEqual(decode_text(r"\U+FFFF"), "\uffff")
+
+    def test_mixed_valid_and_invalid(self):
+        """合法码点照常解码，非法（孤立代理）保留——不破坏整段内容。"""
+        self.assertEqual(
+            decode_text(r"\U+533A\U+D800\U+57DF"),
+            "区\\U+D800域",
+        )
+
 
 class ApplyRulesModeTest(unittest.TestCase):
     """普通文本模式（默认）与正则模式的查找替换语义。"""

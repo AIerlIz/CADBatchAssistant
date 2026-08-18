@@ -11,12 +11,16 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
+import logging
 import os
 import sys
 from pathlib import Path
 
 from cadbatchassistant.core.dwg_converter import DEFAULT_OUT_VERSION
+
+_LOGGER = logging.getLogger("cadbatchassistant.core.common.app_config")
 
 # DWG 输出版本下拉选项（三功能面板共用）；默认值取自 dwg_converter.DEFAULT_OUT_VERSION，
 # 与转换层默认保持一致，避免多处常量发散
@@ -44,14 +48,24 @@ def load_config(config_file: str | Path) -> dict:
         return {}
 
 
-def save_config(config_file: str | Path, data: dict) -> None:
-    """写入 JSON 配置文件；写失败不抛出（不阻塞使用）。"""
+def save_config(config_file: str | Path, data: dict) -> bool:
+    """写入 JSON 配置文件，返回是否成功（原子替换，避免半写损坏）。
+
+    先写临时文件再 os.replace 原子替换，防止进程中途崩溃留下截断的 JSON；
+    写失败不抛出（不阻塞使用），返回 False 供调用方决定是否提示。
+    """
+    target = Path(config_file)
     try:
-        Path(config_file).parent.mkdir(parents=True, exist_ok=True)
-        with open(config_file, "w", encoding="utf-8") as f:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_name(target.name + ".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, target)
     except Exception:  # noqa: BLE001 - 写配置失败不阻塞使用
-        pass
+        with contextlib.suppress(OSError):
+            (target.parent / (target.name + ".tmp")).unlink()
+        return False
+    return True
 
 
 # ---------------- 全局配置访问（ODA / DWG 输出版本 / 更新镜像） ----------------
@@ -63,10 +77,19 @@ def load_app_config() -> dict:
 
 
 def save_app_config(updates: dict) -> dict:
-    """合并更新全局配置并保存（保留 update_ignore 等其他键），返回新配置。"""
+    """合并更新全局配置并保存（保留 update_ignore 等其他键），返回新配置。
+
+    写后回读校验：落盘失败或内容不一致时记 warning（供排查 ODA 路径等
+    关键配置静默丢失的问题），不阻塞使用。
+    """
     cfg = load_config(APP_CONFIG_FILE)
     cfg.update(updates)
-    save_config(APP_CONFIG_FILE, cfg)
+    if not save_config(APP_CONFIG_FILE, cfg):
+        _LOGGER.warning("写入全局配置失败：%s", APP_CONFIG_FILE)
+        return cfg
+    written = load_config(APP_CONFIG_FILE)
+    if written != cfg:
+        _LOGGER.warning("全局配置写入后校验不一致：%s", APP_CONFIG_FILE)
     return cfg
 
 
@@ -93,8 +116,14 @@ def get_max_workers() -> int:
     raw = os.environ.get("CADBATCH_MAX_WORKERS")
     if raw is None:
         raw = load_app_config().get("max_workers", 4)
-    if isinstance(raw, bool):  # bool 是 int 子类，但 True/False 不是合法 worker 数
+    # bool/float/非整数字符串都不是合法 worker 数 → 回退默认 4，避免静默截断
+    #（如 bool 是 int 子类、float 4.5 会被 int() 截断成 4，误导用户以为已生效）
+    if isinstance(raw, (bool, float)):
         return 4
+    if isinstance(raw, str):
+        raw = raw.strip()
+        if not raw.isdigit():
+            return 4
     try:
         n = int(raw)
     except (TypeError, ValueError):

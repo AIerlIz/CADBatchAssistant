@@ -124,10 +124,12 @@ def save_template_json(category: str, name: str, data: dict) -> Path:
     名与模板名绑定；name 含路径分隔符或越界时抛 ValueError，防止越界写入。
     """
     _validate_template_name(name)
+    # version/source 放在 data 之后，确保不被用户手改 meta 中同名键覆盖，
+    # 保证入库条目始终带一致、合法的版本与模板名绑定。
     payload = {
+        **data,
         "version": 1,
         "source": name,
-        **data,
     }
     out = templates_dir(category) / (name + ".json")
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -206,6 +208,34 @@ def _default_for(kind: str):
     return ""
 
 
+def coerce_edit_value(kind: str, value) -> object:
+    """把编辑单元格的值按列类型校验/宽容转换（GUI 编辑与保存共用的单一实现）。
+
+    - "str"   : None → 空串，其余转 str
+    - "bool"  : 接受已转换的布尔；字符串 是/1/true/yes → True，
+      否/0/false/no/空串 → False；其余抛 ValueError
+    - "float"/"int" : 接受数字或数字字符串（坐标宽容转换）；空值/非数字
+      抛 ValueError（保留编辑为 0 会掩盖用户误删，故显式报错）
+    """
+    if kind == "str":
+        return "" if value is None else str(value)
+    if kind == "bool":
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            low = value.strip().lower()
+            if low in ("1", "true", "是", "yes"):
+                return True
+            if low in ("0", "false", "否", "no", ""):
+                return False
+        raise ValueError("应为是/否")
+    try:
+        v = float(value)
+    except (TypeError, ValueError) as ex:
+        raise ValueError(f"数值非法（{value!r}）") from ex
+    return int(v) if kind == "int" else v
+
+
 def merge_editable_rows(category: str, data: dict, rows: list[dict]) -> dict:
     """把编辑后的行合并回模板 meta dict，返回待保存的 payload。
 
@@ -221,24 +251,6 @@ def merge_editable_rows(category: str, data: dict, rows: list[dict]) -> dict:
     if not isinstance(orig_items, list):
         orig_items = []
 
-    def _coerce(kind: str, value, idx: int) -> object:
-        if kind == "str":
-            return "" if value is None else str(value)
-        if kind == "bool":
-            if isinstance(value, bool):
-                return value
-            if isinstance(value, str):
-                low = value.strip().lower()
-                if low in ("1", "true", "是", "yes"):
-                    return True
-                if low in ("0", "false", "否", "no"):
-                    return False
-            raise ValueError(f"第 {idx + 1} 行「{'是/否'}」应为是/否")
-        try:
-            return float(value) if kind == "float" else int(float(value))
-        except (TypeError, ValueError) as ex:
-            raise ValueError(f"第 {idx + 1} 行数值非法（{ex}）") from ex
-
     new_items: list[dict] = []
     for idx, row in enumerate(rows):
         if not isinstance(row, dict):
@@ -247,7 +259,10 @@ def merge_editable_rows(category: str, data: dict, rows: list[dict]) -> dict:
         if idx < len(orig_items) and isinstance(orig_items[idx], dict):
             merged = dict(orig_items[idx])  # 保留 entity_desc 等不可编辑字段
         for k, _h, kind in cols:
-            merged[k] = _coerce(kind, row.get(k, _default_for(kind)), idx)
+            try:
+                merged[k] = coerce_edit_value(kind, row.get(k, _default_for(kind)))
+            except ValueError as ex:
+                raise ValueError(f"第 {idx + 1} 行「{_h}」{ex}") from ex
         new_items.append(merged)
 
     payload = dict(data)

@@ -61,10 +61,24 @@ def _candidate_encodings(src: str) -> list[str]:
 
 
 def decode_text(s: str) -> str:
-    """把 \\U+XXXX 转义序列解码为真实 Unicode 字符。"""
+    """把 \\U+XXXX 转义序列解码为真实 Unicode 字符。
+
+    非法码点（孤立代理 0xD800-0xDFFF、超过 \\U+10FFFF）无对应字符，保留
+    原始转义文本不破坏内容（写入时由 ezdxf 再转义，避免孤立代理写回报错）。
+    """
     if "\\U+" not in s:
         return s
-    return _U_ESCAPE_RE.sub(lambda m: chr(int(m.group(1), 16)), s)
+
+    def _sub(m: re.Match) -> str:
+        try:
+            cp = int(m.group(1), 16)
+        except ValueError:  # 非十六进制：保留原样
+            return m.group(0)
+        if cp > 0x10FFFF or 0xD800 <= cp <= 0xDFFF:
+            return m.group(0)  # 非法码点保留原转义
+        return chr(cp)
+
+    return _U_ESCAPE_RE.sub(_sub, s)
 
 
 @dataclass

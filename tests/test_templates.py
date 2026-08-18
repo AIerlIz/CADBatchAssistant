@@ -278,3 +278,39 @@ def test_edit_columns_cover_both_categories() -> None:
         for key, header, kind in cols:
             assert key and header
             assert kind in ("str", "float", "int", "bool")
+
+
+def test_save_template_json_forces_version_source(monkeypatch, tmp_path: Path) -> None:
+    """用户手改 meta 里的 version/source 键不能覆盖入库的 version/source。"""
+    _patch_templates_dir(monkeypatch, tmp_path)
+    templates.save_template_json(
+        "fill", "a.dwg", {"version": 99, "source": "被篡改.dwg", "placeholders": []}
+    )
+    data = templates.load_template_json("fill", "a.dwg")
+    assert data["version"] == 1  # 强制为合法版本
+    assert data["source"] == "a.dwg"  # 保持模板名绑定
+    assert data["placeholders"] == []
+
+
+def test_coerce_edit_value_types() -> None:
+    """编辑值类型解析（str/bool/float/int）的单一实现行为。"""
+    # str
+    assert templates.coerce_edit_value("str", None) == ""
+    assert templates.coerce_edit_value("str", "x") == "x"
+    # bool：是/否/1/0/true/false/空串
+    assert templates.coerce_edit_value("bool", True) is True
+    for yes in ("是", "1", "true", "yes", "TRUE"):
+        assert templates.coerce_edit_value("bool", yes) is True
+    for no in ("否", "0", "false", "no", ""):
+        assert templates.coerce_edit_value("bool", no) is False
+    with pytest.raises(ValueError):
+        templates.coerce_edit_value("bool", "maybe")
+    # float / int：数字或数字字符串宽容转换
+    assert templates.coerce_edit_value("float", "5.5") == 5.5
+    assert templates.coerce_edit_value("float", 3) == 3.0
+    assert templates.coerce_edit_value("int", "2") == 2
+    assert templates.coerce_edit_value("int", "2.9") == 2
+    with pytest.raises(ValueError):
+        templates.coerce_edit_value("float", "abc")
+    with pytest.raises(ValueError):
+        templates.coerce_edit_value("float", "")

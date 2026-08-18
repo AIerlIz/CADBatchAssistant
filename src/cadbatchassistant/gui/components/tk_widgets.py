@@ -17,6 +17,7 @@ from typing import Literal
 from cadbatchassistant.core.common.filetypes import CAD_SUFFIXES
 from cadbatchassistant.core.common.templates import (
     TEMPLATE_EDIT_COLUMNS,
+    coerce_edit_value,
     editable_rows,
     load_template_json,
     merge_editable_rows,
@@ -306,24 +307,11 @@ class _TemplateEditDialog:
         return "" if value is None else str(value)
 
     def _parse(self, kind: str, text: str):
-        """把编辑框文本按类型解析为待保存值（bool 转布尔，与 merge 一致）。
+        """把编辑框文本按类型解析为待保存值（委托 core 单一实现，避免两处漂移）。
 
-        非法数值抛 ValueError（由保存路径统一弹错）。
+        非法数值/枚举抛 ValueError（由保存路径统一弹错）。
         """
-        if kind == "bool":
-            low = text.strip().lower()
-            if low in ("1", "true", "是", "yes"):
-                return True
-            if low in ("0", "false", "否", "no", ""):
-                return False
-            raise ValueError("应为是/否")
-        if kind == "str":
-            return text
-        try:
-            v = float(text)
-        except ValueError as ex:
-            raise ValueError(f"数值非法：{text!r}") from ex
-        return int(v) if kind == "int" else v
+        return coerce_edit_value(kind, text)
 
     # ---------------- 内联编辑 ----------------
     def _on_double(self, event) -> None:

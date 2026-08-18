@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "CADBatchAssistant"
-version = "2.6.2"
+version = "2.6.3"
 description = "CAD批处理助手 —— 批量修改 DWG/DXF 图纸文字（正则替换）+ 数据表填图（模板占位）+ 图纸目录生成（标记模板取值）"
 requires-python = ">=3.12"
 dependencies = [

@@ -54,6 +54,7 @@ class SettingsPanel:
         # build_oda_row 把 OdaStatusView attach 到 var_info，供实时状态更新
         self._oda_view = getattr(self.var_oda_info, "_oda_view", None)
 
+        # DWG 输出版本 + 并行进程数 同一行（左半输出版本、右半并行数）
         ttk.Label(cfg_frame, text="DWG 输出版本:").grid(
             row=1, column=0, sticky="w", pady=(6, 0)
         )
@@ -66,11 +67,9 @@ class SettingsPanel:
             width=14,
         )
         version_cb.grid(row=1, column=1, sticky="w", padx=4, pady=(6, 0))
-        cfg_frame.columnconfigure(1, weight=1)
 
-        # 与 v2.4.0 风格一致：标签用自然宽度（不强行定宽对齐），下拉贴左侧
         ttk.Label(cfg_frame, text="并行进程数:").grid(
-            row=2, column=0, sticky="w", pady=(6, 0)
+            row=1, column=2, sticky="w", pady=(6, 0), padx=(12, 0)
         )
         self.var_max_workers = tk.StringVar()
         workers_cb = ttk.Combobox(
@@ -78,14 +77,10 @@ class SettingsPanel:
             textvariable=self.var_max_workers,
             values=WORKERS_CHOICES,
             state="readonly",
-            width=14,
+            width=8,
         )
-        workers_cb.grid(row=2, column=1, sticky="w", padx=4, pady=(6, 0))
-        ttk.Label(
-            cfg_frame,
-            text="同时处理的图纸数（自动 = 按 CPU 数 ≤4；多核大批量可调大）",
-            foreground="#555",
-        ).grid(row=2, column=2, sticky="w", padx=(4, 0), pady=(6, 0))
+        workers_cb.grid(row=1, column=3, sticky="w", padx=4, pady=(6, 0))
+        cfg_frame.columnconfigure(1, weight=1)
 
         # ---- 软件更新 ----
         upd_frame = ttk.LabelFrame(main, text="软件更新", padding=8)

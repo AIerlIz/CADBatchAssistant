@@ -67,7 +67,7 @@ class OdaStatusView:
             width=width,
             anchor="w",
         )
-        self._label.grid(row=0, column=3, sticky="w", padx=(6, 0))
+        self._label.grid(row=0, column=2, sticky="w", padx=4)
         self._tip = Tooltip(self._label)
 
     def set_state(self, key: str) -> None:
@@ -134,9 +134,9 @@ def build_oda_row(
 ) -> tuple[tk.StringVar, tk.StringVar]:
     """在 parent 的 row=0 构建 ODA 路径选择行，返回 (var_oda, var_info)。
 
-    布局（严格单行）：Label | Entry(列1伸展) | 浏览(列2) | 状态短文案(列3)。
-    状态为短文案 + 颜色 + 悬停明细 tooltip（OdaStatusView）：长说明不挤压
-    输入框；状态列固定宽、不伸展，输入框占满剩余宽度。
+    布局（严格单行）：Label | Entry(列1伸展、铺满空白) | 状态(列2) | 浏览(列3,靠右)。
+    状态为短文案 + 颜色 + 悬停明细 tooltip；浏览按钮固定在最右，
+    输入框占满剩余宽度（col0 标签、col1 输入框、col2 状态、col3 浏览）。
     """
     var_oda = tk.StringVar(value=initial)
     var_info = tk.StringVar()
@@ -151,8 +151,8 @@ def build_oda_row(
         parent,
         text=browse_text,
         command=lambda: browse_oda(var_oda, var_info, view),
-    ).grid(row=0, column=2, padx=4)
-    parent.columnconfigure(1, weight=1)  # 输入框伸展；状态列不伸展
+    ).grid(row=0, column=3, padx=4)  # 最右列
+    parent.columnconfigure(1, weight=1)  # 输入框铺满空白；状态/浏览列不伸展
     view.set_state("probing")  # 初始为探测中，等待 check_oda 更新
     return var_oda, var_info
 

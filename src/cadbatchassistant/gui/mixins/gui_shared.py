@@ -30,6 +30,7 @@ from cadbatchassistant.gui.components.tk_widgets import (
     build_log_panel,
     build_output_row,
     delete_template_file,
+    edit_template_file,
     upload_template_file,
 )
 
@@ -198,6 +199,19 @@ class TemplateLibraryMixin:
             self._refresh_templates()
             save_panel_config({self.TEMPLATE_CONFIG_KEY: self.var_template.get()})
 
+    def _edit_template(self) -> None:
+        """打开模板占位符编辑对话框；保存后执行 _after_edit 钩子并刷新下拉。"""
+        name = self.var_template.get().strip()
+        if not name:
+            from tkinter import messagebox
+
+            messagebox.showwarning("提示", "请先选择要编辑的模板")
+            return
+        if edit_template_file(self.TEMPLATE_CATEGORY, name, parent=self._root):
+            self._after_edit(name)
+            self._refresh_templates()
+            save_panel_config({self.TEMPLATE_CONFIG_KEY: self.var_template.get()})
+
     def _after_upload(self, name: str, src: str) -> None:
         """上传成功后的钩子：子类从源文件 src 提取占位符写入模板库 meta。
 
@@ -208,6 +222,10 @@ class TemplateLibraryMixin:
 
     def _after_delete(self, name: str) -> None:
         """删除成功后的钩子：子类可在此清理模板伴生 meta。"""
+        return None
+
+    def _after_edit(self, name: str) -> None:
+        """编辑保存后的钩子：子类可在模板占位符变更后做联动（默认无）。"""
         return None
 
     def _on_drop_upload_template(self, event) -> None:
@@ -420,6 +438,9 @@ class PanelLayoutMixin:
         self.tpl_combo.drop_target_register(DND_FILES)
         self.tpl_combo.dnd_bind("<<Drop>>", self._on_drop_upload_template)
         ttk.Button(row, text="上传", command=self._upload_template).pack(
+            side="left", padx=4
+        )
+        ttk.Button(row, text="编辑", command=self._edit_template).pack(
             side="left", padx=4
         )
         ttk.Button(row, text="删除", command=self._delete_template).pack(

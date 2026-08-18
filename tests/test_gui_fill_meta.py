@@ -231,3 +231,73 @@ def test_delete_removes_meta(monkeypatch, tmp_path):
         assert not meta_path_for(tpl).exists()
     finally:
         root.destroy()
+
+
+def _seed_meta_entry(tmp_path, name="tpl.dxf"):
+    """在隔离的模板库中写入一条 meta JSON（无原文件，模拟已上传）。"""
+    d = tmp_path / "templates" / "fill"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / (name + ".json")).write_text(
+        json.dumps({"version": 1, "source": name, "placeholders": []}),
+        encoding="utf-8",
+    )
+
+
+def test_edit_template_saves_and_refreshes(monkeypatch, tmp_path):
+    """编辑保存成功 → 对话框以本面板分类/模板名/宿主调用，并刷新下拉。"""
+    root = _make_root()
+    try:
+        _seed_meta_entry(tmp_path)  # 先入库，供构造时下拉枚举
+        panel, _, gs = _make_panel(root, monkeypatch, tmp_path)
+        panel.var_template.set("tpl.dxf")
+        with mock.patch.object(
+            gs, "edit_template_file", return_value=True
+        ) as edit_mock:
+            panel._edit_template()
+        assert edit_mock.call_count == 1
+        call = edit_mock.call_args
+        assert call.args[0] == "fill"
+        assert call.args[1] == "tpl.dxf"
+        assert call.kwargs["parent"] is panel._root
+        # 保存后刷新下拉：库内那条 meta 仍被枚举保留
+        assert "tpl.dxf" in list(panel.tpl_combo["values"])
+    finally:
+        root.destroy()
+
+
+def test_edit_template_cancel_does_not_save(monkeypatch, tmp_path):
+    """编辑取消（返回 False）→ 不刷新、不写面板记忆。"""
+    root = _make_root()
+    try:
+        panel, _, gs = _make_panel(root, monkeypatch, tmp_path)
+        _seed_meta_entry(tmp_path)
+        panel.var_template.set("tpl.dxf")
+        with (
+            mock.patch.object(
+                gs, "edit_template_file", return_value=False
+            ) as edit_mock,
+            mock.patch.object(gs, "save_panel_config") as save_cfg,
+        ):
+            panel._edit_template()
+        edit_mock.assert_called_once()
+        save_cfg.assert_not_called()
+    finally:
+        root.destroy()
+
+
+def test_edit_template_no_selection_warns(monkeypatch, tmp_path):
+    """未选择模板时点「编辑」→ 弹错提示，且不打开编辑对话框。"""
+    root = _make_root()
+    try:
+        panel, _, gs = _make_panel(root, monkeypatch, tmp_path)
+        panel.var_template.set("")
+        with (
+            mock.patch.object(gs, "edit_template_file") as edit_mock,
+            mock.patch.object(gs.messagebox, "showwarning") as warn,
+        ):
+            panel._edit_template()
+        edit_mock.assert_not_called()
+        warn.assert_called_once()
+        assert "编辑" in warn.call_args[0][1]
+    finally:
+        root.destroy()

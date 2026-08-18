@@ -126,3 +126,155 @@ def test_remove_template_rejects_path_traversal(monkeypatch, tmp_path: Path) -> 
     # 越界目标与库内合法条目均未被删除
     assert victim.exists()
     assert (d / "a.dwg.json").exists()
+
+
+# ---------------- 编辑：load/save_template_json ----------------
+
+def test_save_load_template_json_roundtrip(monkeypatch, tmp_path: Path) -> None:
+    """save_template_json → load_template_json 往返一致（自动补 version/source）。"""
+    _patch_templates_dir(monkeypatch, tmp_path)
+    templates.save_template_json(
+        "fill", "a.dwg", {"placeholders": [{"text": "图号", "height": 3.0}]}
+    )
+    data = templates.load_template_json("fill", "a.dwg")
+    assert data is not None
+    assert data["version"] == 1
+    assert data["source"] == "a.dwg"
+    assert data["placeholders"][0]["text"] == "图号"
+    out = tmp_path / "templates" / "fill" / "a.dwg.json"
+    assert "图号" in out.read_text(encoding="utf-8")  # ensure_ascii=False
+
+
+def test_load_template_json_protects_against_traversal(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """编辑读取同样拒绝路径穿越（防越界读模板库之外的 JSON）。"""
+    victim = tmp_path / "victim.json"
+    victim.write_text("{}", encoding="utf-8")
+    _patch_templates_dir(monkeypatch, tmp_path)
+    for bad in ("../victim.json", "..\\victim", "sub/a.dwg", "..", "."):
+        with pytest.raises(ValueError):
+            templates.load_template_json("fill", bad)
+
+
+def test_load_template_json_bad_json_returns_none(monkeypatch, tmp_path: Path) -> None:
+    d = tmp_path / "templates" / "fill"
+    d.mkdir(parents=True)
+    (d / "broken.dwg.json").write_text("not json", encoding="utf-8")
+    _patch_templates_dir(monkeypatch, tmp_path)
+    assert templates.load_template_json("fill", "broken.dwg") is None
+
+
+def test_load_template_json_missing_returns_none(monkeypatch, tmp_path: Path) -> None:
+    _patch_templates_dir(monkeypatch, tmp_path)
+    assert templates.load_template_json("fill", "nope.dwg") is None
+
+
+# ---------------- 编辑：editable_rows / merge_editable_rows ----------------
+
+def test_editable_rows_catalog(monkeypatch, tmp_path: Path) -> None:
+    """目录模板：从 anchors 提取可编辑行（仅含可编辑列）。"""
+    _patch_templates_dir(monkeypatch, tmp_path)
+    templates.save_template_json(
+        "catalog",
+        "a.dwg",
+        {
+            "fields": ["图号"],
+            "anchors": [{
+                "field": "图号", "is_area": False,
+                "min_x": 1, "min_y": 2, "max_x": 3, "max_y": 4,
+                "point_x": 2, "point_y": 3,
+            }],
+        },
+    )
+    data = templates.load_template_json("catalog", "a.dwg")
+    rows = templates.editable_rows("catalog", data)
+    assert rows == [{
+        "field": "图号", "is_area": False,
+        "min_x": 1, "min_y": 2, "max_x": 3, "max_y": 4,
+        "point_x": 2, "point_y": 3,
+    }]
+
+
+def test_editable_rows_fill_defaults(monkeypatch, tmp_path: Path) -> None:
+    """填表模板：缺键时补类型默认值；entity_desc 不进入可编辑行。"""
+    _patch_templates_dir(monkeypatch, tmp_path)
+    templates.save_template_json(
+        "fill", "t.dxf", {"placeholders": [{"text": "图号"}]}
+    )
+    data = templates.load_template_json("fill", "t.dxf")
+    row = templates.editable_rows("fill", data)[0]
+    assert row["text"] == "图号"
+    assert row["layer"] == ""
+    assert row["x"] == 0.0
+    assert row["halign"] == 0
+
+
+def test_merge_editable_rows_catalog_regenerates_fields(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """目录模板：编辑锚点 field 后，fields 按编辑后的字段名重新生成（去重保序）。"""
+    _patch_templates_dir(monkeypatch, tmp_path)
+    templates.save_template_json(
+        "catalog",
+        "a.dwg",
+        {
+            "fields": ["图号"],
+            "anchors": [
+                {"field": "图号", "is_area": False, "point_x": 1.0, "point_y": 2.0},
+                {"field": "图号", "is_area": False, "point_x": 3.0, "point_y": 4.0},
+            ],
+        },
+    )
+    data = templates.load_template_json("catalog", "a.dwg")
+    rows = templates.editable_rows("catalog", data)
+    rows[0]["field"] = "编号"
+    merged = templates.merge_editable_rows("catalog", data, rows)
+    assert [a["field"] for a in merged["anchors"]] == ["编号", "图号"]
+    assert merged["fields"] == ["编号", "图号"]
+
+
+def test_merge_editable_rows_fill_keeps_entity_desc(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """填表模板：编辑仅改动可编辑列，entity_desc 等字段按原样保留。"""
+    _patch_templates_dir(monkeypatch, tmp_path)
+    templates.save_template_json(
+        "fill",
+        "t.dxf",
+        {
+            "placeholders": [{
+                "text": "图号", "height": 3.0, "entity_desc": {"dxftype": "TEXT"},
+            }]
+        },
+    )
+    data = templates.load_template_json("fill", "t.dxf")
+    rows = templates.editable_rows("fill", data)
+    rows[0]["height"] = "5.5"  # 字符串坐标宽容转换
+    merged = templates.merge_editable_rows("fill", data, rows)
+    ph = merged["placeholders"][0]
+    assert ph["height"] == 5.5
+    assert ph["entity_desc"] == {"dxftype": "TEXT"}
+
+
+def test_merge_editable_rows_invalid_numeric_rejected(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """编辑行数值非法 → merge 抛 ValueError。"""
+    _patch_templates_dir(monkeypatch, tmp_path)
+    templates.save_template_json("fill", "t.dxf", {"placeholders": [{"text": "a"}]})
+    data = templates.load_template_json("fill", "t.dxf")
+    with pytest.raises(ValueError):
+        templates.merge_editable_rows(
+            "fill", data, [{"height": "abc"}]
+        )
+
+
+def test_edit_columns_cover_both_categories() -> None:
+    """两个模板库分类都定义了可编辑列（结构完整）。"""
+    for cat in ("fill", "catalog"):
+        cols = templates.TEMPLATE_EDIT_COLUMNS[cat]
+        assert cols
+        for key, header, kind in cols:
+            assert key and header
+            assert kind in ("str", "float", "int", "bool")

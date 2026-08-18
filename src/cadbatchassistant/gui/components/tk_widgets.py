@@ -2,12 +2,13 @@
 
 - 通用控件：build_file_list / popup_list_menu / build_log_panel / build_output_row
 - ODA 助手：check_oda / browse_oda / build_oda_row
-- 模板库弹窗包装：upload_template_file / delete_template_file
+- 模板库弹窗包装：upload_template_file / delete_template_file / edit_template_file
   （纯文件操作在 core.templates，此处只做对话框与提示）
 """
 
 from __future__ import annotations
 
+import contextlib
 import os
 import tkinter as tk
 from tkinter import ttk
@@ -15,11 +16,16 @@ from typing import Literal
 
 from cadbatchassistant.core.common.filetypes import CAD_SUFFIXES
 from cadbatchassistant.core.common.templates import (
+    TEMPLATE_EDIT_COLUMNS,
+    editable_rows,
+    load_template_json,
+    merge_editable_rows,
     remove_template,
+    save_template_json,
     templates_dir,
 )
 from cadbatchassistant.core.dwg_converter import get_converter
-from cadbatchassistant.gui.components.tk_util import Tooltip
+from cadbatchassistant.gui.components.tk_util import Tooltip, center_window
 
 # ---------------- ODA 选项助手 ----------------
 
@@ -217,6 +223,269 @@ def delete_template_file(category: str, name: str) -> bool:
         messagebox.showerror("删除失败", str(ex))
         return False
     return True
+
+
+class _TemplateEditDialog:
+    """模板占位符编辑对话框（Toplevel）：表格内联编辑 + 添加/删除行。
+
+    columns : list[tuple[key, header, kind]]（见 core.templates.TEMPLATE_EDIT_COLUMNS）
+    编辑结果行经 rows() 返回；「保存」在本类内校验并落盘（失败弹错保持
+    对话框打开，便于修正）；「取消」丢弃。saved 标记是否成功保存。
+    """
+
+    def __init__(self, parent, title: str, columns, rows: list[dict]) -> None:
+        self._parent = parent
+        self._columns = columns
+        self._rows = [dict(r) for r in rows]
+        self._editor: tk.Entry | None = None
+        self.saved = False
+
+        self._win = tk.Toplevel(parent)
+        self._win.title(title)
+        self._win.transient(parent.winfo_toplevel())
+        self._win.resizable(True, True)
+
+        body = ttk.Frame(self._win, padding=8)
+        body.pack(fill="both", expand=True)
+
+        self._tree = ttk.Treeview(
+            body,
+            columns=[str(i) for i in range(len(columns))],
+            show="headings",
+            height=10,
+        )
+        for i, (_key, header, _kind) in enumerate(columns):
+            self._tree.heading(str(i), text=header, anchor="w")
+            self._tree.column(str(i), width=110, anchor="w")
+        scroll = ttk.Scrollbar(body, orient="vertical", command=self._tree.yview)
+        self._tree.config(yscrollcommand=scroll.set)
+        self._tree.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+
+        self._tree.bind("<Double-1>", self._on_double)
+        self._tree.bind("<Button-3>", self._on_right_click)
+        self._menu = tk.Menu(body, tearoff=0)
+        self._menu.add_command(label="删除选中行", command=self._delete_selected)
+
+        desc = ttk.Label(
+            self._win,
+            text="双击单元格编辑；「是/否」列填 是/否/1/0/true/false。",
+            padding=(8, 0, 8, 4),
+        )
+        desc.pack(fill="x")
+
+        bar = ttk.Frame(self._win, padding=(8, 0, 8, 8))
+        bar.pack(fill="x")
+        ttk.Button(bar, text="添加行", command=self._add_row).pack(side="left")
+        ttk.Button(bar, text="删除选中行", command=self._delete_selected).pack(
+            side="left", padx=6
+        )
+        ttk.Button(bar, text="保存", command=self._save).pack(side="right")
+        ttk.Button(bar, text="取消", command=self._cancel).pack(side="right", padx=6)
+
+        self._refresh()
+        center_window(self._win, parent.winfo_toplevel())
+
+    # ---------------- 行读写 ----------------
+    def rows(self) -> list[dict]:
+        return [dict(r) for r in self._rows]
+
+    def _refresh(self) -> None:
+        self._tree.delete(*self._tree.get_children())
+        for idx, row in enumerate(self._rows):
+            values = tuple(
+                self._display(kind, row.get(key, ""))
+                for key, _h, kind in self._columns
+            )
+            self._tree.insert("", "end", iid=str(idx), values=values)
+
+    @staticmethod
+    def _display(kind: str, value) -> str:
+        if kind == "bool":
+            return "是" if value else "否"
+        return "" if value is None else str(value)
+
+    def _parse(self, kind: str, text: str):
+        """把编辑框文本按类型解析为待保存值（bool 转布尔，与 merge 一致）。
+
+        非法数值抛 ValueError（由保存路径统一弹错）。
+        """
+        if kind == "bool":
+            low = text.strip().lower()
+            if low in ("1", "true", "是", "yes"):
+                return True
+            if low in ("0", "false", "否", "no", ""):
+                return False
+            raise ValueError("应为是/否")
+        if kind == "str":
+            return text
+        try:
+            v = float(text)
+        except ValueError as ex:
+            raise ValueError(f"数值非法：{text!r}") from ex
+        return int(v) if kind == "int" else v
+
+    # ---------------- 内联编辑 ----------------
+    def _on_double(self, event) -> None:
+        if self._tree.identify_region(event.x, event.y) != "cell":
+            return
+        iid = self._tree.identify_row(event.y)
+        col_comp = self._tree.identify_column(event.x)
+        if not iid or not col_comp.startswith("#"):
+            return
+        try:
+            idx = int(iid)
+            col = int(col_comp[1:]) - 1
+        except ValueError:
+            return
+        if not (0 <= col < len(self._columns)):
+            return
+        self._start_edit(idx, col)
+
+    def _start_edit(self, idx: int, col: int) -> None:
+        self._cancel_edit()
+        iid = str(idx)
+        box = self._tree.bbox(iid, str(col))
+        if not box:
+            return
+        x, y, w, h = box
+        _key, _h, kind = self._columns[col]
+        var = tk.StringVar(value=self._display(kind, self._rows[idx].get(_key, "")))
+        ed = tk.Entry(self._tree, textvariable=var, borderwidth=1, relief="solid")
+        ed.place(x=x, y=y, width=w, height=h)
+        self._editor, self._edit_idx, self._edit_col = ed, idx, col
+        ed.focus_set()
+        ed.select_range(0, "end")
+        ed.bind("<Return>", lambda _e: self._commit())
+        ed.bind("<Escape>", lambda _e: self._cancel_edit())
+        ed.bind("<FocusOut>", lambda _e: self._commit())
+
+    def _commit(self) -> None:
+        if self._editor is None:
+            return
+        ed, idx, col = self._editor, self._edit_idx, self._edit_col
+        text = ed.get()
+        self._cancel_edit()
+        _key, _h, kind = self._columns[col]
+        # 非法数值保留原值，保存时统一校验
+        with contextlib.suppress(ValueError):
+            self._rows[idx][_key] = self._parse(kind, text)
+        self._refresh()
+
+    def _cancel_edit(self) -> None:
+        if self._editor is not None:
+            self._editor.destroy()
+            self._editor = None
+
+    # ---------------- 行增删 ----------------
+    def _add_row(self) -> None:
+        self._rows.append(
+            {
+                key: (
+                    False
+                    if kind == "bool"
+                    else 0
+                    if kind in ("int", "float")
+                    else ""
+                )
+                for key, _h, kind in self._columns
+            }
+        )
+        self._refresh()
+
+    def _delete_selected(self) -> None:
+        for iid in sorted(self._tree.selection(), reverse=True):
+            try:
+                idx = int(iid)
+            except ValueError:
+                continue
+            if 0 <= idx < len(self._rows):
+                del self._rows[idx]
+        self._refresh()
+
+    def _on_right_click(self, event) -> str:
+        iid = self._tree.identify_row(event.y)
+        if iid:
+            if iid not in self._tree.selection():
+                self._tree.selection_set(iid)
+            self._menu.tk_popup(event.x_root, event.y_root)
+        return "break"
+
+    # ---------------- 保存 / 取消 ----------------
+    def _save(self) -> None:
+        # 先做一次类型校验（把编辑框仍为字符串的列解析）
+        from tkinter import messagebox
+
+        try:
+            for _col, (key, _h, kind) in enumerate(self._columns):
+                for row in self._rows:
+                    if kind in ("float", "int") and isinstance(row.get(key), str):
+                        row[key] = self._parse(kind, row[key])
+            payload_cb = getattr(self, "_on_save", None)
+            if payload_cb is not None:
+                payload_cb(self.rows())
+        except ValueError as ex:
+            messagebox.showwarning("编辑模板", str(ex))
+            return
+        self.saved = True
+        self._win.destroy()
+
+    def _cancel(self) -> None:
+        self._win.destroy()
+
+    def run(self) -> bool:
+        self._parent.winfo_toplevel().wait_window(self._win)
+        return self.saved
+
+
+def edit_template_file(
+    category: str, name: str, parent=None, on_save=None
+) -> bool:
+    """打开模板占位符编辑对话框；保存成功返回 True，取消/失败返回 False。
+
+    category : 模板库分类（"fill" / "catalog"）
+    name     : 模板名（下拉选中项）
+    parent   : 宿主窗口（None 用默认根）；用于弹窗相对居中
+    on_save  : 可选回调 on_save(payload)，在落盘前对合并后的 payload 做联动
+        修正（fields 已由 core.merge_editable_rows 自动重建，一般不必提供）。
+
+    编辑损坏 → 弹错并返回 False；保存时的类型错误弹错（对话框保持打开）。
+    """
+    from tkinter import messagebox
+
+    if not name:
+        messagebox.showwarning("提示", "请先选择要编辑的模板")
+        return False
+    data = load_template_json(category, name)
+    if data is None:
+        messagebox.showerror(
+            "编辑模板",
+            f"模板「{name}」配置缺失或损坏，无法编辑（请删除后重新上传）",
+        )
+        return False
+    columns = TEMPLATE_EDIT_COLUMNS.get(category, [])
+    if not columns:
+        messagebox.showerror("编辑模板", f"不支持的模板分类：{category}")
+        return False
+    rows = editable_rows(category, data)
+    parent = parent or tk._default_root  # type: ignore[attr-defined]
+    if parent is None:
+        messagebox.showerror("编辑模板", "无可用窗口")
+        return False
+
+    dlg = _TemplateEditDialog(parent, f"编辑模板「{name}」", columns, rows)
+
+    def _do_save(edited_rows: list[dict]) -> None:
+        payload = merge_editable_rows(category, data, edited_rows)
+        if on_save is not None:
+            on_save(payload)
+        save_template_json(category, name, payload)
+
+    dlg._on_save = _do_save  # type: ignore[attr-defined]
+    try:
+        return dlg.run()
+    except tk.TclError:
+        return False
 
 
 # ---------------- 通用控件构建 ----------------

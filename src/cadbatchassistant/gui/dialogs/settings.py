@@ -54,7 +54,7 @@ class SettingsPanel:
         # build_oda_row 把 OdaStatusView attach 到 var_info，供实时状态更新
         self._oda_view = getattr(self.var_oda_info, "_oda_view", None)
 
-        # DWG 输出版本 + 并行进程数 同一行（左半输出版本、右半并行数）
+        # DWG 输出版本 + 并行进程数 同一行：输出版本靠左、并行数靠右、中间留白
         ttk.Label(cfg_frame, text="DWG 输出版本:").grid(
             row=1, column=0, sticky="w", pady=(6, 0)
         )
@@ -68,19 +68,20 @@ class SettingsPanel:
         )
         version_cb.grid(row=1, column=1, sticky="w", padx=4, pady=(6, 0))
 
-        ttk.Label(cfg_frame, text="并行进程数:").grid(
-            row=1, column=2, sticky="w", pady=(6, 0), padx=(12, 0)
-        )
+        # 并行数（标签+下拉）整块放同一 Frame 并靠右：中间由 col1 伸展留白
+        workers_wrap = ttk.Frame(cfg_frame)
+        workers_wrap.grid(row=1, column=3, sticky="e", padx=4, pady=(6, 0))
+        ttk.Label(workers_wrap, text="并行进程数:").pack(side="left")
         self.var_max_workers = tk.StringVar()
         workers_cb = ttk.Combobox(
-            cfg_frame,
+            workers_wrap,
             textvariable=self.var_max_workers,
             values=WORKERS_CHOICES,
             state="readonly",
             width=8,
         )
-        workers_cb.grid(row=1, column=3, sticky="w", padx=4, pady=(6, 0))
-        cfg_frame.columnconfigure(1, weight=1)
+        workers_cb.pack(side="left", padx=(4, 0))
+        cfg_frame.columnconfigure(1, weight=1)  # 输出版本与并行数之间伸展留白
 
         # ---- 软件更新 ----
         upd_frame = ttk.LabelFrame(main, text="软件更新", padding=8)

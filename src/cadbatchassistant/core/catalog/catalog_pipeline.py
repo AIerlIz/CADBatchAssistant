@@ -251,7 +251,6 @@ def run_pipeline(
             tasks,
             is_cancelled=_is_cancelled,
             on_done=_on_done,
-            reuse_pool=True,
         )
         if cancelled["v"]:
             result.error = "已取消"

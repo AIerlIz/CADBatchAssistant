@@ -335,7 +335,7 @@ def map_files(
     is_cancelled=None,
     on_done=None,
     executor: Executor | None = None,
-    reuse_pool: bool = False,
+    reuse_pool: bool = True,
 ) -> list:
     """并行执行 worker(item)，返回与提交顺序一致的结果列表（兼容入口）。
 

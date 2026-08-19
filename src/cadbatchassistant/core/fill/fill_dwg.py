@@ -301,7 +301,6 @@ def fill_all(
         tasks,
         is_cancelled=_is_cancelled,
         on_done=_on_done,
-        reuse_pool=True,  # 跨块/跨阶段复用共享进程池（省 spawn 开销）
     )
     ok = len(stems) - len(failed) - len(skipped)
     emit(

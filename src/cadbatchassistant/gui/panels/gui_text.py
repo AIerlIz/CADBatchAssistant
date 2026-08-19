@@ -454,7 +454,6 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
             dxf_tasks,
             is_cancelled=self._is_cancelled,
             on_done=_on_dxf_done,
-            reuse_pool=True,
         )
         if self._is_cancelled():
             self._emit("已停止。")
@@ -532,7 +531,6 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
                             tasks,
                             is_cancelled=self._is_cancelled,
                             on_done=_on_dwg_done,
-                            reuse_pool=True,
                         )
                         return failed_here, []
 

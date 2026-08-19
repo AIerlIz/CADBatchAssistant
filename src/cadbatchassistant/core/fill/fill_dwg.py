@@ -21,6 +21,7 @@ from ezdxf import const
 from cadbatchassistant.core.common.parallel import TaskFailed, map_files
 from cadbatchassistant.core.common.text_replace import read_doc
 from cadbatchassistant.core.fill.fill_parse_xlsx import load_xlsx
+from cadbatchassistant.gui.mixins.gui_shared import make_cancel_tracker
 
 
 def make_text(val: str) -> str:
@@ -202,7 +203,7 @@ def fill_one(before_dxf: str, out_dxf: str, spec: dict, row: dict) -> list[str]:
 def _fill_one_task(item: tuple) -> tuple:
     """并行 worker：解包任务参数执行 fill_one，返回 (stem, log)。
 
-    item = (stem, before_dxf, out_dxf, spec, row)。顶层函数（Windows spawn 可 pickle）。
+    item = (stem, before, out, spec, row)。顶层函数（Windows spawn 可 pickle）。
     """
     stem, before, out, spec, row = item
     return stem, fill_one(before, out, spec, row)
@@ -275,14 +276,9 @@ def fill_all(
             continue
         tasks.append((stem, before, out, specs[stem], data[stem]))
 
-    cancelled_reported = {"v": False}
-
-    def _is_cancelled() -> bool:
-        c = cancel is not None and cancel.is_set()
-        if c and not cancelled_reported["v"]:
-            cancelled_reported["v"] = True
-            emit("[WARN] 收到取消请求，停止填表")
-        return c
+    _is_cancelled = make_cancel_tracker(
+        cancel, lambda: emit("[WARN] 收到取消请求，停止填表")
+    )
 
     def _on_done(result, _index, item) -> None:
         stem = item[0]

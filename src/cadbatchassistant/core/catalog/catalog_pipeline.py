@@ -9,6 +9,7 @@ from __future__ import annotations
 import shutil
 import tempfile
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 
 from cadbatchassistant.core import dwg_converter as dc
@@ -26,6 +27,7 @@ from cadbatchassistant.core.catalog.catalog_template_reader import (
 from cadbatchassistant.core.common.filetypes import CAD_SUFFIXES, XLSX_SUFFIXES
 from cadbatchassistant.core.common.input_files import check_duplicate_names
 from cadbatchassistant.core.common.parallel import TaskFailed, map_files
+from cadbatchassistant.gui.mixins.gui_shared import make_cancel_tracker
 
 # 回调：log(msg)，progress(0-100 整数)
 LogFn = Callable[[str], None]
@@ -65,14 +67,8 @@ def parse_template_fields(template_dwg: str | Path, oda: str = "") -> list[str]:
     return collect_fields(parse_template_anchors(template_dwg, oda))
 
 
-def _extract_task(item: tuple) -> dict:
-    """并行 worker：解包 (dxf_path, anchors) 取值。
-
-    顶层函数（Windows spawn 可 pickle）；单文件异常由 map_files 包装为
-    TaskFailed，调用方统一容错。
-    """
-    f, anchors = item
-    return extract_by_anchors(f, anchors)
+_extract_task = partial(extract_by_anchors)  # type: ignore[misc]
+_extract_task.__name__ = "_extract_task"  # type: ignore[attr-defined]
 
 
 def run_pipeline(
@@ -224,12 +220,7 @@ def run_pipeline(
         total = len(dxf_files)
         tasks = [(f, anchors) for f in dxf_files]
         results: list[dict[str, list[str]] | None] = [None] * total
-        cancelled = {"v": False}
-
-        def _is_cancelled() -> bool:
-            if is_cancelled():
-                cancelled["v"] = True
-            return cancelled["v"]
+        _is_cancelled = make_cancel_tracker(is_cancelled)
 
         done_count = {"v": 0}
 
@@ -252,7 +243,7 @@ def run_pipeline(
             is_cancelled=_is_cancelled,
             on_done=_on_done,
         )
-        if cancelled["v"]:
+        if _is_cancelled.is_cancelled():  # type: ignore[attr-defined]
             result.error = "已取消"
             return result
         # 保持用户选择的文件顺序构建 entries（map_files 结果按提交顺序返回）

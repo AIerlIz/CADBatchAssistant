@@ -13,6 +13,7 @@ import re
 import shutil
 import tempfile
 import tkinter as tk
+from functools import partial
 from pathlib import Path
 from tkinter import messagebox, ttk
 
@@ -30,15 +31,11 @@ from cadbatchassistant.gui.mixins.gui_shared import (
     warn_require,
 )
 
-
-def _text_task(item: tuple):
-    """并行 worker：解包 (src, dst, rules, dry_run) 执行 process_dxf_file。
-
-    顶层函数（Windows spawn 可 pickle）；单文件异常由 map_files 包装为
-    TaskFailed，调用方统一容错。
-    """
-    src, dst, rules, dry_run = item
-    return process_dxf_file(src, dst, rules, dry_run=dry_run)
+# process_dxf_file(src, dst, rules, dry_run=dry_run) 参数顺序与任务元组
+# (src, dst, rules, dry_run) 完全一致，
+# 直接用 partial 替代解包函数（Windows spawn 可 pickle）。
+_text_task = partial(process_dxf_file)  # type: ignore[misc]
+_text_task.__name__ = "_text_task"  # type: ignore[attr-defined]
 
 
 class EditableTreeview(ttk.Treeview):

@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import os
 import tkinter as tk
+from collections.abc import Callable
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -287,6 +288,40 @@ def warn_require(condition: bool, message: str, title: str = "提示") -> bool:
     if not condition:
         messagebox.showwarning(title, message)
     return bool(condition)
+
+
+def make_cancel_tracker(
+    cancel_source, notice_cb=None
+) -> Callable[[], bool]:
+    """创建「首次取消通知」追踪器，供 map_files 的 is_cancelled 参数使用。
+
+    cancel_source : threading.Event 或 bool 回调（接收无参，返回 bool）；
+                    None 时恒返回 False（无取消语义）。
+    notice_cb     : 首次检测到取消时调用，仅执行一次（避免重复弹窗/日志）
+
+    返回的函数有 ``.is_cancelled`` 属性（bool），供调用方在 map_files 返回后
+    检查是否触发了取消，与原始的 ``cancelled["v"]`` 用法等价。
+    """
+    import threading
+
+    cancelled_notice = {"v": False}
+
+    def _is_cancelled() -> bool:
+        if cancel_source is None:
+            return False
+        is_cancel = (
+            cancel_source.is_set()
+            if isinstance(cancel_source, threading.Event)
+            else cancel_source()
+        )
+        if is_cancel and not cancelled_notice["v"]:
+            cancelled_notice["v"] = True
+            if notice_cb is not None:
+                notice_cb()
+        return is_cancel
+
+    _is_cancelled.is_cancelled = lambda: cancelled_notice["v"]  # type: ignore[attr-defined]
+    return _is_cancelled
 
 
 def get_app_runtime_config() -> tuple[str, str]:

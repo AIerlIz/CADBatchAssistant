@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import tempfile
 import tkinter as tk
@@ -95,24 +96,50 @@ class IsoFillApp(
         )
 
         # 工作表 + 匹配列（同一行）
+        # 「图纸模板」行沿用共享 _add_template_row（不改动）。为使「工作表格」
+        # 下拉框与「图纸模板」下拉框左右边缘同宽对齐（且高度正常），把「工作
+        # 表格」下拉框放进定宽定高容器（_sync_sheet_row 同步为图纸模板下拉框
+        # 的宽高）；「匹配列」标签+下拉靠右贴行端，右侧不留白。
         row_sheet = ttk.Frame(src_frame)
         row_sheet.pack(fill="x", pady=(6, 0))
         ttk.Label(row_sheet, text="工作表格:").pack(side="left")
+        self._sheet_box = ttk.Frame(row_sheet, width=0, height=0)
+        self._sheet_box.pack_propagate(False)  # 尺寸由 _sync_sheet_row 精确给定
+        # 左侧 padx=4 与图纸模板下拉框（_add_template_row 内 padx=4）对齐
+        self._sheet_box.pack(side="left", padx=(4, 0))
         self.var_sheet = tk.StringVar()
         self.sheet_combo = ttk.Combobox(
-            row_sheet, textvariable=self.var_sheet, state="readonly", width=16
+            self._sheet_box, textvariable=self.var_sheet, state="readonly", width=16
         )
-        self.sheet_combo.pack(side="left", fill="x", expand=True, padx=4)
+        self.sheet_combo.pack(fill="both", expand=True)  # 填满容器（宽=图纸模板宽）
         self.sheet_combo.bind("<<ComboboxSelected>>", self._on_sheet_changed)
-        ttk.Label(row_sheet, text="匹配列:").pack(side="left")
+        # 匹配列：下拉框放入定宽容器，左右边缘对齐图纸模板的「上传/编辑/删除」
+        # 按钮区（左=上传左，右=删除右）；「匹配列:」标签在容器内左侧，下拉
+        # 在容器内右侧填满剩余宽度。
+        self._match_box = ttk.Frame(row_sheet, width=0, height=0)
+        self._match_box.pack_propagate(False)  # 尺寸由 _sync_sheet_row 精确给定
+        self._match_box.pack(side="right")
+        ttk.Label(self._match_box, text="匹配列:").pack(side="left")
         self.var_match_col = tk.StringVar()
         self.match_combo = ttk.Combobox(
-            row_sheet, textvariable=self.var_match_col, state="readonly", width=16
+            self._match_box, textvariable=self.var_match_col, state="readonly", width=10
         )
-        self.match_combo.pack(side="left", fill="x", expand=True, padx=4)
+        self.match_combo.pack(side="left", fill="both", expand=True)  # 填满剩余宽度
 
-        # 图纸模板（模板库下拉选择）
+        # 图纸模板（模板库下拉选择，完全沿用共享实现）
         self._add_template_row(src_frame)
+        # 在模板行/数据源尺寸变化（含首次布局、窗口缩放）时同步工作表格下拉框
+        # 容器尺寸 = 图纸模板下拉框尺寸；src_frame 与模板行大小一致但各自独立
+        # 触发 Configure。
+        src_frame.bind(
+            "<Configure>", lambda _e: src_frame.after_idle(self._sync_sheet_row)
+        )
+        self.tpl_combo.master.bind(
+            "<Configure>", lambda _e: src_frame.after_idle(self._sync_sheet_row)
+        )
+        # 布局异步完成，错峰多跑几次直到几何稳定（确定性公式，重复调用幂等）
+        for _ms in (100, 250, 500):
+            src_frame.after(_ms, self._sync_sheet_row)
 
         # 3. 输出区
         self.var_out = tk.StringVar()
@@ -123,6 +150,42 @@ class IsoFillApp(
 
         # 5. 日志区
         self._add_log_section()
+
+    def _sync_sheet_row(self, _event=None) -> None:
+        """对齐「工作表格」下拉框与「图纸模板」下拉框（同宽同高），且「匹配列」
+        下拉框左右边缘对齐图纸模板的「上传/编辑/删除」按钮区。
+
+        不动「图纸模板」行。把「工作表格」下拉框容器(_sheet_box)尺寸同步为图纸
+        模板下拉框尺寸（两行同为 src_frame 的子行、左侧标签同宽，故左右边缘
+        对齐）；把「匹配列」下拉框容器(_match_box)宽度同步为按钮区宽
+        （删除按钮右缘 - 上传按钮左缘）。均同时给高度，避免 pack_propagate(False)
+        把下拉框压成一条线。
+        布局异步完成，配合错峰 after 调用在几何稳定后测得准确值。
+        """
+        with contextlib.suppress(Exception):  # 布局未就绪时跳过，下一轮/事件再同步
+            tpl_h = self.tpl_combo.winfo_height()
+            self._sheet_box.configure(
+                width=self.tpl_combo.winfo_width(),
+                height=tpl_h,
+            )
+            btns = [
+                c
+                for c in self.tpl_combo.master.winfo_children()
+                if c.winfo_class() == "TButton"
+            ]
+            if btns:
+                btn_left = btns[0].winfo_rootx()
+                btn_right = btns[-1].winfo_rootx() + btns[-1].winfo_width()
+                self._match_box.configure(
+                    width=max(btn_right - btn_left, 0),
+                    height=tpl_h,
+                )
+                # 删除按钮右侧 padx=4，行右端比删除右端多 4px，需要右移匹配列左边缘
+                row = self._match_box.master
+                row_right = row.winfo_rootx() + row.winfo_width()
+                self._match_box.pack_configure(
+                    padx=(0, max(row_right - btn_right, 0))
+                )
 
     # ---------------- 输入 ----------------
     def _browse_xlsx(self) -> None:

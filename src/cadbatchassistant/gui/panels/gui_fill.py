@@ -20,7 +20,7 @@ from cadbatchassistant.core.common.template_meta import (
     remove_template_meta,
     save_template_meta,
 )
-from cadbatchassistant.core.common.templates import template_path, templates_dir
+from cadbatchassistant.core.common.templates import template_path
 from cadbatchassistant.core.fill.fill_learn_spec import scan_all_placeholders
 from cadbatchassistant.core.fill.fill_pipeline import run_pipeline_files
 from cadbatchassistant.gui.components.async_panel import AsyncPanel
@@ -272,7 +272,7 @@ class IsoFillApp(
         """校验输入并收集 worker 参数；校验失败弹窗提示并返回 None。"""
         xlsx = self.var_xlsx.get().strip()
         tpl_name = self.var_template.get().strip()
-        template = str(templates_dir("fill") / tpl_name) if tpl_name else ""
+        template = str(template_path("fill", tpl_name)) if tpl_name else ""
         sheet = self.var_sheet.get().strip() or None
         match_col = self.var_match_col.get().strip() or None
         files = list(self.scanned_files)

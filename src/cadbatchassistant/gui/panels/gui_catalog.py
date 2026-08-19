@@ -37,7 +37,7 @@ from cadbatchassistant.core.common.template_meta import (
     remove_template_meta,
     save_template_meta,
 )
-from cadbatchassistant.core.common.templates import template_path, templates_dir
+from cadbatchassistant.core.common.templates import template_path
 from cadbatchassistant.gui.components.async_panel import AsyncPanel
 from cadbatchassistant.gui.components.tk_util import center_window
 from cadbatchassistant.gui.mixins.gui_shared import (
@@ -162,7 +162,7 @@ class CatalogPanel(
         anchors)；校验/预检失败返回 None（已弹窗）。
         """
         tpl_name = self.var_template.get().strip()
-        template = str(templates_dir("catalog") / tpl_name) if tpl_name else ""
+        template = str(template_path("catalog", tpl_name)) if tpl_name else ""
         xlsx = self.var_xlsx.get().strip()
         files = list(self.scanned_files)
         out = self.var_out.get().strip()

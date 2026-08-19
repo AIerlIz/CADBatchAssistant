@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import os
 import tempfile
 import tkinter as tk
@@ -49,6 +48,7 @@ class IsoFillApp(
         super().__init__(parent)
         self.scanned_files: list[str] = []
         self._sheet_headers: dict[str, list[str]] = {}  # 工作表名 → 首行表头缓存
+        self._sync_sheet_row_retry = 0  # _sync_sheet_row 重试计数器
         self._build_ui()
         # 仅恢复上次选择的图纸模板；输入输出路径不设默认值、不记忆恢复
         # （ODA 路径与输出版本为全局设置，见「设置」tab）
@@ -139,9 +139,12 @@ class IsoFillApp(
         self.tpl_combo.master.bind(
             "<Configure>", lambda _e: src_frame.after_idle(self._sync_sheet_row)
         )
-        # 布局异步完成，错峰多跑几次直到几何稳定（确定性公式，重复调用幂等）
-        for _ms in (100, 250, 500):
-            src_frame.after(_ms, self._sync_sheet_row)
+        # 布局异步完成：先用 after_idle 等当前事件循环排空，再设一个上限
+        # 为 3 次的重试兜底（低配机/多屏缩放场景几何稳定可能需要多轮）。
+        # _sync_sheet_row 本身幂等（几何稳定后重复调用不产生副作用），
+        # 用 _sync_sheet_row_retry 计数控制最多重试次数，避免无限循环。
+        self._sync_sheet_row_retry = 0
+        src_frame.after_idle(self._sync_sheet_row)
 
         # 3. 输出区
         self.var_out = tk.StringVar()
@@ -162,9 +165,11 @@ class IsoFillApp(
         对齐）；把「匹配列」下拉框容器(_match_box)宽度同步为按钮区宽
         （删除按钮右缘 - 上传按钮左缘）。均同时给高度，避免 pack_propagate(False)
         把下拉框压成一条线。
-        布局异步完成，配合错峰 after 调用在几何稳定后测得准确值。
+        布局异步完成：先用 after_idle 等当前事件循环排空，再配合 _sync_sheet_row_retry
+        计数器兜底（最多重试 3 次，低配机/多屏缩放场景几何稳定可能需要多轮）。
+        调用幂等，几何稳定后重复调用不产生副作用。
         """
-        with contextlib.suppress(Exception):  # 布局未就绪时跳过，下一轮/事件再同步
+        try:
             tpl_h = self.tpl_combo.winfo_height()
             self._sheet_box.configure(
                 width=self.tpl_combo.winfo_width(),
@@ -188,6 +193,13 @@ class IsoFillApp(
                 self._match_box.pack_configure(
                     padx=(0, max(row_right - btn_right, 0))
                 )
+        except Exception:  # noqa: BLE001 - 布局未就绪，重试
+            self._sync_sheet_row_retry += 1
+            if self._sync_sheet_row_retry <= 3:
+                self._root.after_idle(self._sync_sheet_row)
+            return
+        # 同步成功：重置计数器，不再重试
+        self._sync_sheet_row_retry = 0
 
     # ---------------- 输入 ----------------
     def _browse_xlsx(self) -> None:

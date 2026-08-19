@@ -124,7 +124,9 @@ class IsoFillApp(
         self.match_combo = ttk.Combobox(
             self._match_box, textvariable=self.var_match_col, state="readonly", width=10
         )
-        self.match_combo.pack(side="left", fill="both", expand=True, padx=(4, 0))  # 与"工作表格:"旁间距一致
+        self.match_combo.pack(
+            side="left", fill="both", expand=True, padx=(4, 0)
+        )  # 与"工作表格:"旁间距一致
 
         # 图纸模板（模板库下拉选择，完全沿用共享实现）
         self._add_template_row(src_frame)

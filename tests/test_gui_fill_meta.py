@@ -150,9 +150,8 @@ def test_prepare_run_accepts_meta_without_template_file(tk_root, monkeypatch, tm
     panel.var_match_col.set("")
     panel.scanned_files = [str(tmp_path / "a.dxf")]
     panel.var_out.set(str(tmp_path / "out"))
-    with (
-        mock.patch.object(gf, "get_oda", return_value=""),
-        mock.patch.object(gf, "get_out_version", return_value="ACAD2013"),
+    with mock.patch.object(
+        gf, "get_app_runtime_config", return_value=("", "ACAD2013")
     ):
         args = panel._prepare_run()
     assert args is not None  # 预检通过，不再误报「请选择模板」

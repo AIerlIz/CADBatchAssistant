@@ -11,13 +11,12 @@ import os
 import tempfile
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, ttk
 
 from cadbatchassistant.core import dwg_converter as dc
-from cadbatchassistant.core.common.app_config import get_oda, get_out_version
+from cadbatchassistant.core.common.app_config import get_oda
 from cadbatchassistant.core.common.filetypes import XLSX_SUFFIXES
 from cadbatchassistant.core.common.template_meta import (
-    load_template_meta,
     remove_template_meta,
     save_template_meta,
 )
@@ -30,6 +29,8 @@ from cadbatchassistant.gui.mixins.gui_shared import (
     PanelLayoutMixin,
     RunStartMixin,
     TemplateLibraryMixin,
+    get_app_runtime_config,
+    validate_template_meta,
     warn_require,
 )
 
@@ -276,8 +277,7 @@ class IsoFillApp(
         match_col = self.var_match_col.get().strip() or None
         files = list(self.scanned_files)
         out = self.var_out.get().strip()
-        oda = get_oda()
-        out_version = get_out_version()
+        oda, out_version = get_app_runtime_config()
 
         if not warn_require(
             bool(xlsx) and os.path.isfile(xlsx), "请选择有效的数据表格文件"
@@ -288,41 +288,19 @@ class IsoFillApp(
             "请从图纸模板下拉框选择模板（可先「上传」）",
         ):
             return None
-        meta = load_template_meta(template)
-        if meta is None:
-            messagebox.showerror(
-                "填表助手",
-                f"模板「{tpl_name}」未配置，请删除后重新上传",
-            )
-            return None
-        if not warn_require(
-            isinstance(meta.get("placeholders"), list) and meta["placeholders"],
-            f"模板「{tpl_name}」未配置任何 [列名] 占位符，请删除后重新上传",
-        ):
-            return None
-        # 逐项校验占位符结构（手改 JSON 缺键会在 fill_pipeline 抛 KeyError，
-        # 后台线程只报「处理中断」；此处提前定位到具体条目并友好报错）
-        bad = next(
-            (
-                i
-                for i, ph in enumerate(meta["placeholders"])
-                if not isinstance(ph, dict)
-                or not all(
-                    k in ph
-                    for k in (
-                        "text", "layer", "x", "y", "height", "style",
-                        "halign", "valign", "ref_text", "entity_desc",
-                    )
-                )
-            ),
-            None,
+        meta = validate_template_meta(
+            category="fill",
+            tpl_name=tpl_name,
+            template_path=template,
+            panel_title="填表助手",
+            list_key="placeholders",
+            extra_checks=((
+                ("text", "layer", "x", "y", "height", "style",
+                 "halign", "valign", "ref_text", "entity_desc"),
+                "占位符缺字段",
+            ),),
         )
-        if bad is not None:
-            messagebox.showerror(
-                "填表助手",
-                f"模板「{tpl_name}」配置损坏"
-                f"（第 {bad + 1} 个占位符缺字段），请删除后重新上传",
-            )
+        if meta is None:
             return None
         if not warn_require(bool(files), "请选择要处理的 DWG/DXF 文件"):
             return None
@@ -330,9 +308,11 @@ class IsoFillApp(
             return None
         # 模板只读 meta（不再转换模板），仅处理图纸为 DWG 时才需要 ODA
         has_dwg = any(f.lower().endswith(".dwg") for f in files)
-        err = dc.get_converter().require_for_dwg(has_dwg, oda)
-        if err:
-            messagebox.showerror("缺少 ODA File Converter", err)
+        if not warn_require(
+            not has_dwg or dc.get_converter().require_for_dwg(has_dwg, oda) is None,
+            "缺少 ODA File Converter，请安装或在「设置」页配置其路径",
+            title="缺少 ODA File Converter",
+        ):
             return None
 
         return (

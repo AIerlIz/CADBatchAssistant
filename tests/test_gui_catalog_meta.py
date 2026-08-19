@@ -126,8 +126,7 @@ def test_prepare_run_reads_meta_without_parsing(tk_root, monkeypatch, tmp_path):
     panel.var_out.set(str(tmp_path / "out"))
     fake_wb = mock.Mock()
     with (
-        mock.patch.object(gc, "get_oda", return_value=""),
-        mock.patch.object(gc, "get_out_version", return_value="ACAD2013"),
+        mock.patch.object(gc, "get_app_runtime_config", return_value=("", "ACAD2013")),
         mock.patch.object(gc, "load_catalog_rules", return_value={}),
         mock.patch.object(
             gc, "load_workbook", return_value=fake_wb
@@ -160,7 +159,7 @@ def test_prepare_run_meta_missing_reports_error(tk_root, monkeypatch, tmp_path):
     panel.scanned_files = [str(tmp_path / "a.dxf")]
     panel.var_out.set(str(tmp_path / "out"))
     with (
-        mock.patch.object(gc, "get_oda", return_value=""),
+        mock.patch.object(gc, "get_app_runtime_config", return_value=("", "")),
         mock.patch.object(gs.messagebox, "showerror") as err,
         mock.patch.object(
             gc, "parse_template_anchors",

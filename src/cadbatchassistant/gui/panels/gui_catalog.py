@@ -34,7 +34,6 @@ from cadbatchassistant.core.common.app_config import (
     load_catalog_rules,
 )
 from cadbatchassistant.core.common.template_meta import (
-    load_template_meta,
     remove_template_meta,
     save_template_meta,
 )
@@ -47,8 +46,10 @@ from cadbatchassistant.gui.mixins.gui_shared import (
     RunStartMixin,
     TemplateLibraryMixin,
     finish_popup,
+    get_app_runtime_config,
     load_panel_config,
     save_panel_config,
+    validate_template_meta,
     warn_require,
 )
 
@@ -183,14 +184,15 @@ class CatalogPanel(
         if not warn_require(bool(out), "请设置输出目录"):
             return None
 
-        oda = get_oda()
-        meta = load_template_meta(template)
+        oda, _ = get_app_runtime_config()
+        meta = validate_template_meta(
+            category="catalog",
+            tpl_name=tpl_name,
+            template_path=template,
+            panel_title="图纸目录助手",
+            list_key="anchors",
+        )
         if meta is None:
-            messagebox.showerror(
-                "图纸目录助手",
-                f"模板「{tpl_name}」未配置，请删除后重新上传"
-                "（上传时会自动提取 [字段名] 占位符）",
-            )
             return None
         try:
             anchors = anchors_from_dict(meta.get("anchors"))

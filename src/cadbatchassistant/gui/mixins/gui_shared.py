@@ -17,9 +17,17 @@ from tkinter import filedialog, messagebox, ttk
 
 from tkinterdnd2 import DND_FILES
 
-from cadbatchassistant.core.common.app_config import load_config, save_config
+from cadbatchassistant.core.common.app_config import (
+    get_oda,
+    get_out_version,
+    load_config,
+    save_config,
+)
 from cadbatchassistant.core.common.filetypes import CAD_SUFFIXES
-from cadbatchassistant.core.common.template_meta import remove_template_meta
+from cadbatchassistant.core.common.template_meta import (
+    load_template_meta,
+    remove_template_meta,
+)
 from cadbatchassistant.core.common.templates import (
     list_templates,
     template_path,
@@ -279,6 +287,80 @@ def warn_require(condition: bool, message: str, title: str = "提示") -> bool:
     if not condition:
         messagebox.showwarning(title, message)
     return bool(condition)
+
+
+def get_app_runtime_config() -> tuple[str, str]:
+    """返回全局运行时配置 (oda_path, out_version)。
+
+    替代各面板 _prepare_run 中反复的 get_oda() + get_out_version() 调用，
+    语义统一、可测。
+    """
+    return get_oda(), get_out_version()
+
+
+def validate_template_meta(
+    *,
+    category: str,
+    tpl_name: str,
+    template_path: str,
+    panel_title: str,
+    list_key: str,
+    extra_checks: tuple[tuple[tuple[str, ...], str], ...] | None = None,
+) -> dict | None:
+    """校验模板 meta JSON，加载失败或数据为空时弹错误窗并返回 None。
+
+    category : 模板库分类（"fill" / "catalog"）
+    tpl_name : 模板文件名（用于错误提示）
+    template_path : 模板文件路径（meta JSON 与模板文件同目录同名）
+    panel_title : 面板标题（用于弹窗标题，如"填表助手"）
+    list_key : 元数据中存储列表的键名（fill → "placeholders"，catalog → "anchors"）
+    extra_checks : 可选的 (item, missing_keys_str) 元组列表，用于逐项结构校验；
+                   每项对应一次完整的弹窗提示（含错误项编号），为 None 时跳过。
+
+    返回加载成功的 meta dict；校验失败返回 None（已弹错）。
+    """
+    meta = load_template_meta(template_path)
+    if meta is None:
+        hint = "（上传时会自动提取"
+        if category == "fill":
+            hint += " [列名] 占位符）"
+        else:
+            hint += " [字段名] 取值锚点）"
+        messagebox.showerror(
+            panel_title,
+            f"模板「{tpl_name}」未配置，请删除后重新上传{hint}",
+        )
+        return None
+    items = meta.get(list_key)
+    if not isinstance(items, list) or not items:
+        msg = (
+            f"模板「{tpl_name}」未配置任何"
+            + (" [列名] 占位符" if category == "fill" else " 取值锚点")
+            + "，请删除后重新上传"
+        )
+        messagebox.showerror(panel_title, msg)
+        return None
+    # 结构完整性校验（手改 JSON 缺键会在 pipeline 抛 KeyError，
+    # 后台线程只报「处理中断」；此处提前定位到具体条目并友好报错）
+    if extra_checks is not None:
+        for item_spec, err_msg in extra_checks:
+            bad = next(
+                (
+                    i
+                    for i, ph in enumerate(items)
+                    if not isinstance(ph, dict)
+                    or not all(k in ph for k in item_spec)
+                ),
+                None,
+            )
+            if bad is not None:
+                messagebox.showerror(
+                    panel_title,
+                    f"模板「{tpl_name}」配置损坏"
+                    f"（第 {bad + 1} 个{err_msg}），请删除后重新上传",
+                )
+                return None
+    return meta
 
 
 class PanelLayoutMixin:

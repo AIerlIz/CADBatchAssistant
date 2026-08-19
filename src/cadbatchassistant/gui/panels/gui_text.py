@@ -17,7 +17,6 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 
 from cadbatchassistant.core import dwg_converter as dc
-from cadbatchassistant.core.common.app_config import get_oda, get_out_version
 from cadbatchassistant.core.common.dwg_workflow import run_dwg_roundtrip_chunks
 from cadbatchassistant.core.common.input_files import check_duplicate_names
 from cadbatchassistant.core.common.parallel import TaskFailed, map_files
@@ -27,6 +26,7 @@ from cadbatchassistant.gui.mixins.gui_shared import (
     FilesPanelMixin,
     PanelLayoutMixin,
     RunStartMixin,
+    get_app_runtime_config,
     warn_require,
 )
 
@@ -326,14 +326,14 @@ class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
             out = self.var_out.get().strip()
         if not warn_require(bool(out), "请设置输出目录"):
             return None
-        oda = get_oda()
-        out_version = get_out_version()
+        oda, out_version = get_app_runtime_config()
         has_dwg = any(p.lower().endswith(".dwg") for p in self.scanned_files)
-        if has_dwg and not self.var_dry.get():
-            err = dc.get_converter().require_for_dwg(True, oda)
-            if err:
-                messagebox.showerror("缺少 ODA File Converter", err)
-                return None
+        if has_dwg and not self.var_dry.get() and not warn_require(
+            dc.get_converter().require_for_dwg(True, oda) is None,
+            "缺少 ODA File Converter，请安装或在「设置」页配置其路径",
+            title="缺少 ODA File Converter",
+        ):
+            return None
 
         # 快照文件列表：后台线程只读快照，避免运行期间主线程
         # 增删文件（_delete_selected_files 等）导致迭代竞态/IndexError

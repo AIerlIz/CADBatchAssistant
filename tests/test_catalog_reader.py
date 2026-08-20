@@ -171,3 +171,5 @@ def test_large_area_rect_many_texts_order_preserved(tmp_path):
     # 前 11 个点落在矩形内（x<10 或 y<10 的约束下按序保留）
     expect = [t for (x, y), t in texts if -1 <= x <= 10 and -1 <= y <= 10]
     assert out["编号"] == expect
+
+

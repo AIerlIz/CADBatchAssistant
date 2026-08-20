@@ -67,6 +67,8 @@ class Anchor:
     max_y: float = 0.0
     point_x: float = 0.0  # 单点锚点的占位符坐标
     point_y: float = 0.0
+    from_attribute: bool = False  # True=从块属性取值；False=从文字实体取值
+    regex: str = ""  # 正则表达式（可选，用于匹配/过滤提取的值）
 
 
 def _collect_rects(
@@ -196,6 +198,8 @@ def anchor_to_dict(a: Anchor) -> dict:
         "max_y": round(a.max_y, 2),
         "point_x": round(a.point_x, 2),
         "point_y": round(a.point_y, 2),
+        "from_attribute": a.from_attribute,
+        "regex": a.regex,
     }
 
 
@@ -232,6 +236,8 @@ def anchors_from_dict(data: object) -> list[Anchor]:
                     max_y=float(item.get("max_y", 0.0)),
                     point_x=float(item.get("point_x", 0.0)),
                     point_y=float(item.get("point_y", 0.0)),
+                    from_attribute=bool(item.get("from_attribute", False)),
+                    regex=str(item.get("regex", "") or ""),
                 )
             )
         except (TypeError, ValueError) as ex:

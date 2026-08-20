@@ -193,6 +193,8 @@ def test_editable_rows_catalog(monkeypatch, tmp_path: Path) -> None:
         "field": "图号", "is_area": False,
         "min_x": 1, "min_y": 2, "max_x": 3, "max_y": 4,
         "point_x": 2, "point_y": 3,
+        "from_attribute": False,
+        "regex": "",
     }]
 
 

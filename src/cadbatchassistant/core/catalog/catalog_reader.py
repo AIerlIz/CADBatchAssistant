@@ -67,6 +67,8 @@ def extract_by_anchors(
     - 所有锚点统一按覆盖矩形取值：区域锚点 = 模板里圈选的小矩形；
       单点锚点 = 占位符文字在模板中的包围盒（_text_bounds）
     - 矩形内仅保留编号型字符（字母/数字/中文/连字符/下划线）
+    - from_attribute=True 时从块属性（ATTRIB）取值；False 时从文字实体取值
+    - regex 非空时仅保留匹配该正则的值
     - 同一字段多个锚点（候选位置）的值合并，保序去重；无值锚点忽略
 
     性能：文字按插入点分桶到网格（_CELL_SIZE），锚点只探测覆盖区域
@@ -75,8 +77,11 @@ def extract_by_anchors(
 
     返回 {字段名: [值, ...]}（按锚点出现顺序）。
     """
+    import re as _re
+
     doc = ezdxf.readfile(str(dxf_path))
 
+    # 构建网格：按文字实体插入点分桶
     grid: dict[tuple[int, int], list[tuple[int, float, float, str]]] = {}
     for idx, e in enumerate(iter_text_entities(doc)):
         t = _plain_text(e).strip()
@@ -84,6 +89,16 @@ def extract_by_anchors(
             continue
         x, y = _entity_insert_point(e)
         grid.setdefault(_cell_key(x, y), []).append((idx, x, y, t))
+
+    # 编译正则表达式（可选）
+    regex_obj = None
+    for a in anchors:
+        if a.regex:
+            try:
+                regex_obj = _re.compile(a.regex)
+                break
+            except _re.error:
+                pass
 
     def _probe(a) -> list[str]:
         """按覆盖矩形取矩形内文字（按文档顺序），已过滤非编号字符。"""
@@ -98,6 +113,9 @@ def extract_by_anchors(
                         and a.min_y <= y <= a.max_y
                         and _is_id_chars(t)
                     ):
+                        # 应用正则过滤
+                        if regex_obj and not regex_obj.search(t):
+                            continue
                         hits.append((idx, t))
         hits.sort()  # 按文档索引恢复原顺序（网格探测顺序与文档顺序无关）
         return [t for _idx, t in hits]

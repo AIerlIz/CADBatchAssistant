@@ -168,6 +168,8 @@ TEMPLATE_EDIT_COLUMNS: dict[str, list[tuple[str, str, str]]] = {
         ("max_y", "maxY", "float"),
         ("point_x", "点X", "float"),
         ("point_y", "点Y", "float"),
+        ("from_attribute", "从属性取值", "bool"),
+        ("regex", "正则匹配", "str"),
     ],
 }
 

@@ -29,6 +29,9 @@ _PLACEHOLDER_RE = re.compile(r"^\[([^\]]+)\]$")
 # 矩形判定容差（浮点坐标误差）
 _EPS = 1e-4
 
+# CJK Unified Ideographs Extension A 的结束编码点，用于区分中文/ASCII 字符宽度
+_CJK_IDEOGRAPHS_END = 0x2E7F
+
 
 def _text_bounds(e) -> tuple[float, float, float, float]:
     """占位符文字包围盒（覆盖区域）：单点锚点按此矩形取值。
@@ -48,7 +51,7 @@ def _text_bounds(e) -> tuple[float, float, float, float]:
             pass
     height = float(getattr(e.dxf, "height", 1.0) or 1.0)
     text = _plain_text(e)
-    width = sum(1.0 if ord(ch) > 0x2E7F else 0.6 for ch in text) * height
+    width = sum(1.0 if ord(ch) > _CJK_IDEOGRAPHS_END else 0.6 for ch in text) * height
     return x - width / 2, y - height / 2, x + width / 2, y + height / 2
 
 
@@ -74,6 +77,12 @@ def _collect_rects(
     只保留面积 ≤ area_max_size 的小矩形（圈取值区域用）——图框边框等
     大矩形不会误识别为取值区域。
     """
+    # 矩形角点数
+    _RECT_CORNER_COUNT = 4
+    # 允许首尾重复点的最大点数
+    _MAX_POINTS_WITH_REPEATED_END = 5
+    # 轴对齐矩形的不同x/y坐标数量
+    _AXIS_ALIGNED_AXIS_COUNT = 2
     rects: list[tuple[float, float, float, float]] = []
     for e in doc.modelspace():
         if e.dxftype() != "LWPOLYLINE":
@@ -83,19 +92,20 @@ def _collect_rects(
         pts = list(e.get_points("xy"))
         # 闭合多段线首尾可能重复，去掉重复尾点
         if (
-            len(pts) >= 5
+            len(pts) >= _MAX_POINTS_WITH_REPEATED_END
             and abs(pts[0][0] - pts[-1][0]) < _EPS
             and abs(pts[0][1] - pts[-1][1]) < _EPS
         ):
             pts = pts[:-1]
-        if len(pts) != 4:
+        if len(pts) != _RECT_CORNER_COUNT:
             continue
         xs = {round(p[0], 6) for p in pts}
         ys = {round(p[1], 6) for p in pts}
-        if len(xs) == 2 and len(ys) == 2:
-            # 四点恰为两 x × 两 y 的组合 → 轴对齐矩形
+        # 轴对齐矩形：恰有 2 个不同 x 和 2 个不同 y
+        if len(xs) == _AXIS_ALIGNED_AXIS_COUNT and len(ys) == _AXIS_ALIGNED_AXIS_COUNT:
             combos = {(round(p[0], 6), round(p[1], 6)) for p in pts}
-            if len(combos) == 4:
+            # 4 个角点必须全部出现
+            if len(combos) == _RECT_CORNER_COUNT:
                 min_x, max_x = min(xs), max(xs)
                 min_y, max_y = min(ys), max(ys)
                 w = max_x - min_x

@@ -145,3 +145,31 @@ def test_anchors_from_dict_rejects_bad_data():
         anchors_from_dict([{"field": "图号", "is_area": "yes"}])
     with pytest.raises((ValueError, TypeError)):
         anchors_from_dict([{"field": "图号", "is_area": False, "min_x": "abc"}])
+
+
+def test_curly_brace_placeholder_sets_from_attribute(tmp_path):
+    """花括号占位符 {字段名}：from_attribute=True。"""
+    doc, m = _make_tpl(tmp_path / "c.dxf")
+    m.add_text("{管段}", dxfattribs={"insert": (0, 0), "height": 1.0})
+    p = str(tmp_path / "c.dxf")
+    doc.saveas(p)
+
+    anchors = parse_template(p)
+    assert len(anchors) == 1
+    a = anchors[0]
+    assert a.field == "管段"
+    assert a.from_attribute is True
+
+
+def test_square_brace_placeholder_sets_from_attribute_false(tmp_path):
+    """方括号占位符 [字段名]：from_attribute=False。"""
+    doc, m = _make_tpl(tmp_path / "s.dxf")
+    m.add_text("[图号]", dxfattribs={"insert": (0, 0), "height": 1.0})
+    p = str(tmp_path / "s.dxf")
+    doc.saveas(p)
+
+    anchors = parse_template(p)
+    assert len(anchors) == 1
+    a = anchors[0]
+    assert a.field == "图号"
+    assert a.from_attribute is False

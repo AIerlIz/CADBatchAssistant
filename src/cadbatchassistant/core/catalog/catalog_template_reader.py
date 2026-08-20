@@ -1,8 +1,10 @@
-"""模板解析（目录助手）：从图纸模板 DWG 提取 [字段名] 占位符与矩形取值区域。
+"""模板解析（目录助手）：从图纸模板 DWG 提取占位符与矩形取值区域。
 
 模板制作约定（在 DWG 模板图上）：
-- 在需要取值的位置放一个文字占位符，内容为 `[字段名]`（半角方括号），
-  如 [图号]、[管段编号]；可放多个候选位置（同一字段名可出现多次）。
+- 在需要取值的位置放一个文字占位符：
+  - `[字段名]`（半角方括号）：从文字实体（TEXT/MTEXT/ATTRIB）取值
+  - `{字段名}`（半角大括号）：从块属性（ATTRIB）取值
+  如 [图号]、{管段编号}；可放多个候选位置（同一字段名可出现多次）。
 - 若要圈定一个区域取多个值（如管段编号列表），用一个闭合矩形
   （4 点闭合 LWPOLYLINE / RECTANG）圈住区域，占位符放在矩形内。
 - 占位符落在矩形内 → 该矩形为该字段的取值区域（取区域内全部文字）；
@@ -23,8 +25,9 @@ from cadbatchassistant.core.catalog.catalog_reader import (
     iter_text_entities,
 )
 
-# 占位符：整段文本为 [字段名]
-_PLACEHOLDER_RE = re.compile(r"^\[([^\]]+)\]$")
+# 占位符：整段文本为 [字段名] 或 {字段名}
+# [字段名] = 从文字实体取值；{字段名} = 从块属性取值
+_PLACEHOLDER_RE = re.compile(r"^\[([^\]]+)\]$|^\{([^\}]+)\}$")
 
 # 矩形判定容差（浮点坐标误差）
 _EPS = 1e-4
@@ -125,7 +128,11 @@ def parse_template(
     area_max_size：视为取值区域的矩形最大面积（图框边框等大矩形被排除，
     只把用户特意圈取值区域的小矩形当区域）。
 
-    模板无任何 [字段名] 占位符时抛 ValueError。
+    占位符格式：
+    - [字段名]：从文字实体（TEXT/MTEXT/ATTRIB）取值
+    - {字段名}：从块属性（ATTRIB）取值
+
+    模板无任何占位符时抛 ValueError。
     """
     doc = ezdxf.readfile(str(template_path))
     rects = _collect_rects(doc, area_max_size)
@@ -136,7 +143,9 @@ def parse_template(
         m = _PLACEHOLDER_RE.match(text)
         if not m:
             continue
-        field = m.group(1).strip()
+        # group(1)=[...]，group(2)={...}
+        field = (m.group(1) or m.group(2)).strip()
+        from_attribute = m.group(2) is not None  # {字段名} 表示从属性取值
         if not field:
             continue
         x, y = _entity_insert_point(e)
@@ -153,6 +162,7 @@ def parse_template(
                     max_y=hit[3],
                     point_x=x,
                     point_y=y,
+                    from_attribute=from_attribute,
                 )
             )
         else:
@@ -167,13 +177,13 @@ def parse_template(
                     max_y=max_y,
                     point_x=x,
                     point_y=y,
+                    from_attribute=from_attribute,
                 )
             )
 
     if not anchors:
         raise ValueError(
-            f"模板中未找到 [字段名] 占位符: {template_path}"
-            "（请在取值位置放 [字段名] 文字）"
+            f"模板中未找到占位符（[字段名] 或 {{字段名}}）: {template_path}"
         )
     return anchors
 

@@ -49,9 +49,9 @@ def _placeholder_spec(e, col: str, ref_text: str) -> dict:
     return {
         "text": col,
         "layer": layer,
-        "x": round(float(ins[0]), 6),
-        "y": round(float(ins[1]), 6),
-        "height": round(float(height), 6),
+        "x": round(float(ins[0]), 2),
+        "y": round(float(ins[1]), 2),
+        "height": round(float(height), 2),
         "style": getattr(e.dxf, "style", None) or "",
         "halign": int(getattr(e.dxf, "halign", 0) or 0),
         "valign": int(getattr(e.dxf, "valign", 0) or 0),

@@ -180,12 +180,12 @@ def anchor_to_dict(a: Anchor) -> dict:
     return {
         "field": a.field,
         "is_area": a.is_area,
-        "min_x": a.min_x,
-        "min_y": a.min_y,
-        "max_x": a.max_x,
-        "max_y": a.max_y,
-        "point_x": a.point_x,
-        "point_y": a.point_y,
+        "min_x": round(a.min_x, 2),
+        "min_y": round(a.min_y, 2),
+        "max_x": round(a.max_x, 2),
+        "max_y": round(a.max_y, 2),
+        "point_x": round(a.point_x, 2),
+        "point_y": round(a.point_y, 2),
     }
 
 

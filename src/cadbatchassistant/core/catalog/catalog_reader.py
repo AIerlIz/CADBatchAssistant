@@ -156,10 +156,27 @@ def extract_by_anchors(
     for a in anchors:
         bucket = out.setdefault(a.field, [])
         s = seen.setdefault(a.field, set())
-        # 根据 from_attribute 选择对应的网格
-        grid = grid_by_type["attrib"] if a.from_attribute else grid_by_type["text"]
-        for v in _probe(a, grid):
-            if v not in s:
-                s.add(v)
-                bucket.append(v)
+        if a.from_attribute:
+            # 从块属性取值：收集所有ATTRIB，根据field名称匹配tag
+            for layout in doc.layouts:
+                if layout.dxf.name not in ("Model", "*Model Space"):
+                    continue
+                for e in layout:
+                    if e.dxftype() == "INSERT":
+                        for attrib in e.attribs:
+                            if attrib.dxf.tag.lower() == a.field.lower():
+                                text = _plain_text(attrib).strip()
+                                if text and _is_id_chars(text):
+                                    if regex_obj and not regex_obj.search(text):
+                                        continue
+                                    if text not in s:
+                                        s.add(text)
+                                        bucket.append(text)
+        else:
+            # 从文字实体取值：按矩形区域过滤
+            grid = grid_by_type["text"]
+            for v in _probe(a, grid):
+                if v not in s:
+                    s.add(v)
+                    bucket.append(v)
     return out

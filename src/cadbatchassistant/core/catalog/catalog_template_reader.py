@@ -19,7 +19,7 @@ from pathlib import Path
 
 import ezdxf
 
-from cadbatchassistant.core.catalog.catalog_reader import (
+from cadbatchassistant.core.common.text_replace import (
     _entity_insert_point,
     _plain_text,
     iter_text_entities,

@@ -66,8 +66,9 @@ def parse_template_fields(template_dwg: str | Path, oda: str = "") -> list[str]:
     return collect_fields(parse_template_anchors(template_dwg, oda))
 
 
-_extract_task = lambda item: extract_by_anchors(item[0], item[1])  # type: ignore[misc]
-_extract_task.__name__ = "_extract_task"  # type: ignore[attr-defined]
+def _extract_task(item: tuple) -> dict[str, list[str]]:
+    """并行任务 worker：按锚点从 DXF 提取每字段值列表。"""
+    return extract_by_anchors(item[0], item[1])
 
 
 def run_pipeline(

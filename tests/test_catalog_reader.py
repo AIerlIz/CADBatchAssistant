@@ -153,3 +153,54 @@ def test_area_rect_spanning_grid_cells_negative_coords(tmp_path):
 
 def test_large_area_rect_many_texts_order_preserved(tmp_path):
     """大面积区域 + 多文字：结果按文档顺序返回（网格探测不改变取值顺序）。"""
+
+
+def test_from_attribute_takes_only_attrib(tmp_path):
+    """from_attribute=True 时只取 ATTRIB 实体，忽略 TEXT/MTEXT。"""
+    doc = ezdxf.new("R2013")
+    m = doc.modelspace()
+    # 添加 TEXT 实体
+    m.add_text("TEXT-VALUE", dxfattribs={"insert": (0, 0), "height": 1.0})
+    # 添加块定义和属性
+    block = doc.blocks.new("TEST_BLOCK")
+    block.add_attdef("TAG1", dxfattribs={"insert": (0, 0)})
+
+
+def test_from_attribute_takes_only_attrib(tmp_path):
+    """from_attribute=True 时只取 ATTRIB 实体，忽略 TEXT/MTEXT。"""
+    doc = ezdxf.new("R2013")
+    m = doc.modelspace()
+    # 添加 TEXT 实体
+    m.add_text("TEXT-VALUE", dxfattribs={"insert": (0, 0), "height": 1.0})
+    # 添加块定义和属性
+    block = doc.blocks.new("TEST_BLOCK")
+    block.add_attdef("TAG1", dxfattribs={"insert": (0, 0)})
+    insert = m.add_blockref("TEST_BLOCK", (0, 0))
+    for attrib in insert.attribs:
+        attrib.dxf.text = "ATTRIB-VALUE"
+    p = str(tmp_path / "attr.dxf")
+    doc.saveas(p)
+
+    anchor = _point_anchor("字段", from_attribute=True)
+    out = extract_by_anchors(p, [anchor])
+    assert out["字段"] == ["ATTRIB-VALUE"]
+
+
+def test_from_attribute_false_ignores_attrib(tmp_path):
+    """from_attribute=False 时只取 TEXT/MTEXT，忽略 ATTRIB。"""
+    doc = ezdxf.new("R2013")
+    m = doc.modelspace()
+    # 添加 TEXT 实体
+    m.add_text("TEXT-VALUE", dxfattribs={"insert": (0, 0), "height": 1.0})
+    # 添加块定义和属性
+    block = doc.blocks.new("TEST_BLOCK")
+    block.add_attdef("TAG1", dxfattribs={"insert": (0, 0)})
+    insert = m.add_blockref("TEST_BLOCK", (0, 0))
+    for attrib in insert.attribs:
+        attrib.dxf.text = "ATTRIB-VALUE"
+    p = str(tmp_path / "noattr.dxf")
+    doc.saveas(p)
+
+    anchor = _point_anchor("字段", from_attribute=False)
+    out = extract_by_anchors(p, [anchor])
+    assert out["字段"] == ["TEXT-VALUE"]

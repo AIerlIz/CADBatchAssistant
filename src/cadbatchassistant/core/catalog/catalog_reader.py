@@ -67,7 +67,7 @@ def extract_by_anchors(
     - 所有锚点统一按覆盖矩形取值：区域锚点 = 模板里圈选的小矩形；
       单点锚点 = 占位符文字在模板中的包围盒（_text_bounds）
     - 矩形内仅保留编号型字符（字母/数字/中文/连字符/下划线）
-    - from_attribute=True 时从块属性（ATTRIB）取值；False 时从文字实体取值
+    - from_attribute=True 时只从块属性（ATTRIB）取值；False 时从普通文字实体取值
     - regex 非空时仅保留匹配该正则的值
     - 同一字段多个锚点（候选位置）的值合并，保序去重；无值锚点忽略
 
@@ -82,13 +82,19 @@ def extract_by_anchors(
     doc = ezdxf.readfile(str(dxf_path))
 
     # 构建网格：按文字实体插入点分桶
-    grid: dict[tuple[int, int], list[tuple[int, float, float, str]]] = {}
+    # from_attribute=True 的锚点只查 ATTRIB，False 的只查 TEXT/MTEXT
+    grid_by_type: dict[str, dict[tuple[int, int], list[tuple[int, float, float, str]]]] = {
+        "attrib": {},
+        "text": {},
+    }
+
     for idx, e in enumerate(iter_text_entities(doc)):
         t = _plain_text(e).strip()
         if not t:
             continue
         x, y = _entity_insert_point(e)
-        grid.setdefault(_cell_key(x, y), []).append((idx, x, y, t))
+        key = "attrib" if e.dxftype() == "ATTRIB" else "text"
+        grid_by_type[key].setdefault(_cell_key(x, y), []).append((idx, x, y, t))
 
     # 编译正则表达式（可选）
     regex_obj = None
@@ -100,7 +106,7 @@ def extract_by_anchors(
             except _re.error:
                 pass
 
-    def _probe(a) -> list[str]:
+    def _probe(a, grid) -> list[str]:
         """按覆盖矩形取矩形内文字（按文档顺序），已过滤非编号字符。"""
         hits: list[tuple[int, str]] = []
         cx0, cx1 = int(a.min_x // _CELL_SIZE), int(a.max_x // _CELL_SIZE)
@@ -125,7 +131,9 @@ def extract_by_anchors(
     for a in anchors:
         bucket = out.setdefault(a.field, [])
         s = seen.setdefault(a.field, set())
-        for v in _probe(a):
+        # 根据 from_attribute 选择对应的网格
+        grid = grid_by_type["attrib"] if a.from_attribute else grid_by_type["text"]
+        for v in _probe(a, grid):
             if v not in s:
                 s.add(v)
                 bucket.append(v)

@@ -178,8 +178,7 @@ def test_from_attribute_takes_only_attrib(tmp_path):
     block = doc.blocks.new("TEST_BLOCK")
     block.add_attdef("TAG1", dxfattribs={"insert": (0, 0)})
     insert = m.add_blockref("TEST_BLOCK", (0, 0))
-    for attrib in insert.attribs:
-        attrib.dxf.text = "ATTRIB-VALUE"
+    insert.add_attrib("TAG1", text="ATTRIB-VALUE")
     p = str(tmp_path / "attr.dxf")
     doc.saveas(p)
 
@@ -198,8 +197,7 @@ def test_from_attribute_false_ignores_attrib(tmp_path):
     block = doc.blocks.new("TEST_BLOCK")
     block.add_attdef("TAG1", dxfattribs={"insert": (0, 0)})
     insert = m.add_blockref("TEST_BLOCK", (0, 0))
-    for attrib in insert.attribs:
-        attrib.dxf.text = "ATTRIB-VALUE"
+    insert.add_attrib("TAG1", text="ATTRIB-VALUE")
     p = str(tmp_path / "noattr.dxf")
     doc.saveas(p)
 

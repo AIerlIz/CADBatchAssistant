@@ -90,8 +90,10 @@ def extract_by_anchors(
 
     # 遍历所有布局（模型空间、图纸空间等）
     for layout in doc.layouts:
-        if layout.dxf.name == "*Model Space":
-            for e in layout:
+        # 只处理模型空间（名称可能是 "Model" 或 "*Model Space"）
+        if layout.dxf.name not in ("Model", "*Model Space"):
+            continue
+        for e in layout:
                 t = e.dxftype()
                 # TEXT/MTEXT 实体
                 if t in ("TEXT", "MTEXT"):

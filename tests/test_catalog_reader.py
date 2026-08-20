@@ -176,9 +176,9 @@ def test_from_attribute_takes_only_attrib(tmp_path):
     m.add_text("TEXT-VALUE", dxfattribs={"insert": (0, 0), "height": 1.0})
     # 添加块定义和属性
     block = doc.blocks.new("TEST_BLOCK")
-    block.add_attdef("TAG1", dxfattribs={"insert": (0, 0)})
+    block.add_attdef("字段", dxfattribs={"insert": (0, 0)})
     insert = m.add_blockref("TEST_BLOCK", (0, 0))
-    insert.add_attrib("TAG1", text="ATTRIB-VALUE")
+    insert.add_attrib("字段", text="ATTRIB-VALUE")
     p = str(tmp_path / "attr.dxf")
     doc.saveas(p)
 

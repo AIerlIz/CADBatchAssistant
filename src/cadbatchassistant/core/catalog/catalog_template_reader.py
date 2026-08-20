@@ -19,11 +19,11 @@ from pathlib import Path
 
 import ezdxf
 
-from cadbatchassistant.core.common.text_replace import (
+from cadbatchassistant.core.catalog.catalog_reader import (
     _entity_insert_point,
     _plain_text,
-    iter_text_entities,
 )
+from cadbatchassistant.core.common.text_replace import iter_text_entities
 
 # 占位符：整段文本为 [字段名]、[字段名#正则]、{字段名} 或 {字段名#正则}
 # [字段名] = 从文字实体取值；{字段名} = 从块属性取值

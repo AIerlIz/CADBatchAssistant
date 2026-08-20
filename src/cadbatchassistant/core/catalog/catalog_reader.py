@@ -113,7 +113,7 @@ def extract_by_anchors(
                     )
             # INSERT 实体：遍历其属性
             elif t == "INSERT":
-                for attrib in e.attribs:
+                for attrib in e.attribs:  # type: ignore[attr-defined]
                     text = _plain_text(attrib).strip()
                     if text:
                         x, y = _entity_insert_point(attrib)
@@ -163,7 +163,7 @@ def extract_by_anchors(
                     continue
                 for e in layout:
                     if e.dxftype() == "INSERT":
-                        for attrib in e.attribs:
+                        for attrib in e.attribs:  # type: ignore[attr-defined]
                             if attrib.dxf.tag.lower() == a.field.lower():
                                 text = _plain_text(attrib).strip()
                                 if text and _is_id_chars(text):

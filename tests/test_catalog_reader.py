@@ -22,8 +22,11 @@ def _make_dxf(path, texts: list[tuple[tuple[float, float], str]]) -> str:
     return p
 
 
-def _point_anchor(field: str, x: float = 0.0, y: float = 0.0,
-                  half: float = 5.0, from_attribute: bool = False, regex: str = "") -> Anchor:
+def _point_anchor(
+    field: str, x: float = 0.0, y: float = 0.0,
+    half: float = 5.0, from_attribute: bool = False,
+    regex: str = "",
+) -> Anchor:
     """单点锚点：占位符覆盖区域 = (x±half, y±half) 的矩形。"""
     return Anchor(
         field=field,
@@ -166,16 +169,6 @@ def test_from_attribute_takes_only_attrib(tmp_path):
     # 添加块定义和属性
     block = doc.blocks.new("TEST_BLOCK")
     block.add_attdef("TAG1", dxfattribs={"insert": (0, 0)})
-
-
-def test_from_attribute_takes_only_attrib(tmp_path):
-    """from_attribute=True 时只取 ATTRIB 实体，忽略 TEXT/MTEXT。"""
-    doc = ezdxf.new("R2013")
-    m = doc.modelspace()
-    # 添加 TEXT 实体
-    m.add_text("TEXT-VALUE", dxfattribs={"insert": (0, 0), "height": 1.0})
-    # 添加块定义和属性
-    block = doc.blocks.new("TEST_BLOCK")
     block.add_attdef("字段", dxfattribs={"insert": (0, 0)})
     insert = m.add_blockref("TEST_BLOCK", (0, 0))
     insert.add_attrib("字段", text="ATTRIB-VALUE")

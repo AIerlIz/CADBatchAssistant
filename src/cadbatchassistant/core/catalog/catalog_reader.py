@@ -14,7 +14,6 @@ import ezdxf
 
 from cadbatchassistant.core.common.text_replace import (
     decode_text,
-    iter_text_entities,
 )
 
 
@@ -83,7 +82,8 @@ def extract_by_anchors(
 
     # 构建网格：按文字实体插入点分桶
     # from_attribute=True 的锚点只查 ATTRIB，False 的只查 TEXT/MTEXT
-    grid_by_type: dict[str, dict[tuple[int, int], list[tuple[int, float, float, str]]]] = {
+    grid_by_type: dict[str, dict[tuple[int, int],
+                              list[tuple[int, float, float, str]]]] = {
         "attrib": {},
         "text": {},
     }

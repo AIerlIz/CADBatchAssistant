@@ -94,32 +94,32 @@ def extract_by_anchors(
         if layout.dxf.name not in ("Model", "*Model Space"):
             continue
         for e in layout:
-                t = e.dxftype()
-                # TEXT/MTEXT 实体
-                if t in ("TEXT", "MTEXT"):
-                    text = _plain_text(e).strip()
+            t = e.dxftype()
+            # TEXT/MTEXT 实体
+            if t in ("TEXT", "MTEXT"):
+                text = _plain_text(e).strip()
+                if text:
+                    x, y = _entity_insert_point(e)
+                    grid_by_type["text"].setdefault(_cell_key(x, y), []).append(
+                        (len(grid_by_type["text"]), x, y, text)
+                    )
+            # ATTRIB 实体（包括块定义中的 ATTDEF 和 INSERT 的属性）
+            elif t == "ATTRIB":
+                text = _plain_text(e).strip()
+                if text:
+                    x, y = _entity_insert_point(e)
+                    grid_by_type["attrib"].setdefault(_cell_key(x, y), []).append(
+                        (len(grid_by_type["attrib"]), x, y, text)
+                    )
+            # INSERT 实体：遍历其属性
+            elif t == "INSERT":
+                for attrib in e.attribs:
+                    text = _plain_text(attrib).strip()
                     if text:
-                        x, y = _entity_insert_point(e)
-                        grid_by_type["text"].setdefault(_cell_key(x, y), []).append(
-                            (len(grid_by_type["text"]), x, y, text)
-                        )
-                # ATTRIB 实体（包括块定义中的 ATTDEF 和 INSERT 的属性）
-                elif t == "ATTRIB":
-                    text = _plain_text(e).strip()
-                    if text:
-                        x, y = _entity_insert_point(e)
+                        x, y = _entity_insert_point(attrib)
                         grid_by_type["attrib"].setdefault(_cell_key(x, y), []).append(
                             (len(grid_by_type["attrib"]), x, y, text)
                         )
-                # INSERT 实体：遍历其属性
-                elif t == "INSERT":
-                    for attrib in e.attribs:
-                        text = _plain_text(attrib).strip()
-                        if text:
-                            x, y = _entity_insert_point(attrib)
-                            grid_by_type["attrib"].setdefault(_cell_key(x, y), []).append(
-                                (len(grid_by_type["attrib"]), x, y, text)
-                            )
 
     # 编译正则表达式（可选）
     regex_obj = None

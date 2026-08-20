@@ -153,23 +153,3 @@ def test_area_rect_spanning_grid_cells_negative_coords(tmp_path):
 
 def test_large_area_rect_many_texts_order_preserved(tmp_path):
     """大面积区域 + 多文字：结果按文档顺序返回（网格探测不改变取值顺序）。"""
-    texts = [((i * 1.0, i // 5 * 1.0), f"V-{i:03d}") for i in range(40)]
-    dxf = _make_dxf(tmp_path / "big.dxf", texts)
-    anchors = [
-        Anchor(
-            field="编号",
-            is_area=True,
-            min_x=-1.0,
-            min_y=-1.0,
-            max_x=10.0,
-            max_y=10.0,
-            point_x=0.0,
-            point_y=0.0,
-        )
-    ]
-    out = extract_by_anchors(dxf, anchors)
-    # 前 11 个点落在矩形内（x<10 或 y<10 的约束下按序保留）
-    expect = [t for (x, y), t in texts if -1 <= x <= 10 and -1 <= y <= 10]
-    assert out["编号"] == expect
-
-

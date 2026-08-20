@@ -23,7 +23,7 @@ def _make_dxf(path, texts: list[tuple[tuple[float, float], str]]) -> str:
 
 
 def _point_anchor(field: str, x: float = 0.0, y: float = 0.0,
-                  half: float = 5.0) -> Anchor:
+                  half: float = 5.0, from_attribute: bool = False, regex: str = "") -> Anchor:
     """单点锚点：占位符覆盖区域 = (x±half, y±half) 的矩形。"""
     return Anchor(
         field=field,
@@ -34,6 +34,8 @@ def _point_anchor(field: str, x: float = 0.0, y: float = 0.0,
         max_y=y + half,
         point_x=x,
         point_y=y,
+        from_attribute=from_attribute,
+        regex=regex,
     )
 
 

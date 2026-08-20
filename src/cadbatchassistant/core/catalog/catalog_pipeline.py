@@ -9,7 +9,6 @@ from __future__ import annotations
 import shutil
 import tempfile
 from collections.abc import Callable
-from functools import partial
 from pathlib import Path
 
 from cadbatchassistant.core import dwg_converter as dc
@@ -67,7 +66,7 @@ def parse_template_fields(template_dwg: str | Path, oda: str = "") -> list[str]:
     return collect_fields(parse_template_anchors(template_dwg, oda))
 
 
-_extract_task = partial(extract_by_anchors)  # type: ignore[misc]
+_extract_task = lambda item: extract_by_anchors(item[0], item[1])  # type: ignore[misc]
 _extract_task.__name__ = "_extract_task"  # type: ignore[attr-defined]
 
 

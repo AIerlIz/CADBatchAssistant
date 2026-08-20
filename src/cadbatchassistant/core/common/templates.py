@@ -35,6 +35,10 @@ def meta_file_for(category: str, name: str) -> Path:
     return templates_dir(category) / (name + ".json")
 
 
+# 别名：与 template_meta.meta_path_for 保持一致
+meta_path_for = meta_file_for
+
+
 def _meta_source(f: Path) -> str:
     """meta JSON 的枚举名：优先 source 字段（原模板文件名），缺省回退文件名。"""
     try:

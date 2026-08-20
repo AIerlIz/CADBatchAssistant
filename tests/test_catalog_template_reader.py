@@ -173,3 +173,45 @@ def test_square_brace_placeholder_sets_from_attribute_false(tmp_path):
     a = anchors[0]
     assert a.field == "图号"
     assert a.from_attribute is False
+
+
+def test_placeholder_with_regex_square_brace(tmp_path):
+    """方括号占位符带正则：[图号#^DW-] 解析出 field 和 regex。"""
+    doc, m = _make_tpl(tmp_path / "r.dxf")
+    m.add_text("[图号#^DW-]", dxfattribs={"insert": (0, 0), "height": 1.0})
+    p = str(tmp_path / "r.dxf")
+    doc.saveas(p)
+
+    anchors = parse_template(p)
+    assert len(anchors) == 1
+    a = anchors[0]
+    assert a.field == "图号"
+    assert a.regex == "^DW-"
+    assert a.from_attribute is False
+
+
+def test_placeholder_with_regex_curly_brace(tmp_path):
+    """花括号占位符带正则：{管段#ABC} 解析出 field、regex 和 from_attribute。"""
+    doc, m = _make_tpl(tmp_path / "rc.dxf")
+    m.add_text("{管段#ABC}", dxfattribs={"insert": (0, 0), "height": 1.0})
+    p = str(tmp_path / "rc.dxf")
+    doc.saveas(p)
+
+    anchors = parse_template(p)
+    assert len(anchors) == 1
+    a = anchors[0]
+    assert a.field == "管段"
+    assert a.regex == "ABC"
+    assert a.from_attribute is True
+
+
+def test_placeholder_without_regex_has_empty_regex(tmp_path):
+    """不带正则的占位符：regex 为空字符串。"""
+    doc, m = _make_tpl(tmp_path / "nrg.dxf")
+    m.add_text("[图号]", dxfattribs={"insert": (0, 0), "height": 1.0})
+    p = str(tmp_path / "nrg.dxf")
+    doc.saveas(p)
+
+    anchors = parse_template(p)
+    assert len(anchors) == 1
+    assert anchors[0].regex == ""

@@ -25,9 +25,10 @@ from cadbatchassistant.core.catalog.catalog_reader import (
     iter_text_entities,
 )
 
-# 占位符：整段文本为 [字段名] 或 {字段名}
+# 占位符：整段文本为 [字段名]、[字段名#正则]、{字段名} 或 {字段名#正则}
 # [字段名] = 从文字实体取值；{字段名} = 从块属性取值
-_PLACEHOLDER_RE = re.compile(r"^\[([^\]]+)\]$|^\{([^\}]+)\}$")
+# # 后为可选的正则表达式（如 [图号#^DW-]）
+_PLACEHOLDER_RE = re.compile(r"^\[([^\]#]+)(?:#([^\]]+))?\]$|^\{([^{}#]+)(?:#([^}]+))?\}$")
 
 # 矩形判定容差（浮点坐标误差）
 _EPS = 1e-4
@@ -130,7 +131,9 @@ def parse_template(
 
     占位符格式：
     - [字段名]：从文字实体（TEXT/MTEXT/ATTRIB）取值
+    - [字段名#正则]：从文字实体取值，并过滤匹配正则的值
     - {字段名}：从块属性（ATTRIB）取值
+    - {字段名#正则}：从块属性取值，并过滤匹配正则的值
 
     模板无任何占位符时抛 ValueError。
     """
@@ -143,9 +146,11 @@ def parse_template(
         m = _PLACEHOLDER_RE.match(text)
         if not m:
             continue
-        # group(1)=[...]，group(2)={...}
-        field = (m.group(1) or m.group(2)).strip()
-        from_attribute = m.group(2) is not None  # {字段名} 表示从属性取值
+        # group(1)=[字段名]，group(2)=[字段名#正则]的正则
+        # group(3)={字段名}，group(4)={字段名#正则}的正则
+        field = (m.group(1) or m.group(3)).strip()
+        regex = (m.group(2) or m.group(4) or "").strip()
+        from_attribute = m.group(3) is not None  # {字段名} 表示从属性取值
         if not field:
             continue
         x, y = _entity_insert_point(e)
@@ -163,6 +168,7 @@ def parse_template(
                     point_x=x,
                     point_y=y,
                     from_attribute=from_attribute,
+                    regex=regex,
                 )
             )
         else:
@@ -178,6 +184,7 @@ def parse_template(
                     point_x=x,
                     point_y=y,
                     from_attribute=from_attribute,
+                    regex=regex,
                 )
             )
 

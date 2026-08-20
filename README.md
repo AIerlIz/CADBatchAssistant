@@ -1,154 +1,107 @@
-# CAD批处理助手 (CADBatchAssistant)
+# CAD批处理助手
 
-统一的 CAD 图纸批处理桌面工具：一个窗口、三个功能页 + 设置页（tab 切换），
-支持 DWG / DXF 图纸的**批量改字**、**数据表填图**与**图纸目录生成**。
+一款实用的 CAD 图纸批量处理工具，支持三种常用场景：批量改字、数据表填图、图纸目录生成。
 
-| Tab | 功能 | 核心模块 |
-|---|---|---|
-| **改字助手** | 批量修改 DWG/DXF 图纸文字（TEXT/MTEXT/块属性），支持正则查找替换 | `gui/panels/gui_text.py` + `core/common/text_replace.py` |
-| **填表助手** | 把数据表（.xlsx/.xls）按「图纸模板占位」填入图纸标题栏 | `gui/panels/gui_fill.py` + `core/fill/fill_pipeline.py` |
-| **目录助手** | 按「图纸模板」从一批图纸取值，生成图纸目录 Excel | `gui/panels/gui_catalog.py` + `core/catalog/catalog_pipeline.py` |
-| **设置** | ODA File Converter 路径、DWG 输出版本、并行进程数、软件更新（全局共享） | `gui/dialogs/settings.py` |
+## 下载与安装
 
-> 前身：CADBatchText、CadFill、CADCatalogAssistant 三个独立工具，现已整合为统一应用。
+从 [GitHub Releases](https://github.com/AIerlIz/CADBatchAssistant/releases) 下载最新版本的 `CADBatchAssistant.exe`，双击运行即可。
 
-## 界面使用
+> 注意：处理 DWG 格式文件需要先安装 [ODA File Converter](https://www.opendesign.com/guestfiles/oda_file_converter)。DXF 格式无需额外安装。
 
-```bash
-uv run python main.py
-```
+---
 
-### 改字助手
+## 功能一：批量改字
 
-选择 DWG/DXF（可拖放追加）→ 编辑查找/替换规则（双击单元格编辑、底部「＋」添加、Delete/右键删除）→ 设置输出目录 → 开始处理。
-默认「普通文本」模式按字面匹配；勾选「正则模式」后查找按正则解释、替换支持 `\1` 反向引用。
+批量修改图纸中的文字内容，支持正则表达式查找替换。
 
-### 填表助手
+**使用步骤：**
+1. 打开「改字助手」标签页
+2. 拖入或选择要处理的 DWG/DXF 文件
+3. 添加查找/替换规则（支持正则模式）
+4. 设置输出目录
+5. 点击「开始处理」
 
-1. **数据表格**：选择 .xlsx/.xls，可选「工作表格」（sheet）与「匹配列」（图纸名列，默认第一列）
-2. **图纸模板**：从模板库下拉选择（可「上传」到 `templates/fill`），模板为「未填图框 + 值格填 `[列名]` 占位」的样例图，占位符列名与数据表表头**精确匹配**。**上传时自动扫描全部 `[列名]` 占位符并存入伴生 JSON**（`templates/fill/<模板名>.json`），运行只读该 JSON、不再重复解析模板；**模板无占位符或解析失败（如 DWG 缺少 ODA）会被拒绝上传**
-3. 选择图纸（可拖放）→ 设置输出目录 → 开始处理
+---
 
-**取值规则**：每个占位符 `[列名]` 只从数据表对应列取值，其他列不参与；列缺失/值为空时该字段置空；「占位符与本次数据表列零匹配」时警告并按无字段处理（输出原图）。
+## 功能二：数据表填图
 
-### 目录助手
+根据 Excel 数据表，自动将数据填入图纸标题栏的占位符。
 
-1. **图纸模板**：在取值位置放 `[字段名]` 文字（如 `[图号]`），可放多个同名候选位；用小矩形圈住区域则按区域内全部文字取值。取值区域 = 占位符文字在模板中的覆盖范围（包围盒），**把占位符文字调大即可扩大取值区域**，不再依赖坐标容差。上传到模板库下拉（`templates/catalog`）；**上传时自动提取占位符/区域并存入伴生 JSON**（`templates/catalog/<模板名>.json`），运行只读该 JSON、不再把模板转 DXF 解析；**模板无 `[字段名]` 占位符或解析失败会被拒绝上传**
-2. **表格模板（必填）**：Excel 表头列名 = 模板字段名 +「页码」，程序自动定位 sheet 与表头行；多个 sheet 并列时弹窗选择。可用 `write_style_template` 生成参考模板
-3. 选择图纸 → 设置输出目录 → 开始处理
+**使用步骤：**
+1. 打开「填表助手」标签页
+2. 选择数据表格（.xlsx/.xls）
+3. 上传图纸模板：
+   - 在图纸需要填值的位置输入 `[列名]`（如 `[图号]`、`[管段编号]`）
+   - 点击「上传」按钮，选择包含占位符的图纸模板
+   - 系统会自动识别所有占位符并保存配置
+4. 选择要处理的图纸文件
+5. 设置输出目录
+6. 点击「开始处理」
 
-输出：每图纸一个条目，列 = 占位符字段名 + 页码；无值字段填 `NA`；单值字段跨行合并；页码每文件一页；图号只从图纸中提取，取不到时填 `NA`（不做文件名兜底）。
+**模板制作提示：**
+- 占位符格式：`[列名]`，列名需与 Excel 表头完全一致
+- 可在同一位置放置多个同名占位符作为备选
+- 上传后会在 `templates/fill/` 目录保存配置 JSON
 
-**配置规则**（软件目录 `config.json` 的 `rules` 段，缺省用默认）：
+---
 
-| 键 | 默认值 | 说明 |
-|---|---|---|
-| `data_rows_per_page` | `50` | 目录每页数据行数 |
-| `cover_pages` | `1` | 封皮页数 |
+## 功能三：图纸目录生成
 
-**并行度**（全局配置 `%APPDATA%\CADBatchAssistant\config.json` 的 `max_workers` 键，「设置」页下拉可改；环境变量 `CADBATCH_MAX_WORKERS` 优先）：
+从一批图纸中提取信息，自动生成图纸目录 Excel 表格。
 
-| 值 | 说明 |
-|---|---|
-| `auto`（缺省） | 按 CPU 数 ≤4 自动决定，少文件回退串行 |
-| 数字（1-64） | 同时处理的图纸数（多核大批量可调大；注意 spawn 子进程内存翻倍） |
+**使用步骤：**
+1. 打开「目录助手」标签页
+2. 上传图纸模板：
+   - 在图纸需要取值的位置输入 `[字段名]`（如 `[图号]`）
+   - 可用矩形框圈出取值区域，框内文字会被全部提取
+   - 点击「上传」保存模板配置
+3. 选择表格模板（Excel 文件，表头列名需与模板字段名一致）
+4. 选择要处理的图纸文件
+5. 设置输出目录
+6. 点击「开始处理」
 
-三个功能页的批量处理共用该值；DWG 批处理按块「转换→处理→转回」（默认块大小 8，块间转换与 ezdxf 处理重叠），进程池在同批多阶段间复用。
+**高级用法：**
+- `{字段名}`：从块属性取值（而非普通文字）
+- `[字段名#正则]`：提取后按正则过滤结果，如 `[图号#^DW-]`
 
-## 模板库存放约定
+---
 
-| 目录 | 用途 | 使用功能页 |
-|---|---|---|
-| `templates/fill/` | 图纸模板占位配置（未填图框 + 值格 `[列名]` 占位） | 填表助手 |
-| `templates/catalog/` | 图纸模板占位配置（`[字段名]` 取值位置） | 目录助手 |
+## 模板管理
 
-两个模板库各自独立管理（上传/编辑/删除/拖放互不干扰），目录在软件目录下自动创建。
+模板配置保存在软件目录下的 `templates/` 文件夹中：
 
-**上传时只把解析出的占位配置 JSON 存入模板库**（`<模板名>.json`，如 `图框.dwg.json`），**不保存原始 dwg/dxf 文件**：填表助手存全部 `[列名]` 占位符规格（位置/字高/样式/对齐/实体样式描述），目录助手存 `[字段名]` 锚点（字段名 + 取值区域坐标）。运行流程**只读该 JSON**，不再重复把模板转 DXF 解析；删除模板时 JSON 一并删除。
+| 目录 | 用途 |
+|------|------|
+| `templates/fill/` | 填表助手模板配置 |
+| `templates/catalog/` | 目录助手模板配置 |
 
-**编辑占位配置**：模板库下拉旁「编辑」按钮可直接在表格中修改已解析的占位符配置——填表助手可改列名、图层、坐标、字高、样式与对齐，目录助手可改字段名、取值区域与锚点坐标（含增删行）。改动保存回模板 JSON，无需手工编辑文件；数值/枚举（是/否）输入错误会弹错并保留对话框便于修正。JSON 仍可手工编辑（如直接改字段名、取值区域坐标、字高样式），改坏后删除模板重新上传即可恢复；命令行/`--selftest` 等直接传模板路径的场景在 JSON 缺失时会现场解析（行为不变）。
+**管理操作：**
+- **上传**：将图纸模板加入模板库
+- **编辑**：在界面中修改模板的占位符配置
+- **删除**：从模板库移除模板
 
-## 环境要求
+---
 
-- Windows（Tk 图形界面）
-- 处理 DWG 需安装 [ODA File Converter](https://www.opendesign.com/guestfiles/oda_file_converter)（纯 DXF 场景不需要）
-- 开发/构建：Python 3.12 + [uv](https://docs.astral.sh/uv/)
-- 依赖：`ezdxf`、`openpyxl`、`xlrd`、`tkinterdnd2`
+## 常见问题
 
-## 打包 exe
+**Q: 提示缺少 ODA File Converter？**
+A: 请从官方下载并安装 ODA File Converter，或在「设置」页配置其路径。
 
-```bash
-uv run python scripts/inject_version.py   # 注入版本号（本地取 pyproject.toml）
-uv run pyinstaller --noconfirm --clean CADBatchAssistant.spec
-```
+**Q: 如何处理块属性（ATTRIB）？**
+A: 在模板中使用 `{字段名}` 格式，系统会优先从块属性取值。
 
-产物 `dist\CADBatchAssistant.exe`（单文件、无控制台窗口），DWG 处理仍需目标机安装 ODA File Converter。
+**Q: 如何过滤提取的内容？**
+A: 使用 `[字段名#正则]` 格式，如 `[图号#^DW-]` 只保留以 DW- 开头的值。
 
-## 软件更新
+**Q: 模板上传后找不到？**
+A: 检查 `templates/fill/` 或 `templates/catalog/` 目录，确认 JSON 文件存在。
 
-打包版启动后静默检查 GitHub Release，发现新版本可应用内下载并替换重启；支持下载镜像与失败重试。
-发布：推送 `v*` tag（如 `v2.0.0`）→ CI 构建并发布 Release（资产名 `CADBatchAssistant.exe`）。
+---
 
-## 诊断模式
+## 更新
 
-```bash
-CADBatchAssistant.exe --selftest <图纸模板DWG> <图纸文件...>
-```
+软件启动时会自动检查新版本。发现更新后可在应用内直接下载并应用。
 
-不启动界面跑完整目录流程，日志写入 `selftest_log.txt`，供定位打包版问题。
+---
 
-## 项目结构
-
-```
-main.py                    # 入口：Notebook 窗口 + --selftest
-src/cadbatchassistant/
-  core/
-    common/                # 跨功能域共享
-      app_config.py        # 全局配置：JSON 读写、软件目录、目录助手规则、输出版本
-      templates.py         # 模板库纯文件操作（枚举/删除，只存占位配置 JSON，无 GUI 依赖）
-      filetypes.py         # 共享文件扩展名常量（CAD_SUFFIXES / XLSX_SUFFIXES）
-      text_replace.py      # 改字：DXF 文字查找替换
-      parallel.py          # 并行执行器（串行/进程/线程可切换）
-      input_files.py       # 输入文件公共工具（重名检测 + 复制暂存）
-      template_meta.py     # 占位符 meta 读写（填表/目录模板共用）
-      dwg_workflow.py      # DWG 批处理工作流（统一成 DXF 批 / 处理后写回）
-      app_log.py           # 统一日志
-    dwg_converter/         # 转换引擎抽象：Converter 接口 + ODA 实现（三功能共用）
-    fill/                  # 填表
-      fill_pipeline.py     # 一键流程
-      fill_learn_spec.py   # 模板占位扫描
-      fill_dwg.py          # 按规格填充
-      fill_parse_xlsx.py   # 读取数据表
-    catalog/               # 目录
-      catalog_pipeline.py  # 一键流程
-      catalog_template_reader.py  # 模板解析
-      catalog_reader.py    # 按锚点取值
-      catalog_builder.py   # 目录数据构建
-      catalog_excel_writer.py     # Excel 输出
-    updater/               # 在线更新（版本/检查/下载/替换）
-  gui/
-    components/            # 通用组件
-      async_panel.py       # 后台任务骨架：后台线程 + 消息队列 + after 轮询
-      tk_util.py           # GUI 通用工具：字体/主题/居中/去重/拖放解析
-      tk_widgets.py        # 通用控件构建 + ODA 助手 + 模板库弹窗包装
-    mixins/                # 面板共享 Mixin
-      gui_shared.py        # FilesPanel/TemplateLibrary/PanelLayout/RunStart Mixin
-    panels/                # 三个功能面板
-      gui_text.py          # 改字助手面板
-      gui_fill.py          # 填表助手面板
-      gui_catalog.py       # 目录助手面板
-    dialogs/               # 对话框
-      settings.py          # 设置面板
-      updater_dialog.py    # 更新对话框
-scripts/
-  inject_version.py        # 打包版本注入
-  verify_end_to_end.py     # 目录助手端到端验证
-tests/                     # pytest 单测（core 纯逻辑 / GUI 冒烟 / updater 等）
-```
-
-## 验证
-
-```bash
-uv run pytest
-uv run python scripts/verify_end_to_end.py
-```
+**技术支持：** [GitHub Issues](https://github.com/AIerlIz/CADBatchAssistant/issues)

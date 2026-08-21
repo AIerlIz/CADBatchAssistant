@@ -10,9 +10,9 @@ from tkinter import ttk
 
 
 def test_text_panel_builds(tk_root) -> None:
-    from cadbatchassistant.gui.panels.gui_text import CadTextApp
+    from cadbatchassistant.gui.panels.gui_text import TextPanel
 
-    panel = CadTextApp(ttk.Frame(tk_root))
+    panel = TextPanel(ttk.Frame(tk_root))
     assert panel.scanned_files == []
     assert panel.rules_data == []
     assert panel.file_list is not None
@@ -26,9 +26,9 @@ def test_text_panel_builds(tk_root) -> None:
 
 
 def test_fill_panel_builds(tk_root) -> None:
-    from cadbatchassistant.gui.panels.gui_fill import IsoFillApp
+    from cadbatchassistant.gui.panels.gui_fill import FillPanel
 
-    panel = IsoFillApp(ttk.Frame(tk_root))
+    panel = FillPanel(ttk.Frame(tk_root))
     assert panel.scanned_files == []
     assert panel.var_xlsx is not None
     assert panel.var_template is not None

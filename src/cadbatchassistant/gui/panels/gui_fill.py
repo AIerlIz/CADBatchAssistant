@@ -35,7 +35,7 @@ from cadbatchassistant.gui.mixins.gui_shared import (
 )
 
 
-class IsoFillApp(
+class FillPanel(
     FilesPanelMixin, TemplateLibraryMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel
 ):
     """「填表助手」面板：文件列表/模板库/拖放/输出目录复用共享组件。"""
@@ -94,6 +94,7 @@ class IsoFillApp(
             "数据表格:",
             XLSX_SUFFIXES,
             on_hit=lambda h: self._refresh_sources(),
+            on_select=lambda h: self._refresh_sources(),
         )
 
         # 工作表 + 匹配列（同一行）
@@ -203,15 +204,6 @@ class IsoFillApp(
         self._sync_sheet_row_retry = 0
 
     # ---------------- 输入 ----------------
-    def _browse_xlsx(self) -> None:
-        f = filedialog.askopenfilename(
-            title="选择数据表格",
-            filetypes=[("Excel 数据表", "*.xlsx *.xls"), ("所有文件", "*.*")],
-        )
-        if f:
-            self.var_xlsx.set(f)
-            self._refresh_sources()
-
     def _refresh_sources(self) -> None:
         """读取数据表工作表与表头，刷新「工作表格」「匹配列」下拉；默认第一个/第一列。
 

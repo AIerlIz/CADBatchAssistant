@@ -68,7 +68,7 @@ class CatalogPanel(
         self.scanned_files: list[str] = []
         self._last_result: PipelineResult | None = None
         self._build_ui()
-        self._load()
+        self._load_panel_config()
 
     # ---------------- UI ----------------
     def _build_ui(self) -> None:
@@ -83,11 +83,15 @@ class CatalogPanel(
             (".xlsx",),
             on_xlsx_hit=lambda h: save_panel_config({"catalog_xlsx": h}),
             tpl_width=24,
+            on_select=lambda h: save_panel_config({"catalog_xlsx": h}),
         )
 
-        # 3. 输出区
+        # 3. 输出区（保存配置到 catalog_out）
         self.var_out = tk.StringVar()
-        self._add_output_section(self.var_out)
+        self._add_output_section(
+            self.var_out,
+            on_default=lambda: save_panel_config({"catalog_out": self.var_out.get().strip()}) if self.var_out.get().strip() else None,
+        )
 
         # 4. 运行区（ODA 路径与输出版本在「设置」tab，全局共享）
         self._add_run_section(maximum=100)
@@ -95,34 +99,9 @@ class CatalogPanel(
         # 5. 日志区
         self._add_log_section()
 
-    # ---------------- 表格模板（Excel） ----------------
-    def _browse_xlsx(self) -> None:
-        f = filedialog.askopenfilename(
-            title="选择表格模板",
-            filetypes=[("Excel 文件", "*.xlsx"), ("所有文件", "*.*")],
-        )
-        if f:
-            self.var_xlsx.set(f)
-            save_panel_config({"catalog_xlsx": f})
-
-    # ---------------- 输出目录 ----------------
-    def _default_output(self) -> None:
-        super()._default_output()
-        if self.var_out.get().strip():
-            save_panel_config({"catalog_out": self.var_out.get()})
-
-    def _browse_dir(self, var: tk.StringVar) -> None:
-        super()._browse_dir(var)
-        if var.get().strip():
-            save_panel_config({"catalog_out": var.get()})
-
-    def _on_drop_out_dir(self, event) -> None:
-        super()._on_drop_out_dir(event)
-        if self.var_out.get().strip():
-            save_panel_config({"catalog_out": self.var_out.get()})
-
     # ---------------- 配置记忆 ----------------
-    def _load(self) -> None:
+    def _load_panel_config(self) -> None:
+        """恢复面板记忆配置（catalog_ 前缀键互不干扰）。"""
         self._refresh_templates()  # 恢复上次选择的图纸模板
         cfg = load_panel_config()
         last_xlsx = cfg.get("catalog_xlsx", "")

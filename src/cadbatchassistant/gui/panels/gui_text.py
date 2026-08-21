@@ -13,7 +13,6 @@ import re
 import shutil
 import tempfile
 import tkinter as tk
-from functools import partial
 from pathlib import Path
 from tkinter import messagebox, ttk
 
@@ -32,10 +31,12 @@ from cadbatchassistant.gui.mixins.gui_shared import (
 )
 
 # process_dxf_file(src, dst, rules, dry_run=dry_run) 参数顺序与任务元组
-# (src, dst, rules, dry_run) 完全一致，
-# 直接用 partial 替代解包函数（Windows spawn 可 pickle）。
-_text_task = partial(process_dxf_file)  # type: ignore[misc]
-_text_task.__name__ = "_text_task"  # type: ignore[attr-defined]
+# (src, dst, rules, dry_run) 完全一致，需要解包后调用。
+# 使用顶层函数而非 lambda，保证 Windows spawn 可 pickle。
+def _text_task(item: tuple) -> "FileResult":
+    src, dst, rules, dry_run = item
+    return process_dxf_file(src, dst, rules, dry_run=dry_run)
+_text_task.__name__ = "_text_task"
 
 
 class EditableTreeview(ttk.Treeview):
@@ -153,7 +154,7 @@ class EditableTreeview(ttk.Treeview):
         return "break"
 
 
-class CadTextApp(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
+class TextPanel(FilesPanelMixin, PanelLayoutMixin, RunStartMixin, AsyncPanel):
     def __init__(self, parent: tk.Widget) -> None:
         """构建「改字助手」面板；parent 为嵌入容器（如 Notebook 的 tab 页）。"""
         super().__init__(parent)

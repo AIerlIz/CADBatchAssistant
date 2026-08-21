@@ -20,7 +20,7 @@ from cadbatchassistant.core.common.templates import template_path
 
 
 def _make_panel(root, monkeypatch, tmp_path):
-    """构造 IsoFillApp，模板库目录与面板记忆配置全部隔离到 tmp。"""
+    """构造 FillPanel，模板库目录与面板记忆配置全部隔离到 tmp。"""
     import cadbatchassistant.core.common.templates as tpl_mod
     from cadbatchassistant.gui.mixins import gui_shared as gs
     from cadbatchassistant.gui.panels import gui_fill as gf
@@ -28,7 +28,7 @@ def _make_panel(root, monkeypatch, tmp_path):
     monkeypatch.setattr(tpl_mod, "software_dir", lambda: tmp_path)
     monkeypatch.setattr(gs, "load_panel_config", lambda: {})
     monkeypatch.setattr(gs, "save_panel_config", lambda d: None)
-    panel = gf.IsoFillApp(ttk.Frame(root))
+    panel = gf.FillPanel(ttk.Frame(root))
     return panel, gf, gs
 
 

@@ -1,4 +1,4 @@
-"""gui_text.CadTextApp._start 的异常复位测试（H5）。
+"""gui_text.TextPanel._start 的异常复位测试（H5）。
 
 复制输入文件失败（如 DWG 被 AutoCAD 占用）时，面板必须复位运行态
 （running=False、按钮恢复、worker 不启动），否则永久卡死在运行态。
@@ -15,9 +15,9 @@ import cadbatchassistant.gui.panels.gui_text as gt
 
 class TextStartCopyFailureTest(unittest.TestCase):
     def setUp(self) -> None:
-        # CadTextApp.__init__ 需要 AsyncPanel.__init__（真实 Tk）→ 绕开构造，
+        # TextPanel.__init__ 需要 AsyncPanel.__init__（真实 Tk）→ 绕开构造，
         # 用 object.__new__ + 手工补属性；_start 只用到的成员在此补齐。
-        self.app = gt.CadTextApp.__new__(gt.CadTextApp)
+        self.app = gt.TextPanel.__new__(gt.TextPanel)
         self.app.running = False
         self.app.scanned_files = [r"D:\a\A1.dwg"]
         self.app.var_dry = mock.Mock()

@@ -1,7 +1,7 @@
 """程序入口：启动「CAD批处理助手」统一窗口（Notebook 三个功能 tab + 设置）。
 
-- 「改字助手」：CadTextApp（gui_text.py）—— DWG/DXF 文字正则替换
-- 「填表助手」：IsoFillApp（gui_fill.py）—— 数据表填入图纸标题栏
+- 「改字助手」：TextPanel（gui_text.py）—— DWG/DXF 文字正则替换
+- 「填表助手」：FillPanel（gui_fill.py）—— 数据表填入图纸标题栏
 - 「目录助手」：CatalogPanel（gui_catalog.py）—— 按图纸模板取值生成图纸目录 Excel
 - 「设置」：SettingsPanel（settings.py）—— ODA 路径与 DWG 输出版本（全局共享）
 
@@ -165,8 +165,8 @@ def main(argv: list[str] | None = None) -> int:
     notebook.add(tab_catalog, text="目录助手")
     notebook.add(tab_settings, text="设置")
 
-    app_text = gui_text.CadTextApp(tab_text)
-    app_fill = gui_fill.IsoFillApp(tab_fill)
+    app_text = gui_text.TextPanel(tab_text)
+    app_fill = gui_fill.FillPanel(tab_fill)
     app_catalog = gui_catalog.CatalogPanel(tab_catalog)
     settings.SettingsPanel(tab_settings)
 

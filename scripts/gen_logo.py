@@ -22,11 +22,11 @@ RADIUS = 56  # 圆角半径(256 尺寸)
 BG = (31, 78, 121, 255)  # 深蓝背景
 FG = (255, 255, 255, 255)  # 白色前景
 
-# 5x7 点阵字库(C/A/D)
+# 5x7 点阵字库(C/B/A)
 GLYPHS = {
     "C": [0b01110, 0b10001, 0b10000, 0b10000, 0b10000, 0b10001, 0b01110],
+    "B": [0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110],
     "A": [0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
-    "D": [0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110],
 }
 GLYPH_W, GLYPH_H = 5, 7
 LETTER_SPACING = 2  # 字母间距(格)
@@ -51,7 +51,7 @@ def _render_pixels(size: int = SIZE) -> list[list[tuple[int, int, int, int]]]:
 
     scale 随尺寸自适应(小尺寸 16/32/48 也直接渲染,保持清晰)。
     """
-    text = "CAD"
+    text = "CBA"
     grid_w = len(text) * GLYPH_W + (len(text) - 1) * LETTER_SPACING
     scale = max(1, round(size / 21))  # 21 = grid 19 格 + 边距
     px_w, px_h = grid_w * scale, GLYPH_H * scale

@@ -20,7 +20,11 @@ from cadbatchassistant.core import dwg_converter as dc
 from cadbatchassistant.core.common.dwg_workflow import run_dwg_roundtrip_chunks
 from cadbatchassistant.core.common.input_files import check_duplicate_names
 from cadbatchassistant.core.common.parallel import TaskFailed, map_files
-from cadbatchassistant.core.common.text_replace import ReplaceRule, process_dxf_file
+from cadbatchassistant.core.common.text_replace import (
+    FileResult,
+    ReplaceRule,
+    process_dxf_file,
+)
 from cadbatchassistant.gui.components.async_panel import AsyncPanel
 from cadbatchassistant.gui.mixins.gui_shared import (
     FilesPanelMixin,
@@ -30,10 +34,11 @@ from cadbatchassistant.gui.mixins.gui_shared import (
     warn_require,
 )
 
+
 # process_dxf_file(src, dst, rules, dry_run=dry_run) 参数顺序与任务元组
 # (src, dst, rules, dry_run) 完全一致，需要解包后调用。
 # 使用顶层函数而非 lambda，保证 Windows spawn 可 pickle。
-def _text_task(item: tuple) -> "FileResult":
+def _text_task(item: tuple) -> FileResult:
     src, dst, rules, dry_run = item
     return process_dxf_file(src, dst, rules, dry_run=dry_run)
 _text_task.__name__ = "_text_task"

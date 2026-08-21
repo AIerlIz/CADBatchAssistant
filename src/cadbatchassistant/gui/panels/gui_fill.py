@@ -11,7 +11,7 @@ import os
 import tempfile
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, ttk
+from tkinter import ttk
 
 from cadbatchassistant.core import dwg_converter as dc
 from cadbatchassistant.core.common.app_config import get_oda

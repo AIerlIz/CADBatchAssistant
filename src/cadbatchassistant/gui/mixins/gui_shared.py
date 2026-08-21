@@ -469,7 +469,9 @@ class PanelLayoutMixin:
         self.file_list.drop_target_register(DND_FILES)
         self.file_list.dnd_bind("<<Drop>>", self._on_drop_files)
 
-    def _add_output_section(self, var: tk.StringVar, on_default: Callable | None = None) -> None:
+    def _add_output_section(
+        self, var: tk.StringVar, on_default: Callable | None = None
+    ) -> None:
         """「输出」区：输出目录行（浏览/默认/拖放文件夹）。
 
         on_default : 点击「默认」按钮后的附加回调（如保存配置）；默认为 None。
@@ -514,7 +516,12 @@ class PanelLayoutMixin:
 
     # ---------------- 数据源区（填表 / 目录助手共用） ----------------
     def _add_src_section(
-        self, xlsx_label: str, exts: tuple, on_xlsx_hit=None, tpl_width: int = 16, on_select: Callable | None = None
+        self,
+        xlsx_label: str,
+        exts: tuple,
+        on_xlsx_hit=None,
+        tpl_width: int = 16,
+        on_select: Callable | None = None,
     ) -> ttk.LabelFrame:
         """「数据源」区：xlsx 行 + 图纸模板行；返回 frame 供追加专属行。
 
@@ -526,11 +533,20 @@ class PanelLayoutMixin:
         """
         src_frame = ttk.LabelFrame(self._main, text="数据源", padding=8)
         src_frame.pack(fill="x", **self._pad)
-        self._add_xlsx_row(src_frame, xlsx_label, exts, on_hit=on_xlsx_hit, on_select=on_select)
+        self._add_xlsx_row(
+            src_frame, xlsx_label, exts, on_hit=on_xlsx_hit, on_select=on_select
+        )
         self._add_template_row(src_frame, width=tpl_width)
         return src_frame
 
-    def _add_xlsx_row(self, parent, xlsx_label: str, exts: tuple, on_hit=None, on_select: Callable | None = None) -> None:
+    def _add_xlsx_row(
+        self,
+        parent,
+        xlsx_label: str,
+        exts: tuple,
+        on_hit=None,
+        on_select: Callable | None = None,
+    ) -> None:
         """xlsx 输入行：Label + Entry(拖放) + 浏览按钮；命中时回调 on_hit(路径)。
 
         on_select : 点击「浏览」按钮选中文件后的附加回调（如保存配置）；默认为 None。

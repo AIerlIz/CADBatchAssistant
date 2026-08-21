@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import os
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import messagebox, ttk
 
 from openpyxl import load_workbook
 
@@ -88,10 +88,13 @@ class CatalogPanel(
 
         # 3. 输出区（保存配置到 catalog_out）
         self.var_out = tk.StringVar()
-        self._add_output_section(
-            self.var_out,
-            on_default=lambda: save_panel_config({"catalog_out": self.var_out.get().strip()}) if self.var_out.get().strip() else None,
-        )
+
+        def _save_out_config() -> None:
+            out = self.var_out.get().strip()
+            if out:
+                save_panel_config({"catalog_out": out})
+
+        self._add_output_section(self.var_out, on_default=_save_out_config)
 
         # 4. 运行区（ODA 路径与输出版本在「设置」tab，全局共享）
         self._add_run_section(maximum=100)

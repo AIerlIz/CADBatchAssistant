@@ -81,7 +81,7 @@ wheels = [
 
 [[package]]
 name = "cadbatchassistant"
-version = "2.9.0"
+version = "2.10.1"
 source = { editable = "." }
 dependencies = [
     { name = "ezdxf" },

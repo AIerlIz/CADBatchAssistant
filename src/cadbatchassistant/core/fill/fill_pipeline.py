@@ -29,6 +29,7 @@ from cadbatchassistant.core.common.input_files import (
     stage_inputs,
 )
 from cadbatchassistant.core.fill.fill_dwg import entity_to_desc, fill_all
+from cadbatchassistant.core.fill.fill_parse_xlsx import build_text_lookup, extract_dxf_text
 
 
 def _classify_by_ext(d: str) -> dict[str, str]:
@@ -320,6 +321,8 @@ def run_pipeline(
 
         # [3/4] 填表（50%→75% 按图纸推进）：DWG 存在时分块执行，
         # 每块「转换→填表→转回」推进；DXF 名一次填表。
+        # 匹配方式：取图纸内所有文字实体，与数据表 match_col 列做精确匹配；
+        # 无文字/无匹配 → skipped（不在数据表中）。
         _check_cancel(cancel)
         emit("[3/4] 按 xlsx 填充标题栏值格 ...")
 
@@ -332,39 +335,101 @@ def run_pipeline(
             fill_done["v"] += 1
             _report(progress, 50 + int(fill_done["v"] / max(total_all, 1) * 25))
 
+        # 按图纸内文字构建匹配索引（match_col 列值 → (stem, row_data)）；
+        # match_col 为 None 时回退到按 stem 匹配（向后兼容）。
+        text_lookup = build_text_lookup(data, match_col)
+        use_text_match = bool(match_col and text_lookup)
+
+        def _match_by_text(stems: list[str], before_dir: str) -> tuple[dict, list[str], list[str]]:
+            """按图纸内文字匹配数据表，返回 (匹配后的 data, failed, skipped)。
+
+            match_col 仅用于匹配：取图纸内所有文字实体，与 match_col 列值精确匹配；
+            任一文字命中即取对应行（无自一致性校验，由用户保证选对列）。
+            match_col 为空时：回退到按 stem 在 data 中查找（向后兼容）。
+            失败：匹配到多行（歧义）；跳过：无匹配、图纸无文字或缺少 before DXF。
+            """
+            matched_data: dict[str, dict[str, str]] = {}
+            failed: list[str] = []
+            skipped: list[str] = []
+            for stem in stems:
+                dxf_path = os.path.join(before_dir, stem + ".dxf")
+                if not os.path.isfile(dxf_path):
+                    emit(f"[WARN] 缺少 before DXF: {dxf_path}")
+                    skipped.append(stem)
+                    continue
+                if use_text_match:
+                    try:
+                        texts = extract_dxf_text(dxf_path)
+                    except Exception as ex:  # noqa: BLE001 - 单张图失败不中断整批
+                        emit(f"[WARN] 读取图纸文字失败 {stem}：{ex}")
+                        skipped.append(stem)
+                        continue
+                    if not texts:
+                        emit(f"[WARN] {stem} 图纸内无文字，跳过")
+                        skipped.append(stem)
+                        continue
+                    # 图纸文字与 match_col 列值精确匹配：任一文字命中即取对应行
+                    hits: list[tuple[str, dict[str, str]]] = [
+                        text_lookup[txt] for txt in texts if txt in text_lookup
+                    ]
+                    if not hits:
+                        emit(
+                            f"[WARN] {stem} 未在数据表中找到匹配 "
+                            f"（match_col={match_col!r}，图纸文字样本：{sorted(texts)[:5]}）"
+                        )
+                        skipped.append(stem)
+                        continue
+                    # 取首次命中（重复列值以首次出现为准，由 build_text_lookup 保证）
+                    matched_data[stem] = hits[0][1]
+                else:
+                    # 向后兼容：按 stem 直接查找
+                    row = data.get(stem)
+                    if row is None:
+                        emit(f"[WARN] {stem} 不在 xlsx 中，跳过")
+                        skipped.append(stem)
+                        continue
+                    matched_data[stem] = row
+            return matched_data, failed, skipped
+
         failed: list[str] = []
         skipped: list[str] = []
         if dxf_names:
-            f_dxf, s_dxf = fill_all(
-                before_dxf,
-                filled_dxf,
-                xlsx,
-                {n: specs[n] for n in dxf_names},
-                emit=emit,
-                progress=_track_fill,
-                match_col=match_col,
-                sheet=sheet,
-                cancel=cancel,
-                data=data,  # 复用 [2/4] 的一次读取，不再整表二次解析
-            )
-            failed.extend(f_dxf)
+            matched_dxf_data, f_dxf, s_dxf = _match_by_text(dxf_names, before_dxf)
+            if matched_dxf_data:
+                f2, s2 = fill_all(
+                    before_dxf,
+                    filled_dxf,
+                    xlsx,
+                    {n: specs[n] for n in matched_dxf_data},
+                    emit=emit,
+                    progress=_track_fill,
+                    sheet=sheet,
+                    cancel=cancel,
+                    data=matched_dxf_data,
+                )
+                failed.extend(f2)
+                skipped.extend(s2)
             skipped.extend(s_dxf)
+            failed.extend(f_dxf)
         if dwg_names:
             # chunks_dir 与首块 before 目录已在 [1/4] 创建/预转
 
             def _fill_chunk(before_c: str, filled_c: str, stems: list[str]):
-                return fill_all(
-                    before_c,
-                    filled_c,
-                    xlsx,
-                    {s: specs[s] for s in stems},
-                    emit=emit,
-                    progress=_track_fill,
-                    match_col=match_col,
-                    sheet=sheet,
-                    cancel=cancel,
-                    data=data,
-                )
+                matched_chunk_data, f_chunk, s_chunk = _match_by_text(stems, before_c)
+                if matched_chunk_data:
+                    f2, s2 = fill_all(
+                        before_c,
+                        filled_c,
+                        xlsx,
+                        {s: specs[s] for s in matched_chunk_data},
+                        emit=emit,
+                        progress=_track_fill,
+                        sheet=sheet,
+                        cancel=cancel,
+                        data=matched_chunk_data,
+                    )
+                    return f2 + f_chunk, s2 + s_chunk
+                return f_chunk, s_chunk
 
             # DWG 分块「转换→填表→转回」+ 块间转换重叠（ODA 与进程池并行）；
             # 首块已在 [1/4] 预转；写回在块内完成 → 已在输出目录落盘，

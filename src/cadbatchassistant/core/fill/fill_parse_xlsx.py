@@ -12,6 +12,7 @@ import datetime
 from pathlib import Path
 
 from cadbatchassistant.core.common.filetypes import CAD_SUFFIXES
+from cadbatchassistant.core.common.text_replace import decode_text, iter_text_entities, read_doc
 
 EXCEL_EPOCH = datetime.date(1899, 12, 30)
 
@@ -229,6 +230,47 @@ def load_xlsx(
     if p.lower().endswith(".xls") and not p.lower().endswith(".xlsx"):
         return _load_xls(p, match_col, sheet)
     return _load_xlsx(p, match_col, sheet)
+
+
+def extract_dxf_text(dxf_path: str) -> set[str]:
+    """从 DXF 文件中提取所有文字实体的纯文本（去空白），返回集合。
+
+    遍历模型空间和块定义中的 TEXT/MTEXT/ATTRIB 实体，
+    返回所有非空文本的集合（用于与数据表 match_col 列做文字匹配）。
+    """
+    texts: set[str] = set()
+    doc = read_doc(dxf_path)
+    for e in iter_text_entities(doc):
+        if e.dxftype() == "MTEXT":
+            try:
+                t = e.plain_text()
+            except Exception:  # noqa: BLE001
+                t = e.text
+        else:
+            t = e.dxf.text
+        decoded = decode_text(t).strip()
+        if decoded:
+            texts.add(decoded)
+    return texts
+
+
+def build_text_lookup(
+    data: dict[str, dict[str, str]], match_col: str | None = None
+) -> dict[str, tuple[str, dict[str, str]]]:
+    """数据 → {match_col 值: (stem, row_data)} 索引。
+
+    用于按图纸内文字匹配 Excel 行：match_col 列的值作为匹配键，
+    指向对应的图纸 stem 和整行数据。重复值以首次出现为准。
+    """
+    key_col = match_col if match_col else None
+    if key_col is None:
+        return {}
+    lookup: dict[str, tuple[str, dict[str, str]]] = {}
+    for stem, row in data.items():
+        val = row.get(key_col, "").strip()
+        if val and val not in lookup:
+            lookup[val] = (stem, row)
+    return lookup
 
 
 def load_xlsx_with_headers(

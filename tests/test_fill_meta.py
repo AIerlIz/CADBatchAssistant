@@ -55,10 +55,15 @@ def _make_xlsx(path, rows):
     return path
 
 
-def _make_before_dxf(path):
+def _make_before_dxf(path, text=None):
+    """创建 before DXF；text 为插入到模型空间的文字内容（用于文字匹配）。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     doc = ezdxf.new("R2004")
     doc.modelspace().add_line((0, 0), (30, 30))
+    if text is not None:
+        doc.modelspace().add_text(
+            text, dxfattribs={"insert": (10, 10, 0), "height": 3.0}
+        )
     doc.saveas(path)
     return path
 
@@ -102,7 +107,8 @@ def test_fill_pipeline_meta_path(tmp_path):
     tpl = _make_tpl_dxf(tmp_path / "tpl.dxf", placeholders=("[图号]",))
     save_template_meta(tpl, {"placeholders": scan_all_placeholders(str(tpl))})
     xlsx = _make_xlsx(tmp_path / "data.xlsx", [["图纸名", "图号"], ["A1", "ABC-001"]])
-    _make_before_dxf(tmp_path / "in" / "A1.dxf")
+    # before DXF 需含匹配文字（match_col="图号" → "ABC-001"）
+    _make_before_dxf(tmp_path / "in" / "A1.dxf", text="ABC-001")
     out = tmp_path / "out"
     conv = mock.Mock()
     conv.resolve.return_value = ""
@@ -132,7 +138,8 @@ def test_fill_pipeline_cli_fallback_without_meta(tmp_path):
 
     tpl = _make_tpl_dxf(tmp_path / "tpl.dxf", placeholders=("[图号]",))
     xlsx = _make_xlsx(tmp_path / "data.xlsx", [["图纸名", "图号"], ["A1", "ABC-001"]])
-    _make_before_dxf(tmp_path / "in" / "A1.dxf")
+    # before DXF 需含匹配文字
+    _make_before_dxf(tmp_path / "in" / "A1.dxf", text="ABC-001")
     out = tmp_path / "out"
     conv = mock.Mock()
     conv.resolve.return_value = ""

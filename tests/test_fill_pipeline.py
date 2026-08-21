@@ -181,10 +181,15 @@ class FillPipelineWriteBackSkipTest(unittest.TestCase):
         self.out_dir = self.tmp / "output"
         self.before_dir.mkdir()
         self.out_dir.mkdir()
-        # 两张 before DXF：A1（在数据表）、B1（不在 → fill 阶段 skipped）
-        for name in ("A1", "B1"):
-            doc = ezdxf.new("R2013")
-            doc.saveas(self.before_dir / f"{name}.dxf")
+        # 两张 before DXF：A1（含匹配文字 D-001，在数据表）、B1（不在数据表）
+        import ezdxf as _ezdxf
+        doc_a = _ezdxf.new("R2013")
+        doc_a.modelspace().add_text(
+            "D-001", dxfattribs={"insert": (10, 10, 0), "height": 3.0}
+        )
+        doc_a.saveas(self.before_dir / "A1.dxf")
+        doc_b = _ezdxf.new("R2013")
+        doc_b.saveas(self.before_dir / "B1.dxf")
         # 模板 DXF：占位符 [图号] 与数据表表头匹配
         self.template = self.tmp / "template.dxf"
         doc = ezdxf.new("R2013")
@@ -250,9 +255,12 @@ class FillPipelineMetaPriorityTest(unittest.TestCase):
         self.out_dir = self.tmp / "output"
         self.before_dir.mkdir()
         self.out_dir.mkdir()
-        for name in ("A1",):
-            doc = ezdxf.new("R2013")
-            doc.saveas(self.before_dir / f"{name}.dxf")
+        # before DXF 含匹配文字 D-001
+        doc_a = ezdxf.new("R2013")
+        doc_a.modelspace().add_text(
+            "D-001", dxfattribs={"insert": (10, 10, 0), "height": 3.0}
+        )
+        doc_a.saveas(self.before_dir / "A1.dxf")
         # 模板虚拟路径：文件不存在（模板库只存占位符 JSON）
         self.template = self.tmp / "templates" / "fill" / "tpl.dxf"
         self.template.parent.mkdir(parents=True)
